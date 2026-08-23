@@ -4,13 +4,14 @@
              x:Class="Launcher.App.Views.VersionDownloadView"
              x:DataType="vm:VersionDownloadViewModel">
 
-    <DockPanel>
-        <StackPanel DockPanel.Dock="Top" Spacing="2" Margin="0,0,0,10">
+    <!-- 8-23 修复错位：原 DockPanel 按 Top-docked 内容宽保留空间，填充被挤右侧 → Grid 行布局保证全宽 -->
+    <Grid RowDefinitions="Auto,*">
+        <StackPanel Grid.Row="0" Spacing="2" Margin="0,0,0,10">
             <TextBlock Text="下载游戏" FontSize="18" FontWeight="Bold"/>
             <TextBlock Text="{Binding Status}" Classes="sub" FontSize="12"/>
         </StackPanel>
 
-        <Grid ColumnDefinitions="1.2*,1,2*,1,2*" ColumnSpacing="8">
+        <Grid Grid.Row="1" ColumnDefinitions="1.2*,1,2*,1,2*" ColumnSpacing="8">
             <!-- 左：分类 + 搜索 -->
             <DockPanel Grid.Column="0">
                 <TextBox DockPanel.Dock="Top" Text="{Binding Sidebar.SearchText, Mode=TwoWay}"
@@ -120,5 +121,5 @@
                 </Grid>
             </Border>
         </Grid>
-    </DockPanel>
+    </Grid>
 </UserControl>

@@ -165,11 +165,11 @@
         </DataTemplate>
     </UserControl.Resources>
 
-    <DockPanel>
-        <!-- 板块 tab 栏：下载游戏 / MOD / 整合包 / 材质包 / 光影包 / 数据包 / 第三方文件 / 下载记录。
-             8-22 回退内容自适应（用户不认可 8 等宽 Grid 的间距）：WrapPanel 每按钮包文字宽度 +
-             padding 保证整块可点，间距自然均匀 -->
-        <WrapPanel Margin="0,0,0,12">
+    <!-- 8-23 修复错位：原 DockPanel 把 WrapPanel 当 Top-docked，按内容宽（~794px）保留空间，
+         填充区 Grid 被挤到右侧 ~197px → 内容（MOD/整合包等）全塞进窄条、左边大片空白。
+         改 Grid RowDefinitions="Auto,*"：tab 行 Auto 高、内容行 * 恒全宽，互不干扰 -->
+    <Grid RowDefinitions="Auto,*">
+        <WrapPanel Grid.Row="0" Margin="0,0,0,12">
             <Button Content="下载游戏" Classes="tab" Padding="12,6" Margin="0,0,8,0"
                     Classes.active="{Binding IsGameTabSelected}"
                     Command="{Binding SelectTabCommand}" CommandParameter="game"/>
@@ -196,7 +196,7 @@
                     Command="{Binding SelectTabCommand}" CommandParameter="queue"/>
         </WrapPanel>
 
-        <Grid>
+        <Grid Grid.Row="1">
             <!-- 下载记录（队列常驻，轻量无网络） -->
             <ContentControl x:Name="QueuePanelHost" Content="{Binding}" ContentTemplate="{StaticResource QueuePanel}"
                             IsVisible="{Binding $parent[Grid].((vm:DownloadViewModel)DataContext).IsQueueTabSelected}"/>
@@ -204,5 +204,5 @@
             <ContentControl x:Name="ActiveTabHost" Content="{Binding ActiveTab}"
                             IsVisible="{Binding $parent[Grid].((vm:DownloadViewModel)DataContext).IsNotQueueTabSelected}"/>
         </Grid>
-    </DockPanel>
+    </Grid>
 </UserControl>

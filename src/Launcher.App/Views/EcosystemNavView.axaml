@@ -6,9 +6,9 @@
              x:Class="Launcher.App.Views.EcosystemNavView"
              x:DataType="vm:EcosystemNavViewModel">
 
-    <DockPanel>
-        <!-- 分类 chips：全部（写死）+ 11 类动态（选中高亮，ValueEqualsConverter） -->
-        <StackPanel DockPanel.Dock="Top" Spacing="8" Margin="0,0,0,10">
+    <!-- 8-23 修复错位：原 DockPanel 按 Top-docked 内容宽保留空间，填充被挤右侧 → Grid 行布局保证全宽 -->
+    <Grid RowDefinitions="Auto,*,Auto">
+        <StackPanel Grid.Row="0" Spacing="8" Margin="0,0,0,10">
             <TextBlock Text="生态导航 · 精选资源站" FontSize="13" FontWeight="SemiBold" Classes="sub"/>
             <WrapPanel ItemSpacing="6">
                 <Button Content="全部" Classes="ghost" FontSize="11" Padding="10,3"
@@ -32,14 +32,14 @@
             </WrapPanel>
         </StackPanel>
 
-        <!-- 底部：完整目录入口（mcnav.net）——声明在列表前，DockPanel 最后一个子元素才是 Fill 填充者 -->
-        <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Spacing="6" Margin="0,8,0,0">
+        <!-- 底部：完整目录入口（mcnav.net） -->
+        <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="6" Margin="0,8,0,0">
             <TextBlock Text="想看全部 255 个站点？" Classes="dim" FontSize="11" VerticalAlignment="Center"/>
             <Button Classes="link" FontSize="11" Content="MCNav 完整目录" Command="{Binding OpenFullCatalogCommand}"/>
         </StackPanel>
 
-        <!-- 站点列表（竖版行式——PCL2 式一行一个，全宽行；hover 高亮 + 底部细分隔线；最后一个子元素 → 自动填满剩余） -->
-        <ScrollViewer Margin="0,0,0,4">
+        <!-- 站点列表（竖版行式——PCL2 式一行一个，全宽行；hover 高亮 + 底部细分隔线） -->
+        <ScrollViewer Grid.Row="1" Margin="0,0,0,4">
             <ItemsControl ItemsSource="{Binding Cards}">
                 <ItemsControl.ItemTemplate>
                     <DataTemplate x:DataType="vm:NavSiteItemVM">
@@ -104,6 +104,5 @@
                 </ItemsControl.ItemTemplate>
             </ItemsControl>
         </ScrollViewer>
-
-    </DockPanel>
+    </Grid>
 </UserControl>
