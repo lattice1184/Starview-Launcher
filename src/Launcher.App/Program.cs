@@ -1,4 +1,5 @@
 ﻿using Avalonia;
+using Avalonia.Win32;
 using System;
 
 namespace Launcher.App;
@@ -20,6 +21,10 @@ sealed class Program
     public static AppBuilder BuildAvaloniaApp()
         => AppBuilder.Configure<App>()
             .UsePlatformDetect()
+            // 8-23 根治汉堡 Popup 卡深色：Popup 默认是独立顶层窗口，打开时 Windows 合成器降级
+            // 主窗口亚克力渲染（内容区整体变暗且不自动恢复）。OverlayPopups = Popup 在窗口内渲染，
+            // 不建独立窗口 → 主窗口合成不受影响。副作用：所有 Popup 不出窗口边界（本应用 Popup 均窗口内使用）。
+            .With(new Win32PlatformOptions { OverlayPopups = true })
 #if DEBUG
             .WithDeveloperTools()
 #endif

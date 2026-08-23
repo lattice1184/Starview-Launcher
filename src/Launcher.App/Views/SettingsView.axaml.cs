@@ -47,13 +47,37 @@ public partial class SettingsView : UserControl
     }
 
     /// <summary>8-19 第二批：汉堡 Popup 开合路径显式重放用户透明度（VM 值已即时落盘，幂等无旧值风险）。
-    /// Post 延迟到渲染帧之后：Popup 关闭/合成重建发生在渲染时，立即重放会被重建覆盖</summary>
+    /// Post 延迟到渲染帧之后：Popup 关闭/合成重建发生在渲染时，立即重放会被重建覆盖。
+    /// 8-23 修：原用 VisualRoot 判窗口——Avalonia 12 对 UserControl 返回 null，重放从未真正执行
+    /// （Popup 打开内容区变暗后关不掉）。改用 TopLevel.GetTopLevel（项目惯例）。加轮询
+    /// ActualTransparencyLevel：合成恢复（!= None）即重放，最多 5s；超时兜底重放一次。
+    /// 根因已由 Program.cs OverlayPopups 根治（Popup 窗口内渲染不再触发合成降级）；此处保留
+    /// GetTopLevel 修复 + 轮询作为其他合成降级场景的恢复保险。</summary>
+    private DispatcherTimer? _replayTimer;
+
     private void ReplayAppearance()
     {
         Dispatcher.UIThread.Post(() =>
         {
-            if (VisualRoot is MainWindow w) w.ApplyAppearanceFromVm();
+            if (TopLevel.GetTopLevel(this) is MainWindow w) w.ApplyAppearanceFromVm();
         });
+        if (_replayTimer is not null) return;
+        var deadline = Environment.TickCount + 5000;
+        _replayTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(250) };
+        _replayTimer.Tick += (_, _) =>
+        {
+            if (TopLevel.GetTopLevel(this) is not MainWindow w)
+            {
+                _replayTimer.Stop(); _replayTimer = null; return;
+            }
+            if (w.ActualTransparencyLevel != WindowTransparencyLevel.None || Environment.TickCount > deadline)
+            {
+                w.ApplyAppearanceFromVm();
+                _replayTimer.Stop();
+                _replayTimer = null;
+            }
+        };
+        _replayTimer.Start();
     }
 
     /// <summary>8-19 补充：Popup 任意关闭路径（含外部点击 dismiss——IsLightDismissEnabled 不走
