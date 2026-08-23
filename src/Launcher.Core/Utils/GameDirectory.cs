@@ -51,11 +51,13 @@ public static class GameDirectory
     public static string Detect() => InstallDir();
 
     /// <summary>
-    /// 版本发现扫描源：安装目标 + 已有环境（AppData 标准位 / Downloads/PCL*），按序去重。
-    /// 已安装版本的显示与启动来自这些目录；新下载安装只进 InstallDir。
+    /// 版本发现扫描源：安装目标 + 自建目录历史位（跨盘），按序去重。
+    /// 8-23 起不再扫描 PCL / 官方（AppData）已有环境——列表只剩自建目录的版本，
+    /// 避免 PCL 版本混入导致默认选中/下载跟随选错实例。已安装版本的显示与启动来自这些目录；
+    /// 新下载安装只进 InstallDir。
     /// </summary>
     /// <summary>8-22 进程内扫描缓存：启动后多次调用（版本扫描/清理/校验）复用同一结果，
-    /// 消除 O(N²) junction 重复解析 + Downloads\PCL* 重复枚举。改目录时 InvalidateScanCache 失效。</summary>
+    /// 消除 O(N²) junction 重复解析。改目录时 InvalidateScanCache 失效。</summary>
     private static readonly object ScanCacheGate = new();
     private static List<(string Dir, GameDirectorySource Source)>? _scanCache;
 
@@ -86,16 +88,6 @@ public static class GameDirectory
         foreach (var candidate in OwnCandidates())
             Add(candidate, GameDirectorySource.OwnDefault);
 
-        var standard = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), ".minecraft");
-        Add(standard, GameDirectorySource.Standard);
-
-        var downloads = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads");
-        if (Directory.Exists(downloads))
-        {
-            foreach (var dir in Directory.EnumerateDirectories(downloads, "PCL*"))
-                Add(Path.Combine(dir, ".minecraft"), GameDirectorySource.Pcl);
-        }
         lock (ScanCacheGate) { _scanCache = list; } // double-check：锁内赋值，防并发读到半初始化引用
         return list;
     }

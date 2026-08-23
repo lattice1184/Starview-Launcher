@@ -243,6 +243,73 @@ public class VersionInstallerTests
         finally { if (Directory.Exists(gameDir)) Directory.Delete(gameDir, true); }
     }
 
+    // ---------- 8-23 启动清理守卫（CleanupOrphanPrefetches / CleanupParentsAfterDelete）----------
+
+    [Fact]
+    public void CleanupOrphanPrefetches_KeepsDoubleMarkedDir()
+    {
+        // 8-23 守卫：双标记（.yanla-installed+.prefetched）且无任何引用的正式安装版本——启动清理绝不删
+        var gameDir = Path.Combine(Path.GetTempPath(), $"vinst-{Guid.NewGuid():N}");
+        try
+        {
+            WriteVersion(gameDir, "26.2", null, withMarker: true, prefetched: true); // 双标记，无引用
+
+            VersionInstaller.CleanupOrphanPrefetches(gameDir);
+
+            Assert.True(Directory.Exists(Path.Combine(gameDir, "versions", "26.2")), "双标记正式安装版本不得被启动清理删除");
+        }
+        finally { if (Directory.Exists(gameDir)) Directory.Delete(gameDir, true); }
+    }
+
+    [Fact]
+    public void CleanupOrphanPrefetches_DeletesUnreferencedPrefetched()
+    {
+        // 原语义回归：仅 .prefetched、无引用 → 删（残留清理仍需工作）
+        var gameDir = Path.Combine(Path.GetTempPath(), $"vinst-{Guid.NewGuid():N}");
+        try
+        {
+            WriteVersion(gameDir, "1.21.10", null, prefetched: true); // 仅预取，无引用
+
+            VersionInstaller.CleanupOrphanPrefetches(gameDir);
+
+            Assert.False(Directory.Exists(Path.Combine(gameDir, "versions", "1.21.10")), "孤立预取残留应被清理");
+        }
+        finally { if (Directory.Exists(gameDir)) Directory.Delete(gameDir, true); }
+    }
+
+    [Fact]
+    public void CleanupOrphanPrefetches_KeepsReferencedPrefetched()
+    {
+        // 原语义回归：.prefetched 且被另一版本 inheritsFrom 引用 → 保留
+        var gameDir = Path.Combine(Path.GetTempPath(), $"vinst-{Guid.NewGuid():N}");
+        try
+        {
+            WriteVersion(gameDir, "fabric-loader-0.19.3-1.21.10", "1.21.10");
+            WriteVersion(gameDir, "1.21.10", null, prefetched: true);
+
+            VersionInstaller.CleanupOrphanPrefetches(gameDir);
+
+            Assert.True(Directory.Exists(Path.Combine(gameDir, "versions", "1.21.10")), "仍被引用的预取父版本应保留");
+        }
+        finally { if (Directory.Exists(gameDir)) Directory.Delete(gameDir, true); }
+    }
+
+    [Fact]
+    public void CleanupParentsAfterDelete_KeepsDoubleMarkedParent()
+    {
+        // 8-23 守卫对齐 CleanupOrphanPrefetches：删加载器连带清理时，双标记父版本绝不删
+        var gameDir = Path.Combine(Path.GetTempPath(), $"vinst-{Guid.NewGuid():N}");
+        try
+        {
+            WriteVersion(gameDir, "1.21.10", null, withMarker: true, prefetched: true); // 双标记父版本
+
+            VersionInstaller.CleanupParentsAfterDelete(gameDir, ["1.21.10"]);
+
+            Assert.True(Directory.Exists(Path.Combine(gameDir, "versions", "1.21.10")), "双标记父版本不得被连带清理删除");
+        }
+        finally { if (Directory.Exists(gameDir)) Directory.Delete(gameDir, true); }
+    }
+
     /// <summary>返回合法版本 json（GetOrFetch 解析用）</summary>
     private sealed class JsonHandler : HttpMessageHandler
     {

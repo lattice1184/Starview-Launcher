@@ -313,15 +313,20 @@ public partial class ServerViewModel : ViewModelBase
     /// <summary>刷新已装版本（构造 + 每次进入开服页调用——新装的版本立即可见）</summary>
     public async Task RefreshVersionsAsync()
     {
+        // 8-23 同 HomeViewModel：manifest 拉取失败不再整体空吞——磁盘扫描兜底，版本列表不消失
+        var svc = new VersionManifestService();
         try
         {
-            var svc = new VersionManifestService();
             await svc.RefreshAsync();
-            // 收集全部候选 (目录, 版本)
-            var candidates = new List<(string Dir, string Id)>();
+        }
+        catch { /* 断网/无缓存：仅保留磁盘扫描结果 */ }
+        // 收集全部候选 (目录, 版本)
+        var candidates = new List<(string Dir, string Id)>();
+        try
+        {
             foreach (var e in svc.Entries.Where(e => e.Installed && InstallMarker.ShouldShowInPage(e.GameDirectory, e.Id)))
                 candidates.Add((e.GameDirectory, e.Id));
-            // 目录补漏：加载器版本（fabric/forge 等不在 manifest）+ PCL/官方扫描源
+            // 目录补漏：加载器版本（fabric/forge 等不在 manifest）+ 自建扫描源（8-23 起不扫 PCL/官方）
             foreach (var (dir, _) in GameDirectory.ScanSourceDirs())
             {
                 var versionsDir = Path.Combine(dir, "versions");

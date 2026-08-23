@@ -283,49 +283,65 @@ public partial class HomeViewModel : ViewModelBase
     /// </summary>
     public async Task RefreshVersionsAsync()
     {
+        // 8-23 主页版本消失修复：原实现整体 try/catch 空吞——切回主页时若 manifest 拉取抛异常
+        // （断网 + 无 24h 内缓存），重建被整个跳过，InstalledVersions 停留在 ReleaseData 清空后的空态，
+        // 主页版本列表永久空白。现拆三个独立 try-catch：manifest 失败只丢清单条目（磁盘扫描兜底）、
+        // 磁盘扫描失败退化为仅 manifest、单版本损坏只跳过该版——重建与自动选中无条件执行。
+
+        // ① manifest 拉取（可能因网络/镜像失败）：失败仅清空 entries，不清列表
+        IReadOnlyList<VersionManifestService.GameVersionEntry> entries = [];
         try
         {
             var svc = new VersionManifestService();
             await svc.RefreshAsync();
-            // 收集全部候选 (目录, 版本)
-            var candidates = new List<(string Dir, string Id)>();
-            foreach (var e in svc.Entries.Where(e => e.Installed && InstallMarker.ShouldShowInPage(e.GameDirectory, e.Id)))
-                candidates.Add((e.GameDirectory, e.Id));
-            // 目录扫描补漏：加载器版本（fabric/forge/neoforge/quilt 等不在 Mojang manifest）
-            // + 三路 jar 判定（8-14：原版父版本 jar 落加载器子目录也算——与版本页侧栏同口径）
-            foreach (var (id, dir) in VersionManifestService.ScanUsableInstances(
-                         GameDirectory.ScanSourceDirs().Select(x => x.Dir), cleanForeignMarkers: true))
-            {
-                if (candidates.Any(c => c.Id.Equals(id, StringComparison.OrdinalIgnoreCase))) continue;
-                // 8-18 批次 75：预取父版本（.prefetched，Fabric 下载的依赖）主页不显示——
-                // 非用户主动安装；正式安装的原版照常显示。要启动原版去下载页正式下载
-                if (!InstallMarker.ShouldShowInPage(dir, id)) continue;
-                candidates.Add((dir, id));
-            }
-            InstalledVersions.Clear();
-            foreach (var (dir, id) in candidates)
+            entries = svc.Entries;
+        }
+        catch { /* 断网/无缓存：仅保留磁盘扫描结果 */ }
+
+        // ② 合并已装候选（manifest 已装原版 + 目录扫描补漏加载器，CollectInstalledCandidates 磁盘兜底）
+        List<(string Dir, string Id)> candidates;
+        try
+        {
+            candidates = VersionManifestService.CollectInstalledCandidates(
+                entries, GameDirectory.ScanSourceDirs().Select(x => x.Dir), cleanForeignMarkers: true);
+        }
+        catch
+        {
+            // 磁盘扫描异常（纯本地 IO，几乎不触发）：退化为仅 manifest 已装，尽力而为
+            candidates = entries.Where(e => e.Installed && InstallMarker.ShouldShowInPage(e.GameDirectory, e.Id))
+                .Select(e => (e.GameDirectory, e.Id)).ToList();
+        }
+
+        // ③ 逐版本重建（先构建本地列表再整体替换——单版 json 损坏只跳过该版，不留「清空后半截」中间态）
+        var rebuilt = new List<VersionInstanceVM>();
+        foreach (var (dir, id) in candidates)
+        {
+            try
             {
                 var (loader, mc) = VersionScan.Inspect(dir, id);
-                InstalledVersions.Add(new VersionInstanceVM(id, LabelFor(id, dir), dir, loader, mc));
+                rebuilt.Add(new VersionInstanceVM(id, LabelFor(id, dir), dir, loader, mc));
             }
-            // 8-19 修复：切走主页时 ReleaseData 清空列表但 SelectedVersion 保留旧对象——
-            // 重建后旧对象不在新列表 → 版本下拉显示空白（SelectedItem 不在 ItemsSource）但启动仍用旧对象（能启动）。
-            // 按名字重新匹配新对象；匹配不到置 null 走自动选第一个
-            if (SelectedVersion is { } sv
-                && !InstalledVersions.Any(v => v.Name.Equals(sv.Name, StringComparison.OrdinalIgnoreCase)))
-                SelectedVersion = null;
-            if (InstalledVersions.Count > 0 && SelectedVersion is null)
-            {
-                // 8-23：优先自动选中「最近安装的版本」——此前恒选列表第一个（清单序 = ReleaseTime 最新原版），
-                // 刚装的加载器版本从不被选中 → 下载模组「跟随实例」落到旧/错实例（用户反馈 TACZ 落错版的根因之一）
-                var lastInstalled = Launcher.Core.AppState.LastInstalledVersionId;
-                SelectedVersion = lastInstalled.Length > 0
-                    && InstalledVersions.FirstOrDefault(v => v.Name.Equals(lastInstalled, StringComparison.OrdinalIgnoreCase)) is { } li
-                    ? li
-                    : InstalledVersions[0];
-            }
+            catch { /* 单版本损坏跳过 */ }
         }
-        catch { }
+        InstalledVersions.Clear();
+        foreach (var v in rebuilt) InstalledVersions.Add(v);
+
+        // 8-19 修复：切走主页时 ReleaseData 清空列表但 SelectedVersion 保留旧对象——
+        // 重建后旧对象不在新列表 → 版本下拉显示空白（SelectedItem 不在 ItemsSource）但启动仍用旧对象（能启动）。
+        // 按名字重新匹配新对象；匹配不到置 null 走自动选第一个
+        if (SelectedVersion is { } sv
+            && !InstalledVersions.Any(v => v.Name.Equals(sv.Name, StringComparison.OrdinalIgnoreCase)))
+            SelectedVersion = null;
+        if (InstalledVersions.Count > 0 && SelectedVersion is null)
+        {
+            // 8-23：优先自动选中「最近安装的版本」——此前恒选列表第一个（清单序 = ReleaseTime 最新原版），
+            // 刚装的加载器版本从不被选中 → 下载模组「跟随实例」落到旧/错实例（用户反馈 TACZ 落错版的根因之一）
+            var lastInstalled = Launcher.Core.AppState.LastInstalledVersionId;
+            SelectedVersion = lastInstalled.Length > 0
+                && InstalledVersions.FirstOrDefault(v => v.Name.Equals(lastInstalled, StringComparison.OrdinalIgnoreCase)) is { } li
+                ? li
+                : InstalledVersions[0];
+        }
     }
 
     /// <summary>版本标签：本启动器安装 → "本启动器"；否则所在目录来源（PCL2 扫描/官方/自配）</summary>
@@ -805,18 +821,23 @@ public partial class HomeViewModel : ViewModelBase
         return false;
     }
 
-    /// <summary>AL9 自修复：诊断日志 → 命中可自动修复项（Redownload/ReExtractNatives）→ 执行修复。
+    /// <summary>AL9 自修复：诊断日志 → 命中可自动修复项（Redownload/ReExtractNatives/DisableConflictingMods）→ 执行修复。
     /// 返回 true 表示修复成功（调用方负责自动重新启动一次）；AdviceOnly 或修复失败返回 false。</summary>
     private async Task<bool> TryAutoFixAsync(VersionInstanceVM version, string gameDir, string diagText)
     {
-        var hit = LogDiagnostics.DiagnoseDetailed(diagText).FirstOrDefault(h => h.Fix is FixKind.Redownload or FixKind.ReExtractNatives);
+        var hit = LogDiagnostics.DiagnoseDetailed(diagText)
+            .FirstOrDefault(h => h.Fix is FixKind.Redownload or FixKind.ReExtractNatives or FixKind.DisableConflictingMods);
         if (hit is null) return false;
         AppendLog($"§ 检测到问题：{hit.Explanation}，正在自动修复…");
         try
         {
-            var result = hit.Fix == FixKind.ReExtractNatives
-                ? AutoRepairService.FixNatives(version.Name, gameDir)
-                : await AutoRepairService.FixRedownloadAsync(version.Name, gameDir);
+            var result = hit.Fix switch
+            {
+                FixKind.ReExtractNatives => AutoRepairService.FixNatives(version.Name, gameDir),
+                // 8-23 模组版本不匹配：禁用冲突模组（纯本地改名，秒级）——无需下载队列；传 diagText 提取冲突 id
+                FixKind.DisableConflictingMods => AutoRepairService.FixConflictingMods(gameDir, version.Name, diagText),
+                _ => await AutoRepairService.FixRedownloadAsync(version.Name, gameDir),
+            };
             AppendLog($"§ 自动修复完成：{result}");
             // AL57.1 模组缺失自愈（自动路径）：无人值守直接补全，不弹确认框（弹框与崩溃窗模态冲突 + 破坏全自动语义）
             var hadMissing = await ModRepairFlow.TryRepairAsync(gameDir, version.Name, null, requireConfirm: false);

@@ -194,8 +194,8 @@ public sealed class VersionInstaller
     }
 
     /// <summary>8-23 删除后连带清理父链中的预取残留（被加载器吸收的原版 .prefetched）。
-    /// 守卫同 CleanupOrphanPrefetches：带 .prefetched 且不被任何版本 json 引用才删——正式安装/无标记残件不碰。
-    /// 删除成功后才调用，避免删除失败时父版本被误删、加载器变残。</summary>
+    /// 守卫同 CleanupOrphanPrefetches：带 .prefetched、未被正式安装（.yanla-installed）、不被任何版本 json 引用才删——
+    /// 正式安装/双标记/无标记残件不碰。删除成功后才调用，避免删除失败时父版本被误删、加载器变残。</summary>
     public static void CleanupParentsAfterDelete(string gameDir, IReadOnlyList<string> parentChain)
     {
         var versionsDir = Path.Combine(gameDir, "versions");
@@ -220,7 +220,8 @@ public sealed class VersionInstaller
                 if (referenced.Contains(parent)) continue; // 仍被其他版本引用 → 保留
                 var dir = Path.Combine(versionsDir, parent);
                 if (!Directory.Exists(dir)) continue;
-                if (!InstallMarker.IsPrefetched(gameDir, parent)) continue;
+                // 8-23 守卫：正式安装（.yanla-installed）的父版本绝不删（双标记残留也保留）
+                if (InstallMarker.IsMarked(gameDir, parent) || !InstallMarker.IsPrefetched(gameDir, parent)) continue;
                 Directory.Delete(dir, true);
             }
             catch { /* 单目录清理失败跳过（占用等） */ }
@@ -231,7 +232,8 @@ public sealed class VersionInstaller
     /// 8-19 启动清理：删除「预取残留」且不再被任何已装版本引用的父版本目录。
     /// 预取目录（.prefetched）在主页/版本页都被隐藏——用户视角的「删了版本但数据夹里还残留」多数是它们：
     /// 下载加载器版本时预取的原版，引用它的版本被删除后链上清理只沿自身链，其他孤立预取没人管。
-    /// 判定：带 .prefetched 标记 + 不在任何版本 json 的 inheritsFrom 引用集中 → 删（正式安装不碰）。
+    /// 判定：带 .prefetched 标记 + 未被正式安装（.yanla-installed）+ 不在任何版本 json 的 inheritsFrom 引用集中 → 删。
+    /// 8-23 守卫补漏：正式安装（IsMarked）版本绝不删——双标记目录（.prefetched+.yanla-installed）即使无引用也保留。
     /// </summary>
     public static void CleanupOrphanPrefetches(string gameDir)
     {
@@ -259,7 +261,8 @@ public sealed class VersionInstaller
                     var id = Path.GetFileName(vd);
                     if (referenced.Contains(id)) continue;
                     var dir = Path.Combine(versionsDir, id);
-                    if (!InstallMarker.IsPrefetched(gameDir, id)) continue;
+                    // 8-23 守卫：正式安装（.yanla-installed）绝不删——双标记残留也保留
+                    if (InstallMarker.IsMarked(gameDir, id) || !InstallMarker.IsPrefetched(gameDir, id)) continue;
                     Directory.Delete(dir, true);
                 }
                 catch { /* 单目录清理失败跳过（占用等） */ }

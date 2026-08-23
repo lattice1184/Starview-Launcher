@@ -216,4 +216,79 @@ public class VersionManifestServiceTests
         var gameDir = Path.Combine(Path.GetTempPath(), $"inst-{Guid.NewGuid():N}");
         Assert.False(VersionManifestService.IsInstanceTarget(gameDir, "ghost"));
     }
+
+    // ---------- 8-23 主页版本消失修复：CollectInstalledCandidates（manifest 失败磁盘兜底）----------
+
+    private static VersionManifestService.GameVersionEntry Entry(string id, bool installed = true, string dir = "")
+        => new(id, "release", installed, DateTime.MinValue, null, dir);
+
+    [Fact]
+    public void CollectInstalledCandidates_EmptyManifest_StillReturnsDiskScan()
+    {
+        // 核心回归：manifest 拉取失败（网络/镜像全挂）传入空集 → 磁盘扫描结果仍兜底返回
+        var gameDir = Path.Combine(Path.GetTempPath(), $"inst-{Guid.NewGuid():N}");
+        try
+        {
+            var dir = Path.Combine(gameDir, "versions", "1.21.11");
+            Directory.CreateDirectory(dir);
+            File.WriteAllText(Path.Combine(dir, "1.21.11.json"), "{}");
+            File.WriteAllBytes(Path.Combine(dir, "1.21.11.jar"), [1, 2, 3]);
+
+            var candidates = VersionManifestService.CollectInstalledCandidates(
+                Array.Empty<VersionManifestService.GameVersionEntry>(), [gameDir], cleanForeignMarkers: false);
+
+            Assert.Contains(candidates, c => c.Id == "1.21.11");
+        }
+        finally { if (Directory.Exists(gameDir)) Directory.Delete(gameDir, true); }
+    }
+
+    [Fact]
+    public void CollectInstalledCandidates_MergesAndDedups()
+    {
+        // manifest 条目与磁盘扫描命中同名版本 → 只出现一次
+        var gameDir = Path.Combine(Path.GetTempPath(), $"inst-{Guid.NewGuid():N}");
+        try
+        {
+            var dir = Path.Combine(gameDir, "versions", "1.21.11");
+            Directory.CreateDirectory(dir);
+            File.WriteAllText(Path.Combine(dir, "1.21.11.json"), "{}");
+            File.WriteAllBytes(Path.Combine(dir, "1.21.11.jar"), [1, 2, 3]);
+            var entries = new[] { Entry("1.21.11", installed: true, dir: gameDir) };
+
+            var candidates = VersionManifestService.CollectInstalledCandidates(entries, [gameDir], cleanForeignMarkers: false);
+
+            Assert.Single(candidates);
+            Assert.Equal("1.21.11", candidates[0].Id);
+        }
+        finally { if (Directory.Exists(gameDir)) Directory.Delete(gameDir, true); }
+    }
+
+    [Fact]
+    public void CollectInstalledCandidates_FiltersPrefetchedHidden()
+    {
+        // .prefetched 未正式安装 → 排除；.prefetched+.yanla-installed 双标记 → 包含（对齐 ShouldShowInPage）
+        var gameDir = Path.Combine(Path.GetTempPath(), $"inst-{Guid.NewGuid():N}");
+        try
+        {
+            var prefetchedDir = Path.Combine(gameDir, "versions", "26.2");
+            Directory.CreateDirectory(prefetchedDir);
+            File.WriteAllText(Path.Combine(prefetchedDir, "26.2.json"), "{}");
+            File.WriteAllBytes(Path.Combine(prefetchedDir, "26.2.jar"), [1, 2, 3]);
+            Launcher.Core.Download.InstallMarker.MarkPrefetched(gameDir, "26.2"); // 仅预取 → 应排除
+
+            var doubleMarkedDir = Path.Combine(gameDir, "versions", "1.21.10");
+            Directory.CreateDirectory(doubleMarkedDir);
+            File.WriteAllText(Path.Combine(doubleMarkedDir, "1.21.10.json"), "{}");
+            File.WriteAllBytes(Path.Combine(doubleMarkedDir, "1.21.10.jar"), [1, 2, 3]);
+            Launcher.Core.Download.InstallMarker.MarkPrefetched(gameDir, "1.21.10");
+            Launcher.Core.Download.InstallMarker.Mark(gameDir, "1.21.10"); // 双标记 → 应包含
+
+            var candidates = VersionManifestService.CollectInstalledCandidates(
+                Array.Empty<VersionManifestService.GameVersionEntry>(), [gameDir], cleanForeignMarkers: false);
+
+            Assert.DoesNotContain(candidates, c => c.Id == "26.2");
+            Assert.Contains(candidates, c => c.Id == "1.21.10");
+        }
+        finally { if (Directory.Exists(gameDir)) Directory.Delete(gameDir, true); }
+    }
 }

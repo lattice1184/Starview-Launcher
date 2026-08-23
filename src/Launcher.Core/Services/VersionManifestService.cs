@@ -161,6 +161,29 @@ public sealed class VersionManifestService
         catch { return null; }
     }
 
+    /// <summary>
+    /// 合并已装候选：manifest 已装原版（Installed + ShouldShowInPage）+ 目录扫描补漏
+    /// （加载器 + 三路 jar 判定，ScanUsableInstances 同口径）。manifest 条目可为空集
+    /// （网络失败时传入空）——磁盘扫描兜底，调用方无需区分「manifest 失败」与「manifest 无命中」。
+    /// 8-23 主页版本消失修复的核心：manifest 拉取失败不再整体吞掉重建，磁盘结果始终兜底。
+    /// </summary>
+    public static List<(string Dir, string Id)> CollectInstalledCandidates(
+        IEnumerable<GameVersionEntry> manifestEntries,
+        IEnumerable<string> scanDirs,
+        bool cleanForeignMarkers)
+    {
+        var candidates = new List<(string Dir, string Id)>();
+        foreach (var e in manifestEntries.Where(e => e.Installed && InstallMarker.ShouldShowInPage(e.GameDirectory, e.Id)))
+            candidates.Add((e.GameDirectory, e.Id));
+        foreach (var (id, dir) in ScanUsableInstances(scanDirs, cleanForeignMarkers))
+        {
+            if (candidates.Any(c => c.Id.Equals(id, StringComparison.OrdinalIgnoreCase))) continue;
+            if (!InstallMarker.ShouldShowInPage(dir, id)) continue;
+            candidates.Add((dir, id));
+        }
+        return candidates;
+    }
+
     /// <summary>父版本 id → 引用它的子版本清单（跨目录；全量扫描一次，各处复用）</summary>
     public static Dictionary<string, List<(string ChildId, string ChildDir)>> BuildChildrenMap(
         IEnumerable<(string Dir, string Id)> candidates)

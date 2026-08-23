@@ -79,6 +79,8 @@
             </ItemsControl>
             <TextBlock Classes="dim" FontSize="11" TextWrapping="Wrap"
                        Text="这几位朋友的真金白银支撑着启动器一路走到今天，真心感谢每一位 ❤"/>
+            <TextBlock Classes="dim" FontSize="11" TextWrapping="Wrap" Margin="0,2,0,0"
+                       Text="也离不开我的家人，和一些不方便展示信息隐私的朋友。"/>
 
             <!-- 开源声明 / 第三方依赖 -->
             <TextBlock Text="开源声明" Classes="setting-label" Margin="0,8,0,0"/>

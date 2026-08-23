@@ -119,9 +119,8 @@ public partial class VersionBrowseViewModel : ViewModelBase
             // AL27：回滚 AL26 隐藏——原版与加载器都显示（徽章保留；隐藏后用户失去原版可选）
             _all = [.. _all.OrderByDescending(r => r.Id)];
             Rebuild();
-            var own = _all.Count(r => r.SourceLabel == "本启动器");
-            var pcl = _all.Count(r => r.SourceLabel == "PCL2");
-            StatsText = $"已装 {_all.Count} 个 · 本启动器 {own} · PCL {pcl}";
+            // 8-23 只扫自建目录后无「PCL」来源，统计简化为总数
+            StatsText = $"已装 {_all.Count} 个";
             Status = _all.Count == 0
                 ? "还没有已装版本，去【下载】里下载一个"
                 : $"已安装 {_all.Count} 个版本";
@@ -243,9 +242,8 @@ public partial class VersionBrowseViewModel : ViewModelBase
         FixupJarMissing();
         _all = [.. _all.OrderByDescending(r => r.Id)];
         Rebuild();
-        var own = _all.Count(r => r.SourceLabel == "本启动器");
-        var pcl = _all.Count(r => r.SourceLabel == "PCL2");
-        StatsText = $"已装 {_all.Count} 个 · 本启动器 {own} · PCL {pcl}";
+        // 8-23 只扫自建目录后无「PCL」来源，统计简化为总数
+        StatsText = $"已装 {_all.Count} 个";
         Status = _all.Count == 0
             ? "还没有已装版本，去【下载】里下载一个"
             : $"已安装 {_all.Count} 个版本";
