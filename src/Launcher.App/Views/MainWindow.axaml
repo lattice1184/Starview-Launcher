@@ -39,7 +39,7 @@
                     <ExperimentalAcrylicBorder.Material>
                         <ExperimentalAcrylicMaterial BackgroundSource="Digger"
                                                      TintColor="#12161F"
-                                                     TintOpacity="0.88"/><!-- 8-18：白色壁纸下 0.55 透 45% 壁纸 → 导航栏「花了」；提到 0.92 接近实色，保可读性。8-16 批次 50：调淡至 0.88 略透，玻璃感更自然 -->
+                                                     TintOpacity="0.88"/><!-- 8-18：白色壁纸下 0.55 透 45% 壁纸 → 导航栏「花了」；提到 0.92 接近实色，保可读性。8-16 批次 50：调淡至 0.88 略透，玻璃感更自然。8-23：透明档沿用 Digger（材质只有 None/Digger，Digger 即毛玻璃）；实色档运行期切 None+不透明 -->
                     </ExperimentalAcrylicBorder.Material>
                     <Grid>
                         <!-- 激活指示条：独立滑动元素（位置由 ApplyNavVisuals 动画控制），替代按钮左侧描边 -->

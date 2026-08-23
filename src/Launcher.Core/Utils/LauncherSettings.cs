@@ -8,6 +8,10 @@ namespace Launcher.Core.Utils;
 /// </summary>
 public enum DensityMode { Compact = 0, Normal = 1, Comfortable = 2 }
 
+/// <summary>窗口观感两档：透明（Blur 毛玻璃）/ 实色（纯不透明）——8-23 滑块改单选：连续透明度
+/// 在 Popup 合成降级时体现不出来，最终感知只有两种状态，干脆写死两档。</summary>
+public enum OpacityMode { Blur = 0, Solid = 1 }
+
 /// <summary>下载并发档位（分片连接数：低 8 / 中 16 / 高 24）</summary>
 public enum DownloadTier { Low = 8, Medium = 16, High = 24 }
 
@@ -122,7 +126,11 @@ public sealed class LauncherSettings
 
     // ---------- 外观 ----------
 
-    /// <summary>窗口透明度（0.7-1.0；1.0 = 不透明）</summary>
+    /// <summary>窗口观感档（透明 Blur / 实色）</summary>
+    public OpacityMode Opacity { get; set; } = OpacityMode.Blur;
+
+    /// <summary>遗留字段（8-23 滑块改两档单选前用，0.7-1.0 连续值）。保留仅兼容旧 settings.json
+    /// 反序列化——新字段缺失时旧 JSON 也能读，读到的旧值不再使用。</summary>
     public double WindowOpacity { get; set; } = 0.9;
 
     /// <summary>强调色（#RRGGBB；空 = 默认靛蓝）</summary>

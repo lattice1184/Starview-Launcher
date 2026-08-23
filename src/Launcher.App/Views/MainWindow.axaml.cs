@@ -141,12 +141,8 @@ public partial class MainWindow : Window
             if (e.Property == WindowStateProperty)
                 WindowRoot.CornerRadius = WindowState == WindowState.Maximized ? new CornerRadius(0) : new CornerRadius(12);
         };
-        // 8-19 关闭兜底：尺寸存档 + 透明度防抖立即落盘（防抖窗口内关窗丢最后值——重启回调根因）
-        Closing += (_, _) =>
-        {
-            SaveWindowSize();
-            if (DataContext is MainViewModel main) main.Settings.FlushPendingOpacitySave();
-        };
+        // 8-19 关闭兜底：尺寸存档（8-23 观感档已即时落盘，无防抖可清）
+        Closing += (_, _) => SaveWindowSize();
     }
 
     /// <summary>8-16 点击 Toast 复制内容到剪贴板（错误信息全模块可带走）</summary>
@@ -642,10 +638,16 @@ public partial class MainWindow : Window
     }
 
     /// <summary>8-19 合成降级双向：失败时整窗不透明 + 隐藏导航层；合成恢复时还原导航层
-    /// （旧实现 IsVisible=false 永不复原——会话中降级后整窗一直"变深"）</summary>
+    /// （旧实现 IsVisible=false 永不复原——会话中降级后整窗一直"变深"）。8-23 实色档例外：
+    /// 窗口本就不透明，导航始终可见，不随合成降级隐藏。</summary>
     private void ApplyOpacityFallback()
     {
         if (RootSurface is null || NavSurface is null) return;
+        if (CurrentOpacityMode() == OpacityMode.Solid)
+        {
+            NavSurface.IsVisible = true;
+            return;
+        }
         if (ActualTransparencyLevel != WindowTransparencyLevel.None)
         {
             NavSurface.IsVisible = true; // 合成已恢复（幂等 no-op）
@@ -657,6 +659,10 @@ public partial class MainWindow : Window
         NavSurface.IsVisible = false;
     }
 
+    /// <summary>8-23 当前观感档（构造期 DataContext 缺失回退持久值——与 ApplyAppearanceFromVm 一致）</summary>
+    private OpacityMode CurrentOpacityMode()
+        => DataContext is MainViewModel main ? main.Settings.Opacity : LauncherSettings.Current.Opacity;
+
     /// <summary>8-19 透明度硬性要求：统一入口——取 VM 实时值应用外观（VM 缺失时回退持久值）。
     /// 透明度改动已即时落盘，VM 值 == 持久值，任何时机重放都不会把观感打回旧值。</summary>
     /// <summary>8-19 第二批：设置页汉堡 Popup 等路径显式重放透明度（Popup 合成重建后 TintOpacity
@@ -664,42 +670,60 @@ public partial class MainWindow : Window
     internal void ApplyAppearanceFromVm()
     {
         if (DataContext is MainViewModel main)
-            ApplyAppearance(main.Settings.WindowOpacity, (DensityMode)main.Settings.DensityIndex);
+            ApplyAppearance(main.Settings.Opacity, (DensityMode)main.Settings.DensityIndex);
         else
-            ApplyAppearance(LauncherSettings.Current.WindowOpacity, (DensityMode)LauncherSettings.Current.Density);
+            ApplyAppearance(LauncherSettings.Current.Opacity, (DensityMode)LauncherSettings.Current.Density);
     }
 
-    /// <summary>8-19 防御重放：观感未变则跳过——只有用户再次改动透明度才变化（硬性要求）。
-    /// 合成降级恢复时若当前 TintOpacity 与目标一致，什么都不做，避免无谓重写干扰预览。
-    /// 8-23 修：RootSurface 与 NavSurface 各自独立判断——合成降级时 NavSurface 可能不可见
-    /// （ApplyOpacityFallback 设 IsVisible=false → Material 失效），若用 NavSurface 阻塞 return，
-    /// RootSurface 透明度也恢复不了，用户点汉堡菜单后滑块失效（窗口停留实色）。</summary>
+    /// <summary>8-19 防御重放：观感未变则跳过——只有用户再次改动才变化（硬性要求）。
+    /// 8-23 改两档单选后按「档位 + BackgroundSource」一致性判断——Popup 合成重建可能把
+    /// BackgroundSource 打回 XAML 初值（Digger），单比 TintOpacity 会漏判。
+    /// RootSurface 与 NavSurface 各自独立判断（合成降级时 NavSurface 可能不可见，Material 失效）。</summary>
     private void ApplyAppearanceDefensive()
     {
         if (DataContext is not MainViewModel main || RootSurface?.Material is not ExperimentalAcrylicMaterial m) return;
-        var opacity = main.Settings.WindowOpacity;
-        var tint = 0.30 + (opacity - 0.7) * 2.1667;
-        var navTint = 0.55 + (opacity - 0.7) * 1.4; // 8-23 对齐 ApplyAppearance 的 NavSurface 映射
+        var mode = main.Settings.Opacity;
+        var solid = mode == OpacityMode.Solid;
         var navChanged = NavSurface?.Material is ExperimentalAcrylicMaterial nm
-            && Math.Abs(nm.TintOpacity - navTint) >= 0.001;
-        if (Math.Abs(m.TintOpacity - tint) < 0.001 && !navChanged) return;
-        ApplyAppearance(opacity, (DensityMode)main.Settings.DensityIndex);
+            && (nm.BackgroundSource != (solid ? AcrylicBackgroundSource.None : AcrylicBackgroundSource.Digger)
+                || Math.Abs(nm.TintOpacity - (solid ? 1.0 : 0.88)) >= 0.001);
+        if (m.BackgroundSource == (solid ? AcrylicBackgroundSource.None : AcrylicBackgroundSource.Digger)
+            && Math.Abs(m.TintOpacity - (solid ? 1.0 : 0.30)) < 0.001 && !navChanged) return;
+        ApplyAppearance(mode, (DensityMode)main.Settings.DensityIndex);
     }
 
-    /// <summary>应用外观设置：窗口透明度 + 界面密度（强调色由 App 应用）。
-    /// AL7：参数化——预览传 VM 值（未写盘），保存传 Settings 值。</summary>
-    private void ApplyAppearance(double opacity, DensityMode density)
+    /// <summary>应用外观设置：窗口观感档 + 界面密度（强调色由 App 应用）。
+    /// 8-23 滑块改两档单选：透明档 Digger（材质只有 None/Digger，Digger 即毛玻璃），实色档 None+TintOpacity=1 纯不透明。</summary>
+    private void ApplyAppearance(OpacityMode mode, DensityMode density)
     {
-        // 透明度：亚克力 TintOpacity 随设置（8-16 批次 50 整体调淡：0.7-1.0 → 0.30-0.95 映射）
+        // 观感：透明档固定 Digger 观感值（主区 0.30 / 导航 0.88 较实保可读）；实色档纯色不透明
         if (RootSurface?.Material is ExperimentalAcrylicMaterial m)
         {
-            m.TintOpacity = 0.30 + (opacity - 0.7) * 2.1667; // 0.7→0.30，1.0→0.95
+            m.TintColor = Avalonia.Media.Color.Parse("#12161F");
+            if (mode == OpacityMode.Solid)
+            {
+                m.BackgroundSource = AcrylicBackgroundSource.None;
+                m.TintOpacity = 1;
+            }
+            else
+            {
+                m.BackgroundSource = AcrylicBackgroundSource.Digger;
+                m.TintOpacity = 0.30;
+            }
         }
-        // 8-23 补：左导航随滑块变（此前恒 0.88，滑块只动内容区，观感像「没生效」）。
-        // 导航较实保可读：0.7→0.55，1.0→0.97
         if (NavSurface?.Material is ExperimentalAcrylicMaterial nm)
         {
-            nm.TintOpacity = 0.55 + (opacity - 0.7) * 1.4; // 0.7→0.55，1.0→0.97
+            nm.TintColor = Avalonia.Media.Color.Parse("#12161F");
+            if (mode == OpacityMode.Solid)
+            {
+                nm.BackgroundSource = AcrylicBackgroundSource.None;
+                nm.TintOpacity = 1;
+            }
+            else
+            {
+                nm.BackgroundSource = AcrylicBackgroundSource.Digger;
+                nm.TintOpacity = 0.88; // 8-18 调定：0.55 白壁纸下导航「花了」，接近实色保可读
+            }
         }
 
         // 密度：整 UI 缩放（AL7 上调：紧凑 0.95 / 标准 1.0 / 舒适 1.15——旧 0.9 默认把整 UI 缩 10%，字太小主因）

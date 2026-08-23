@@ -257,9 +257,9 @@ public partial class SettingsViewModel : ViewModelBase
 
     // ---------- 外观 ----------
 
-    /// <summary>窗口透明度（0.7-1.0）</summary>
+    /// <summary>窗口观感档（透明 Blur / 实色）——两档单选，点击即落盘生效</summary>
     [ObservableProperty]
-    public partial double WindowOpacity { get; set; } = 0.9;
+    public partial OpacityMode Opacity { get; set; } = OpacityMode.Blur;
 
     /// <summary>当前强调色（#RRGGBB）</summary>
     [ObservableProperty]
@@ -397,7 +397,7 @@ public partial class SettingsViewModel : ViewModelBase
         CurseForgeCdnPrefixText = s.CurseForgeCdnPrefix ?? "";
         CurseForgeApiBaseText = s.CurseForgeApiBase ?? "";
         ProxyAddressText = s.ProxyAddress ?? "";
-        WindowOpacity = s.WindowOpacity;
+        Opacity = s.Opacity;
         DensityIndex = (int)s.Density;
         BackgroundImagePathText = s.BackgroundImagePath ?? "";
         // 强调色：非预设值（老用户自定义）动态插「自定义 #HEX」项；选中项触发 AccentColor 赋值预览
@@ -531,44 +531,16 @@ public partial class SettingsViewModel : ViewModelBase
     partial void OnCurseForgeApiBaseTextChanged(string value) => Save();
 
     // 外观：预览模式（改动即时预览，[保存并应用] 才写盘）。
-    // 8-19 透明度硬性要求（用户验收）：透明度例外——拖动即落盘，持久值恒等于实时值；
-    // 否则合成降级恢复时防御重放会拿旧持久值把观感打回默认（实机：交互几次后透明度被重置）
-    partial void OnWindowOpacityChanged(double value)
+    // 8-23 窗口观感两档例外：单选点击即时落盘（持久值恒等于实时值），两档点击无连续触发、不需防抖。
+    partial void OnOpacityChanged(OpacityMode value)
     {
-        // 8-19 第二批：入口钳制到滑块范围 [0.7,1.0]——旧数据越界时 Slider 会钳制回写，
-        // 观感像「透明度被重置」
-        if (value < 0.7) value = 0.7;
-        else if (value > 1.0) value = 1.0;
         PreviewChanged?.Invoke();
         if (_loading) return;
-        LauncherSettings.Current.WindowOpacity = value;
-        DebouncedSaveOpacity();
+        LauncherSettings.Current.Opacity = value;
+        LauncherSettings.Current.Save();
     }
     partial void OnAccentColorChanged(string value) => PreviewChanged?.Invoke();
     partial void OnDensityIndexChanged(int value) => PreviewChanged?.Invoke();
-
-    private CancellationTokenSource? _opacityDebounce;
-
-    /// <summary>透明度落盘（150ms 防抖——滑块拖动连续触发，避免每 tick 全量序列化 settings.json）</summary>
-    private async void DebouncedSaveOpacity()
-    {
-        _opacityDebounce?.Cancel();
-        var cts = _opacityDebounce = new CancellationTokenSource();
-        try
-        {
-            await Task.Delay(150, cts.Token);
-            LauncherSettings.Current.Save();
-        }
-        catch (OperationCanceledException) { }
-    }
-
-    /// <summary>8-19 关闭前兜底：取消防抖立即落盘——防抖窗口内关窗/强杀会丢最后值（重启回调的残余根因）。
-    /// Closing 事件不可 await，用「取消 + 立即存」；Save 幂等，无条件调用无害</summary>
-    public void FlushPendingOpacitySave()
-    {
-        _opacityDebounce?.Cancel();
-        LauncherSettings.Current.Save();
-    }
 
     /// <summary>背景图片路径（""=无；预览模式，保存才写盘）</summary>
     [ObservableProperty]
@@ -611,7 +583,7 @@ public partial class SettingsViewModel : ViewModelBase
     private void SaveAppearance()
     {
         var s = LauncherSettings.Current;
-        s.WindowOpacity = WindowOpacity;
+        s.Opacity = Opacity;
         s.AccentColor = AccentColor;
         s.BackgroundColor = BackgroundColor;
         s.Density = (DensityMode)DensityIndex;
@@ -621,17 +593,17 @@ public partial class SettingsViewModel : ViewModelBase
         NotificationService.Success("外观已保存并应用");
     }
 
-    /// <summary>重置外观（恢复默认：0.9 / 靛蓝 / 标准 / 无背景）</summary>
+    /// <summary>重置外观（恢复默认：透明档 / 靛蓝 / 标准 / 无背景）</summary>
     [RelayCommand]
     private async Task ResetAppearance()
     {
         var owner = DialogService.MainWindow();
         if (owner is null || !await DialogService.Confirm(owner,
-                "把外观（透明度/强调色/密度/背景）重置回默认？", "重置外观", "重置", "取消"))
+                "把外观（观感档/强调色/密度/背景）重置回默认？", "重置外观", "重置", "取消"))
         {
             return;
         }
-        WindowOpacity = 0.9;
+        Opacity = OpacityMode.Blur;
         AccentColor = "#6C8CFF";
         BackgroundColor = BackgroundPaletteMath.DefaultBackground;
         BackgroundColorValue = Avalonia.Media.Color.Parse(BackgroundColor); // 同步 ColorPicker

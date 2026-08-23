@@ -1,6 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:Launcher.App.ViewModels"
+             xmlns:app="using:Launcher.App.Converters"
              x:Class="Launcher.App.Views.SectionAppearanceView"
              x:DataType="vm:SettingsViewModel">
 
@@ -8,17 +9,16 @@
     <Border Classes="setting-group">
         <StackPanel Spacing="10">
             <TextBlock Text="外观" Classes="group-header"/>
-            <TextBlock Text="窗口长什么样。透明度拖动即时生效、不用保存；颜色、背景和密度先预览，点「保存并应用」才永久生效。下面那个 LittleSkin Client ID 是皮肤库连接用的，LittleSkin 账号登录也走它——没填的话点「创建应用」注册一个再回来填。"
+            <TextBlock Text="窗口长什么样。观感档（透明/实色）点击即生效、不用保存；颜色、背景和密度先预览，点「保存并应用」才永久生效。下面那个 LittleSkin Client ID 是皮肤库连接用的，LittleSkin 账号登录也走它——没填的话点「创建应用」注册一个再回来填。"
                        Classes="dim" FontSize="11" TextWrapping="Wrap"/>
             <TextBlock Text="颜色" Classes="group-sub"/>
-            <Grid Classes="setting-row" ColumnDefinitions="Auto,*,Auto">
-                <TextBlock Text="窗口透明度" Classes="setting-label" VerticalAlignment="Center"/>
-                <Slider Grid.Column="1" Minimum="0.7" Maximum="1.0" TickFrequency="0.05"
-                        Value="{Binding WindowOpacity}"/>
-                <TextBlock Grid.Column="2" Text="{Binding WindowOpacity, StringFormat={}{0:0.0}}"
-                           Classes="dim" FontSize="12" Width="36" TextAlignment="Center"
-                           VerticalAlignment="Center"/>
-            </Grid>
+            <StackPanel Classes="setting-row" Orientation="Horizontal" Spacing="16">
+                <TextBlock Text="窗口观感" Classes="setting-label" VerticalAlignment="Center"/>
+                <RadioButton GroupName="OpacityMode" Content="透明（毛玻璃）" VerticalAlignment="Center"
+                             IsChecked="{Binding Opacity, Converter={x:Static app:ValueEqualsConverter.Instance}, ConverterParameter=Blur}"/>
+                <RadioButton GroupName="OpacityMode" Content="实色（纯不透明）" VerticalAlignment="Center"
+                             IsChecked="{Binding Opacity, Converter={x:Static app:ValueEqualsConverter.Instance}, ConverterParameter=Solid}"/>
+            </StackPanel>
             <Grid Classes="setting-row" ColumnDefinitions="Auto,*">
                 <TextBlock Text="强调色" Classes="setting-label" VerticalAlignment="Center"/>
                 <ComboBox Grid.Column="1" ItemsSource="{Binding AccentPresetItems}"
@@ -90,7 +90,7 @@
                 <Button Content="重置设置" Classes="danger" FontSize="12" Padding="16,6"
                         Command="{Binding ResetAppearanceCommand}"/>
                 <Border Classes="help-hint"
-                           ToolTip.Tip="透明度是即时生效的，不用保存；其他项先预览，点保存才永久生效。重置恢复默认，也要再保存"><Path/></Border>
+                           ToolTip.Tip="观感档（透明/实色）点击即生效，不用保存；其他项先预览，点保存才永久生效。重置恢复默认，也要再保存"><Path/></Border>
             </StackPanel>
         </StackPanel>
     </Border>
