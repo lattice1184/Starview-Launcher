@@ -48,6 +48,9 @@ public partial class GameDirSetupWindow : Window
             // 8-22：实例根跟随实际选择（Core 层修复/日志定位用正确目录）
             global::Launcher.Core.AppState.UpdateInstanceRoot(dir);
             global::Launcher.Core.Utils.GameDirectory.InvalidateScanCache();
+            // 8-23 修复：确认后立即重建主页版本列表——否则首跑选目录后仍显示默认目录空快照
+            try { _ = global::Launcher.App.ViewModels.MainViewModel.Current?.Home.RefreshVersionsAsync(); }
+            catch { /* 刷新失败不阻塞关窗 */ }
         }
         Close();
     }

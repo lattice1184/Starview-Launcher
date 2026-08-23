@@ -455,10 +455,14 @@ public sealed class DownloadService
                                 perSourceProgress.GetBytes(p.Index) >= total
                                 && noProgressSince[p.Index] > 0
                                 && Environment.TickCount64 - noProgressSince[p.Index] >= (long)(evalInterval.TotalMilliseconds * 2));
-                            if (stalledFull.Src is not null)
+                            // 8-23 高危修复：.race{key} 不存在 = 该源还在 chunked 合并（字节满但未落盘）——
+                            // 此时 Move 必抛 FileNotFoundException，且 Cancel 会杀掉真正合并的 Task → 假成功文件丢失。
+                            // 仅当 .race 真实存在（合并已落盘、确实卡在收尾）才提前完成；否则跳过交正常 done 路径。
+                            if (stalledFull.Src is not null
+                                && File.Exists($"{destPath}.race{RaceKey(stalledFull.Src)}"))
                             {
                                 try { File.Move($"{destPath}.race{RaceKey(stalledFull.Src)}", destPath, true); }
-                                catch { /* 竞态：该源 Task 恰好同时收尾 rename——正常流程接管 */ }
+                                catch (FileNotFoundException) { /* 竞态：源 Task 恰好同时收尾 rename——正常流程接管 */ }
                                 LogWrapper.Info($"[下载] 字节已满且停滞即完成({stalledFull.Index}): {ShortUrl(stalledFull.Src)} 耗时{swDl.Elapsed.TotalSeconds:0.0}s");
                                 raceCts.Cancel();
                                 var stragglers = pending.ToList();

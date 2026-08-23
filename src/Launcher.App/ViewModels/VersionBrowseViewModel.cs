@@ -84,6 +84,7 @@ public partial class VersionBrowseViewModel : ViewModelBase
     {
         try
         {
+            StartWatching(); // 8-23 修复：每次进入版本页重建 watcher——目录变更后跟随新目录，不再锁死旧目录
             await _svc.RefreshAsync();
             var installed = _svc.Entries.Where(e => e.Installed && InstallMarker.ShouldShowInPage(e.GameDirectory, e.Id))
                 .ToDictionary(e => e.Id, e => e.GameDirectory, StringComparer.OrdinalIgnoreCase);
@@ -140,7 +141,9 @@ public partial class VersionBrowseViewModel : ViewModelBase
 
     private void StartWatching()
     {
-        if (_watchers.Count > 0) return;
+        // 8-23 修复：原「只建一次」锁死旧目录（改目录 + InvalidateScanCache 后 watcher 仍指旧路径）。
+        // 改为每次调用先停旧再建新（幂等）——进版本页即重建，跟随当前 ScanSourceDirs。
+        StopWatching();
         foreach (var (dir, _) in GameDirectory.ScanSourceDirs())
         {
             var vd = Path.Combine(dir, "versions");
@@ -164,6 +167,16 @@ public partial class VersionBrowseViewModel : ViewModelBase
             }
             catch { /* 监听失败降级为操作后主动刷新 */ }
         }
+    }
+
+    /// <summary>8-23：释放全部旧 watcher（目录变更后重建用；幂等，重复调用安全）</summary>
+    private void StopWatching()
+    {
+        foreach (var w in _watchers)
+        {
+            try { w.EnableRaisingEvents = false; w.Dispose(); } catch { /* 已释放/监听失败 */ }
+        }
+        _watchers.Clear();
     }
 
     private void OnDiskChanged(object _, FileSystemEventArgs e)

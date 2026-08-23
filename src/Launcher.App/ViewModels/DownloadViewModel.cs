@@ -299,11 +299,17 @@ public partial class DownloadViewModel : ViewModelBase
             new DownloadService().DownloadFileAsync(url, target, null, null, p, ct));
     }
 
-    /// <summary>历史「打开位置」：资源管理器定位文件</summary>
+    /// <summary>历史「打开位置」：资源管理器定位——8-23 修复：模组/整合包安装的 TargetPath 是目录，
+    /// 目录直接打开；文件才用 /select 选中。</summary>
     [RelayCommand]
     private void OpenHistoryLocation(DownloadHistoryEntry? entry)
     {
         if (entry?.TargetPath is not { } dest) return;
+        if (Directory.Exists(dest))
+        {
+            Process.Start(new ProcessStartInfo(dest) { UseShellExecute = true });
+            return;
+        }
         if (!File.Exists(dest))
         {
             NotificationService.Error("文件已不存在（可能被移动或删除）");
