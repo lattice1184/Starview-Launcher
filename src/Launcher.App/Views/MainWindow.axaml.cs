@@ -670,15 +670,19 @@ public partial class MainWindow : Window
     }
 
     /// <summary>8-19 防御重放：观感未变则跳过——只有用户再次改动透明度才变化（硬性要求）。
-    /// 合成降级恢复时若当前 TintOpacity 与目标一致，什么都不做，避免无谓重写干扰预览。</summary>
+    /// 合成降级恢复时若当前 TintOpacity 与目标一致，什么都不做，避免无谓重写干扰预览。
+    /// 8-23 修：RootSurface 与 NavSurface 各自独立判断——合成降级时 NavSurface 可能不可见
+    /// （ApplyOpacityFallback 设 IsVisible=false → Material 失效），若用 NavSurface 阻塞 return，
+    /// RootSurface 透明度也恢复不了，用户点汉堡菜单后滑块失效（窗口停留实色）。</summary>
     private void ApplyAppearanceDefensive()
     {
         if (DataContext is not MainViewModel main || RootSurface?.Material is not ExperimentalAcrylicMaterial m) return;
         var opacity = main.Settings.WindowOpacity;
         var tint = 0.30 + (opacity - 0.7) * 2.1667;
         var navTint = 0.55 + (opacity - 0.7) * 1.4; // 8-23 对齐 ApplyAppearance 的 NavSurface 映射
-        if (NavSurface?.Material is not ExperimentalAcrylicMaterial nm) return;
-        if (Math.Abs(m.TintOpacity - tint) < 0.001 && Math.Abs(nm.TintOpacity - navTint) < 0.001) return;
+        var navChanged = NavSurface?.Material is ExperimentalAcrylicMaterial nm
+            && Math.Abs(nm.TintOpacity - navTint) >= 0.001;
+        if (Math.Abs(m.TintOpacity - tint) < 0.001 && !navChanged) return;
         ApplyAppearance(opacity, (DensityMode)main.Settings.DensityIndex);
     }
 

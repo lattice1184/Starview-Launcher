@@ -8,7 +8,7 @@
     <Border Classes="setting-group">
         <StackPanel Spacing="10">
             <TextBlock Text="游戏目录" Classes="group-header"/>
-            <TextBlock Text="启动器装游戏、存存档和模组的地方。可以换到别的盘（点「浏览…」），也可以指到 PCL2、官方启动器用过的 .minecraft 文件夹直接接着用——已有版本会被扫描出来，列表里标着来源。版本隔离开着时，每个版本单独一个文件夹，存档模组互不干扰。"
+            <TextBlock Text="启动器装游戏、存存档和模组的地方。可以换到别的盘（点「浏览…」），或指到一个已有的 .minecraft 文件夹直接接着用——那个文件夹里的版本会显示在列表里。版本隔离开着时，每个版本单独一个文件夹，存档模组互不干扰。"
                        Classes="dim" FontSize="11" TextWrapping="Wrap"/>
             <Grid Classes="setting-row" ColumnDefinitions="*,Auto">
                 <TextBox Grid.Column="0" Text="{Binding GameDirectoryText}" IsReadOnly="True"/>

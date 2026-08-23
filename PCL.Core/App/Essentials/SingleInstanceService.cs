@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.IO;
 using System.IO.Pipes;
 using System.Text;
@@ -52,11 +53,31 @@ public sealed partial class SingleInstanceService
                     _TryRpc(pid, "REQ cli\n" + JsonSerializer.Serialize(StartupService.UnhandledCommands, JsonCompat.SerializerOptions));
                     _TryRpc(pid, "REQ activate");
                 }
-                catch (Exception ex) { Context.Warn("RPC 通信失败", ex); }
+                catch (Exception ex)
+                {
+                    Context.Warn("RPC 通信失败", ex);
+                    // 8-23 残留锁自愈：进程被强杀（_Stop 不跑）会留死 PID 锁，RPC 必然失败。
+                    // 检查锁里 PID 是否真存活——已死说明是残留锁，清掉重试获取单例（不再无脑退出）。
+                    if (!IsProcessAlive(pid))
+                    {
+                        Context.Info($"锁内进程 {pid} 已不存在（残留锁），清理后重新获取单例");
+                        try { File.Delete(_LockFilePath); } catch { }
+                        _Start();
+                        return;
+                    }
+                }
             }
             catch (Exception ex) { Context.Error("读取单例锁出错", ex); }
             finally { Context.RequestExit(1); }
         }
+    }
+
+    /// <summary>8-23 判断锁内 PID 是否仍存活（残留死锁自愈用）</summary>
+    private static bool IsProcessAlive(string pid)
+    {
+        if (!int.TryParse(pid, out var id) || id <= 0) return false;
+        try { Process.GetProcessById(id); return true; }
+        catch { return false; }
     }
 
     [LifecycleStop]
