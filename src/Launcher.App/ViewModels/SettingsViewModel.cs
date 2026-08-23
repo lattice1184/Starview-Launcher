@@ -293,6 +293,11 @@ public partial class SettingsViewModel : ViewModelBase
     /// <summary>最近更新（关于页：改动最大的几条功能与修复，用户视角；随版本更新追加）</summary>
     public IReadOnlyList<string> ChangelogItems { get; } =
     [
+        "下载修复：大文件下载不再「提示完成但文件没落地」（合并阶段假成功根治）",
+        "历史「位置」按钮能打开目录了：模组/整合包安装记录直接定位到 mods 文件夹",
+        "首次设置游戏目录后主页版本立即刷新，不用再切页/重启",
+        "更换游戏目录后版本页自动跟随新目录，删除文件秒同步",
+        "设置-关于新增赞助者名单，感谢每一位支持者",
         "下载完成的文件直接装进当前版本的 mods 文件夹，不再落到缓存区找不到",
         "模组中文搜索变快了：默认走镜像加速，搜「优化」「小地图」不再干等",
         "日志中心：下载/启动/修复分三类整理，启动器里直接展开看，不用开记事本",
@@ -318,6 +323,12 @@ public partial class SettingsViewModel : ViewModelBase
 
     /// <summary>8-19 精简：关于页默认只列最近 5 条，完整日志收进折叠</summary>
     public IEnumerable<string> ChangelogItemsRecent => ChangelogItems.Take(5);
+
+    /// <summary>8-23 赞助者名单（用户的资金支持——启动器开发离不开他们）</summary>
+    public IReadOnlyList<string> Sponsors { get; } =
+    [
+        "jam🐏", "磊", "心做时间", "鳞x梦", "邪恶无极限", "懿筱'", "彭鱼宴", "江Lay",
+    ];
 
     /// <summary>「存储」分区（存储占用/上限/清理）</summary>
     public StorageSettingsViewModel Storage { get; } = new();

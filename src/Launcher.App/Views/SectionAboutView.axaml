@@ -63,6 +63,23 @@
             <TextBlock Classes="dim" FontSize="11" TextWrapping="Wrap"
                        Text="特别感谢 PCL Community：核心库 PCL.Core（Apache-2.0）是启动器的基石，本项目的下载与整合包等大量功能建立在其之上。"/>
 
+            <!-- 赞助者：用户的资金支持——启动器能走到今天，离不开他们 -->
+            <TextBlock Text="赞助者" Classes="setting-label" Margin="0,8,0,0"/>
+            <ItemsControl ItemsSource="{Binding Sponsors}" Margin="0,2,0,0">
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <Border Background="#16FFFFFF" CornerRadius="10" Padding="10,3" Margin="0,0,6,4">
+                            <TextBlock Text="{Binding}" Classes="dim" FontSize="11"/>
+                        </Border>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+            <TextBlock Classes="dim" FontSize="11" TextWrapping="Wrap"
+                       Text="这几位朋友的真金白银支撑着启动器一路走到今天，真心感谢每一位 ❤"/>
+
             <!-- 开源声明 / 第三方依赖 -->
             <TextBlock Text="开源声明" Classes="setting-label" Margin="0,8,0,0"/>
             <ItemsControl ItemsSource="{Binding ProjectNotices}">
