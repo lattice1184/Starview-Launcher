@@ -67,18 +67,27 @@ public sealed class AutoRepairService
             // AL31 修复快路径：先诊断缺失清单——0 缺失直接返回，不排下载队列（修复时"缺 0 个也全流程跑"是
             // 慢的体感来源之一；诊断本身是本地磁盘遍历，秒级）
             var preReport = await VerifyFilesAsync(merged, gameDir, version.InheritsFrom);
+            // 8-23 修：0 字节 client jar 视为损坏——存在性快路径不再把空文件当「已完整」跳过
+            // （用户反馈「显示文件需补全但自动修复失效」的一种静默形态）。
+            // 检测到空 jar 不 return（return 会被调用方当成功、自动重启仍崩）——删掉空文件，
+            // 让它落入下方 InstallAsync 真正补全下载。
+            var zeroJars = new List<string>();
             if (preReport.IsComplete)
             {
-                // 8-23 修：0 字节 client jar 视为损坏——存在性快路径不再把空文件当「已完整」跳过
-                // （用户反馈「显示文件需补全但自动修复失效」的一种静默形态）
                 var jarCandidates = new[]
                 {
                     Path.Combine(gameDir, "versions", merged.Id, $"{merged.Id}.jar"),
                     version.InheritsFrom is { } pid ? Path.Combine(gameDir, "versions", pid, $"{pid}.jar") : null,
                 };
-                if (jarCandidates.Any(p => p is not null && File.Exists(p) && new FileInfo(p).Length == 0))
-                    return "客户端 jar 为空（0 字节，疑似损坏），需要重新下载";
-                return "文件已完整，无需修复";
+                zeroJars = jarCandidates.Where(p => p is not null && File.Exists(p) && new FileInfo(p).Length == 0)
+                    .Select(p => p!).ToList();
+                if (zeroJars.Count == 0)
+                    return "文件已完整，无需修复";
+            }
+            // 0 字节 jar 删除后继续补全（否则 InstallAsync 的存在性判断可能跳过）
+            foreach (var p in zeroJars)
+            {
+                try { File.Delete(p); } catch { }
             }
             var task = DownloadManager.Instance.EnqueueGroup($"自动修复 {versionId}",
                 (ctx, ct) => installer.InstallAsync(merged, ctx, ct));
@@ -262,7 +271,9 @@ public sealed class AutoRepairService
                 return "日志中未识别到明确的冲突模组（可能是其他原因导致退出）";
 
             // 2. 扫实例 mods 目录，按 fabric.mod.json 的 id 精确匹配并禁用
-            var modsDir = Path.Combine(gameDir, "versions", versionId, "mods");
+            // 8-23 修：mods 目录按隔离开关解析（隔离开 versions/{id}/mods，隔离关共享根 mods）——
+            // 与 GameLaunchService 的 game_directory 一致，隔离关时不再找不到目录
+            var modsDir = Path.Combine(ModRepairService.InstanceRoot(gameDir, versionId), "mods");
             if (!Directory.Exists(modsDir)) return $"未找到 mods 目录（{modsDir}）";
             var disabled = new List<string>();
             foreach (var jar in Directory.EnumerateFiles(modsDir, "*.jar"))
@@ -277,7 +288,12 @@ public sealed class AutoRepairService
                 catch { /* 单个文件禁用失败不阻断其他 */ }
             }
             if (disabled.Count == 0)
-                return $"日志列出了冲突模组（{string.Join("、", conflicts)}），但 mods 目录未找到匹配的 jar";
+            {
+                // 8-23 修：识别到冲突但没禁用任何 jar → 抛异常（修复未完成）。此前返回普通字符串被
+                // TryAutoFixAsync 当成功 → 自动重启 → 二次崩溃。抛异常走 catch → 修复失败，不重启。
+                throw new InvalidOperationException(
+                    $"日志列出了冲突模组（{string.Join("、", conflicts)}），但 mods 目录未找到匹配的 jar，请手动处理");
+            }
             return $"已禁用与游戏版本不兼容的模组：{string.Join("、", disabled)}。" +
                    "游戏可以启动了；可在版本页重新启用这些模组（需换适配当前版本的版本）";
         }

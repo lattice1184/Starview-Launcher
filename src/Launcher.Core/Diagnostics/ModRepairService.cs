@@ -24,12 +24,20 @@ public sealed class ModRepairService
     public ModRepairService(HttpClient? http = null, DownloadService? downloads = null, string? gameDirectory = null)
         => _eco = new EcosystemService(http, downloads, gameDirectory);
 
+    /// <summary>实例运行目录（隔离开 → versions/{id}，隔离关 → 共享根 gameDir）——与
+    /// GameLaunchService/JavaArgumentsBuilder 的 game_directory 计算一致（8-23 修：硬编码
+    /// versions/{id} 在隔离关闭时找不到 mods/logs，模组冲突禁用/缺失自愈静默失效）。</summary>
+    public static string InstanceRoot(string gameDir, string instanceId)
+        => LauncherSettings.Current.VersionIsolation
+            ? Path.Combine(gameDir, "versions", instanceId)
+            : gameDir;
+
     public static string LatestLogPath(string gameDir, string instanceId)
-        => Path.Combine(gameDir, "versions", instanceId, "logs", "latest.log");
+        => Path.Combine(InstanceRoot(gameDir, instanceId), "logs", "latest.log");
 
     public static string? LatestCrashReportPath(string gameDir, string instanceId)
     {
-        var dir = Path.Combine(gameDir, "versions", instanceId, "crash-reports");
+        var dir = Path.Combine(InstanceRoot(gameDir, instanceId), "crash-reports");
         if (!Directory.Exists(dir)) return null;
         return Directory.EnumerateFiles(dir, "*.txt")
             .OrderByDescending(f => File.GetLastWriteTimeUtc(f))

@@ -169,6 +169,27 @@ public class DiagnosticsTests
         Assert.Contains("未识别到", result);
     }
 
+    [Fact]
+    public void FixConflictingMods_ConflictsButNoMatch_Throws()
+    {
+        // 8-23 B3 回归：日志识别到冲突模组，但 mods 目录没有匹配 jar → 必须抛异常（修复未完成），
+        // 不能被调用方当成功 → 自动重启 → 二次崩溃。
+        var dir = Path.Combine(Path.GetTempPath(), $"modrepair-{Guid.NewGuid():N}");
+        var instanceId = "fabric-loader-0.19.3-26.1";
+        Directory.CreateDirectory(Path.Combine(dir, "versions", instanceId, "mods"));
+        try
+        {
+            // mods 目录里只有无关模组，没有日志里冲突的 iris/sodium
+            CreateFakeFabricMod(Path.Combine(dir, "versions", instanceId, "mods", "other.jar"), "other");
+
+            var ex = Assert.Throws<InvalidOperationException>(() => AutoRepairService.FixConflictingMods(dir, instanceId,
+                "Incompatible mods found!\n将 模组 'Iris' (iris) 1.7.3+mc1.21 替换为"));
+
+            Assert.Contains("未找到匹配的 jar", ex.Message);
+        }
+        finally { try { Directory.Delete(dir, true); } catch { } }
+    }
+
     /// <summary>造一个含 fabric.mod.json 的最小假模组 jar</summary>
     private static void CreateFakeFabricMod(string path, string id)
     {
