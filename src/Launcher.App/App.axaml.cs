@@ -38,6 +38,10 @@ public partial class App : Application
                 actionText: "查看日志",
                 onAction: () => OpenLogCenter());
         });
+        // 8-23 修：自动修复失败全局提示——修复失败原因此前只进日志、UI 无感知（用户「自动修复失效且没报错」的根因）。
+        // 失败即 Toast 带真实原因；启动路径另有崩溃窗（HomeViewModel 主流程），这里覆盖崩溃窗修复按钮/服务端等其它路径。
+        Launcher.Core.Events.AppEvents.Subscribe<Launcher.Core.Events.RepairFailedEvent>(e =>
+            Services.NotificationService.Error($"自动修复失败：{e.Error}"));
         // 8-22 步骤1：Core 层统一状态初始化（实例根 + 当前版本）
         Launcher.Core.AppState.InitInstanceRoot(Launcher.Core.Utils.GameDirectory.InstallDir());
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)

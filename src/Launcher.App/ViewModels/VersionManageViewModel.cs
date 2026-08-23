@@ -280,18 +280,24 @@ public partial class VersionManageViewModel : ViewModelBase
         }
         try
         {
+            // 8-23 删时连带（用户确认）：删除前捕获父链——删后 json 没了无法再走 CleanupOrphanParents 的链，
+            // 被加载器吸收的原版（.prefetched + 无其他引用）就清理不掉、留红字残件。删除成功后才连带清理，不误删。
+            var parentChain = VersionInstaller.ParentChain(_gameDir, _versionId);
             var dir = Path.Combine(_gameDir, "versions", _versionId);
+            var mainGone = true;
             if (Directory.Exists(dir))
             {
                 // Windows 递归删除不原子：中途任一文件被占（游戏进程/杀毒扫描/索引器）会抛错，
                 // 已删部分不恢复 → 留下 json-only 残件 → 版本页显示「缺文件」红字。
                 // 策略：重试等短锁释放 → 仍失败则改名隔离（版本立刻消失）→ 后台续删。
-                if (!await TryDeleteWithRetryAsync(dir))
+                mainGone = await TryDeleteWithRetryAsync(dir);
+                if (!mainGone)
                 {
                     var quarantine = dir + $".deleting-{Guid.NewGuid():N}";
                     try
                     {
                         Directory.Move(dir, quarantine); // 目录内文件被独占占用时 rename 也失败 → 走 catch 报错
+                        mainGone = true;
                     }
                     catch (Exception mvEx)
                     {
@@ -302,17 +308,17 @@ public partial class VersionManageViewModel : ViewModelBase
                     NotificationService.Info($"「{_versionId}」已移除，残留文件正在后台清理（不影响使用）");
                 }
             }
-            // AL41：删除完整性——预取残留的父版本（json-only、无标记无 jar）一并清掉，
-            // 不再留下「删了加载器版本，原版还挂红字缺文件」的幽灵条目
-            VersionInstaller.CleanupOrphanParents(_gameDir, _versionId);
+            if (mainGone) VersionInstaller.CleanupParentsAfterDelete(_gameDir, parentChain);
             // 8-19 跨源副本：逐个删（主副本已删，个别失败静默——残留可走存储页手动清）
             foreach (var otherDir in others)
             {
                 try
                 {
+                    var chain = VersionInstaller.ParentChain(otherDir, _versionId);
                     var d = Path.Combine(otherDir, "versions", _versionId);
-                    if (Directory.Exists(d)) await TryDeleteWithRetryAsync(d);
-                    VersionInstaller.CleanupOrphanParents(otherDir, _versionId);
+                    var gone = !Directory.Exists(d);
+                    if (!gone) gone = await TryDeleteWithRetryAsync(d);
+                    if (gone) VersionInstaller.CleanupParentsAfterDelete(otherDir, chain);
                 }
                 catch { /* 跨源删除失败不阻断主流程 */ }
             }

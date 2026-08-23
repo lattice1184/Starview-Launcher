@@ -315,7 +315,15 @@ public partial class HomeViewModel : ViewModelBase
                 && !InstalledVersions.Any(v => v.Name.Equals(sv.Name, StringComparison.OrdinalIgnoreCase)))
                 SelectedVersion = null;
             if (InstalledVersions.Count > 0 && SelectedVersion is null)
-                SelectedVersion = InstalledVersions[0];
+            {
+                // 8-23：优先自动选中「最近安装的版本」——此前恒选列表第一个（清单序 = ReleaseTime 最新原版），
+                // 刚装的加载器版本从不被选中 → 下载模组「跟随实例」落到旧/错实例（用户反馈 TACZ 落错版的根因之一）
+                var lastInstalled = Launcher.Core.AppState.LastInstalledVersionId;
+                SelectedVersion = lastInstalled.Length > 0
+                    && InstalledVersions.FirstOrDefault(v => v.Name.Equals(lastInstalled, StringComparison.OrdinalIgnoreCase)) is { } li
+                    ? li
+                    : InstalledVersions[0];
+            }
         }
         catch { }
     }
@@ -682,7 +690,7 @@ public partial class HomeViewModel : ViewModelBase
                 // 崩溃弹窗（PCL 式）：游戏日志尾部 + 导出报告
                 var logTail = string.Join(Environment.NewLine, GameLogs.TakeLast(40));
                 // AL9/AL10 自修复：日志诊断 → 可自动修复 → 修复后自动重新启动一次（最多一次；修复本身最多试 2 次，全失败才弹窗）
-                if (!_autoFixApplied && await TryAutoFixWithRetryAsync(version, gameDir, string.Join(Environment.NewLine, GameLogs)))
+                if (!_autoFixApplied && await TryAutoFixWithRetryAsync(version, gameDir, BuildDiagText("")))
                 {
                     _autoFixApplied = true;
                     IsLaunching = false;
@@ -722,7 +730,8 @@ public partial class HomeViewModel : ViewModelBase
             var gameDir = overrideGameDir.Length > 0 ? overrideGameDir
                 : version.GameDir.Length > 0 ? version.GameDir : GameDirectory.Detect();
             var shouldFix = !_autoFixApplied
-                && (ex is FileNotFoundException or ParentVersionMissingException || await TryAutoFixWithRetryAsync(version, gameDir, ex.Message + "\n" + string.Join("\n", GameLogs)));
+                && (ex is FileNotFoundException or ParentVersionMissingException || await TryAutoFixWithRetryAsync(version, gameDir, BuildDiagText(ex.Message)));
+            string? lastFixError = null;
             if (shouldFix)
             {
                 if (ex is FileNotFoundException or ParentVersionMissingException)
@@ -733,7 +742,7 @@ public partial class HomeViewModel : ViewModelBase
                     {
                         if (attempt > 1) AppendLog($"§ 自动修复失败，正在重试（第 {attempt}/2 次）…");
                         try { AppendLog($"§ 自动修复完成：{await AutoRepairService.FixRedownloadAsync(version.Name, gameDir)}"); fixedOk = true; }
-                        catch (Exception fx) { AppendLog($"§ 自动修复失败: {fx.Message}"); }
+                        catch (Exception fx) { lastFixError = fx.Message; AppendLog($"§ 自动修复失败: {fx.Message}"); }
                     }
                     shouldFix = fixedOk;
                 }
@@ -746,11 +755,42 @@ public partial class HomeViewModel : ViewModelBase
                     return;
                 }
             }
-            // 自修复后仍失败：状态区红字之外必须弹窗（用户在别的页面时看不到 LaunchStatus）
-            NotificationService.Error($"启动失败：{LaunchStatus}");
+            // 8-23 修：自修复后仍失败 → 错误正大光明贴出来（此前只有红字 + 4.5s Toast，用户在别的页面看不到——
+            // 用户反馈「自动修复失效且没有报错提示」的根因）。复用崩溃窗带诊断 + 一键修复，真实原因 fx.Message 展示。
+            if (lastFixError is not null)
+            {
+                var logTail = string.Join(Environment.NewLine, GameLogs.TakeLast(40));
+                var diag = LogDiagnostics.DiagnoseDetailed(ex.Message + "\n" + logTail);
+                Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+                    Views.CrashReportWindow.Show($"启动失败 · 自动修复未成功",
+                        $"版本 {version.Name} 启动失败，自动修复未能完成。\n\n修复原因：{lastFixError}\n\n" +
+                        (ShowRepairGuide ? "你的客户端文件缺失，启动不了。" : ex.Message),
+                        logTail, diag, version.Name, gameDir));
+            }
+            else
+            {
+                // 非修复路径：保持通用 Toast（修复失败已有全局 RepairFailedEvent Toast + 上方崩溃窗，避免双弹）
+                NotificationService.Error($"启动失败：{LaunchStatus}");
+            }
             IsLaunching = false;
             IsRunning = false;
         }
+    }
+
+    /// <summary>8-23 修复：自修复诊断输入 = 额外原因 + 内存控制台 + 本次启动日志文件（launch-*.log）。
+    /// 此前只诊断内存 GameLogs（进程退出后丢失），用户诉求「自动读取当时日志执行修复」——日志文件才是完整证据。</summary>
+    private string BuildDiagText(string extra)
+    {
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine(extra);
+        foreach (var l in GameLogs) sb.AppendLine(l);
+        try
+        {
+            if (_launchLogPath is not null && File.Exists(_launchLogPath))
+                sb.Append(File.ReadAllText(_launchLogPath));
+        }
+        catch { /* 读日志失败不影响诊断 */ }
+        return sb.ToString();
     }
 
     /// <summary>AL10 自修复全自动：最多尝试 2 次（修复幂等只补缺失，瞬时网络失败自愈）；全失败返回 false</summary>

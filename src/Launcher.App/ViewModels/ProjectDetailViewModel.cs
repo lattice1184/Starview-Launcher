@@ -413,14 +413,26 @@ public partial class ProjectDetailViewModel : ViewModelBase
         }
         if (url is null || string.IsNullOrEmpty(fileName)) return;
 
-        // 8-22 路径修复：优先落当前版本实例 mods（versions/{CurrentVersionId}/mods）；无选中版本回退下载缓存
+        // 8-23 强制选目标（用户拍板：所有下载强制选实例，除第三方；整合包走独立实例）——
+        // 无当前版本 → 拦截提示，不静默回退 downloads\mods；有则弹目录选择器确认落点，取消不下载。
+        if (string.IsNullOrEmpty(Launcher.Core.AppState.CurrentVersionId))
+        {
+            NotificationService.Error("先选目标实例（主页版本下拉选中后再匹配下载）");
+            return;
+        }
         var baseDir = _instance is { GameDir.Length: > 0 } inst
             ? Launcher.Core.Utils.GameDirectory.ModInstallBaseDir(inst.GameDir)
             : Launcher.Core.Utils.GameDirectory.InstallDir();
-        var destPath = string.IsNullOrEmpty(Launcher.Core.AppState.CurrentVersionId)
-            ? Path.Combine(Launcher.Core.Utils.GameDirectory.InstallDir(), "downloads", "mods", fileName)
-            : Path.Combine(Launcher.Core.Services.EcosystemService.ResolveInstallPath(
-                baseDir, Launcher.Core.AppState.CurrentVersionId, _card.Type), fileName);
+        var defaultDir = Launcher.Core.Services.EcosystemService.ResolveInstallPath(
+            baseDir, Launcher.Core.AppState.CurrentVersionId, _card.Type);
+        if (DialogService.MainWindow() is { } pickerOwner)
+        {
+            var chosen = await DialogService.ConfirmInstallPath(
+                pickerOwner, defaultDir, Launcher.Core.AppState.CurrentVersionId, _card.Type);
+            if (chosen is null) return; // 取消 → 不下载
+            defaultDir = chosen;
+        }
+        var destPath = Path.Combine(defaultDir, fileName);
         IsDownloadingMatched = true;
         MatchedDownloadState = "";
         MatchedDownloadProgress = 0;
@@ -632,8 +644,9 @@ public partial class ProjectDetailViewModel : ViewModelBase
                 ? Launcher.Core.Utils.GameDirectory.ModInstallBaseDir(inst.GameDir)
                 : Launcher.Core.Utils.GameDirectory.InstallDir();
 
-            // 安装前路径确认（8-22 可编辑目录 + 实时预览落点）——null = 取消；改了就用新目录
-            if (DialogService.MainWindow() is { } owner2)
+            // 安装前路径确认（8-22 可编辑目录 + 实时预览落点）——null = 取消；改了就用新目录。
+            // 8-23 整合包豁免强制选目标：装独立实例 downloads/modpacks，不弹目录选择器
+            if (_card.Type != ProjectType.Modpack && DialogService.MainWindow() is { } owner2)
             {
                 var chosen = await DialogService.ConfirmInstallPath(owner2, gameDirFor, instanceName, _card.Type);
                 if (chosen is null) return;
@@ -837,8 +850,9 @@ public partial class ProjectDetailViewModel : ViewModelBase
                 ? Launcher.Core.Utils.GameDirectory.ModInstallBaseDir(inst.GameDir)
                 : Launcher.Core.Utils.GameDirectory.InstallDir();
 
-            // 安装前路径确认（8-22 可编辑目录 + 实时预览落点）——null = 取消；改了就用新目录
-            if (DialogService.MainWindow() is { } ownerPath)
+            // 安装前路径确认（8-22 可编辑目录 + 实时预览落点）——null = 取消；改了就用新目录。
+            // 8-23 整合包豁免强制选目标：装独立实例 downloads/modpacks，不弹目录选择器
+            if (_card.Type != ProjectType.Modpack && DialogService.MainWindow() is { } ownerPath)
             {
                 var chosen = await DialogService.ConfirmInstallPath(ownerPath, gameDirFor, instanceName, _card.Type);
                 if (chosen is null) return;

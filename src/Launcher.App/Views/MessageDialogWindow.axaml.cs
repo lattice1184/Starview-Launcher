@@ -54,15 +54,38 @@ public partial class MessageDialogWindow : Window
         return await ShowAndWaitAsync(owner, win, win._result = new());
     }
 
-    /// <summary>8-22 安装路径确认：可编辑安装目录 + 实时预览完整落点；null = 取消，否则用户确认的目录</summary>
+    /// <summary>8-23 PCL2 式安装路径选择：直接弹系统目录选择器（默认指向对应实例 mods 落点），
+    /// 一步到位不再「选实例下拉 + 文本框」两步；null = 取消（不安装），否则用户确认的目录。
+    /// StorageProvider 不可用（owner 不可见等）时回退旧文本框对话框。</summary>
     public static async Task<string?> ConfirmInstallPathAsync(Window? owner, string gameDir, string instanceId, ProjectType type)
+    {
+        var defaultPath = EcosystemService.ResolveInstallPath(gameDir, instanceId, type);
+        try
+        {
+            if (owner is { PlatformImpl: not null, IsVisible: true })
+            {
+                var start = await owner.StorageProvider.TryGetFolderFromPathAsync(defaultPath);
+                var folders = await owner.StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
+                {
+                    Title = "选择安装目录（默认已指向对应实例的 mods 文件夹）",
+                    AllowMultiple = false,
+                    SuggestedStartLocation = start,
+                });
+                if (folders.Count > 0) return folders[0].Path.LocalPath;
+                return null; // 用户取消 → 不安装
+            }
+        }
+        catch { /* 目录选择器异常 → 回退文本框对话框 */ }
+        return await ShowPathDialogAsync(owner, defaultPath, instanceId, type);
+    }
+
+    /// <summary>回退：旧文本框 + 浏览 + 实时落点预览（目录选择器不可用时的保底）</summary>
+    private static async Task<string?> ShowPathDialogAsync(Window? owner, string defaultPath, string instanceId, ProjectType type)
     {
         var win = new MessageDialogWindow { Title = "确认安装位置" };
         win.MessageText.Text = "安装目录（可以改成别的实例目录或自定义文件夹）：";
         win.PathPanel.IsVisible = true;
-        // 8-19 生态修缮：默认直达最终落点（{base}\versions\{id}\mods）——PCL 式精确到 mods 文件夹
-        // （ResolveInstallPath 已幂等：这个值再算一遍仍是它本身，预览不重复拼接）
-        win.PathInput.Text = EcosystemService.ResolveInstallPath(gameDir, instanceId, type);
+        win.PathInput.Text = defaultPath;
         win._instanceId = instanceId;
         win._pathType = type;
         win.UpdatePathPreview();

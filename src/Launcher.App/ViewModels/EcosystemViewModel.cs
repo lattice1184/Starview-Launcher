@@ -636,7 +636,8 @@ public partial class EcosystemViewModel : ViewModelBase
             // 安装前路径确认（8-22 可编辑目录 + 实时预览落点）——null = 取消；改了就用新目录
             // 8-19 生态修缮：外来（PCL/官方）实例只读不写——下载落点归类启动器目录
             var installDir = Launcher.Core.Utils.GameDirectory.ModInstallBaseDir(instance.GameDir);
-            if (DialogService.MainWindow() is { } pathOwner)
+            // 8-23 整合包豁免强制选目标：装独立实例 downloads/modpacks，不弹目录选择器
+            if (card.Type != ProjectType.Modpack && DialogService.MainWindow() is { } pathOwner)
             {
                 var chosen = await DialogService.ConfirmInstallPath(pathOwner, installDir, instanceName, card.Type);
                 if (chosen is null) return;
@@ -753,7 +754,8 @@ public partial class EcosystemViewModel : ViewModelBase
             // 安装前路径确认（8-22 可编辑目录 + 实时预览落点）——null = 取消；改了就用新目录
             // 8-19 生态修缮：外来（PCL/官方）实例只读不写——下载落点归类启动器目录
             var installDir = Launcher.Core.Utils.GameDirectory.ModInstallBaseDir(instance.GameDir);
-            if (DialogService.MainWindow() is { } pathOwner)
+            // 8-23 整合包豁免强制选目标：装独立实例 downloads/modpacks，不弹目录选择器
+            if (card.Type != ProjectType.Modpack && DialogService.MainWindow() is { } pathOwner)
             {
                 var chosen = await DialogService.ConfirmInstallPath(pathOwner, installDir, instanceName, card.Type);
                 if (chosen is null) return;

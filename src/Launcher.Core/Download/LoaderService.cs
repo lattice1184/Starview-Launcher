@@ -278,6 +278,9 @@ public sealed class LoaderService
         {
             await VerifyInstalledVersionAsync(id);
             InstallMarker.Mark(_gameDirectory, id);
+            // 8-23：加载器覆盖原版（装时吸收）——同 MC 原版已正式安装时降级隐藏（.yanla-installed → .prefetched），
+            // 加载器成为唯一条目；删加载器后 CleanupOrphanPrefetches 连带清理孤立原版（删得干净）
+            AbsorbVanilla(plan.McVersion, id);
             // 附带安装 Fabric API（用户勾选时）：失败只记日志不阻断——加载器已装完，API 是增强
             if (plan is { Kind: LoaderKind.Fabric, InstallFabricApi: true })
             {
@@ -302,6 +305,29 @@ public sealed class LoaderService
                 }
             }
         }
+    }
+
+    /// <summary>
+    /// 8-23：加载器覆盖原版（装时吸收）。原版已正式安装（.yanla-installed）时降级为预取
+    /// （.prefetched），主页/版本页即隐藏原版、加载器成唯一条目；删加载器后由
+    /// CleanupOrphanParents/CleanupOrphanPrefetches 连带清理孤立原版。
+    /// 守卫：仅当加载器 json 确实 inheritsFrom 该原版才吸收（防 Forge/NeoForge 独立结构误吸收
+    /// → 原版被当孤立预取删掉、加载器失去父版本）。
+    /// </summary>
+    private void AbsorbVanilla(string mcVersion, string loaderId)
+    {
+        if (string.IsNullOrEmpty(mcVersion)
+            || string.Equals(mcVersion, loaderId, StringComparison.OrdinalIgnoreCase)
+            || !InstallMarker.IsMarked(_gameDirectory, mcVersion)) return;
+        try
+        {
+            var loaderJson = Path.Combine(_gameDirectory, "versions", loaderId, $"{loaderId}.json");
+            var v = JsonSerializer.Deserialize<VersionJson>(File.ReadAllText(loaderJson));
+            if (!string.Equals(v?.InheritsFrom, mcVersion, StringComparison.OrdinalIgnoreCase)) return;
+        }
+        catch { return; }
+        InstallMarker.Unmark(_gameDirectory, mcVersion);
+        InstallMarker.MarkPrefetched(_gameDirectory, mcVersion);
     }
 
     /// <summary>

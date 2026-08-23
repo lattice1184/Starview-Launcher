@@ -50,32 +50,53 @@ public sealed class AutoRepairService
     /// </summary>
     public static async Task<string> FixRedownloadAsync(string versionId, string gameDir, int depth = 0)
     {
-        var installer = new VersionInstaller(gameDirectory: gameDir);
-        var version = await installer.GetOrFetchVersionJsonAsync(versionId, null, CancellationToken.None);
-        // 父版本补全：父 json 缺失 → 递归先补（深度上限防环）
-        if (depth < 3 && version.InheritsFrom is { } parentId
-            && !File.Exists(Path.Combine(gameDir, "versions", parentId, $"{parentId}.json")))
+        try
         {
-            try { await FixRedownloadAsync(parentId, gameDir, depth + 1); }
-            catch { /* 补父失败不阻断主修复（主下载的 merged 链可能已覆盖） */ }
+            var installer = new VersionInstaller(gameDirectory: gameDir);
+            var version = await installer.GetOrFetchVersionJsonAsync(versionId, null, CancellationToken.None);
+            // 父版本补全：父 json 缺失 → 递归先补（深度上限防环）
+            if (depth < 3 && version.InheritsFrom is { } parentId
+                && !File.Exists(Path.Combine(gameDir, "versions", parentId, $"{parentId}.json")))
+            {
+                try { await FixRedownloadAsync(parentId, gameDir, depth + 1); }
+                catch { /* 补父失败不阻断主修复（主下载的 merged 链可能已覆盖） */ }
+            }
+            var merged = VersionJsonMerger.ResolveChain(version, id => LoadParentJson(gameDir, id));
+            // AL31 修复快路径：先诊断缺失清单——0 缺失直接返回，不排下载队列（修复时"缺 0 个也全流程跑"是
+            // 慢的体感来源之一；诊断本身是本地磁盘遍历，秒级）
+            var preReport = await VerifyFilesAsync(merged, gameDir, version.InheritsFrom);
+            if (preReport.IsComplete)
+            {
+                // 8-23 修：0 字节 client jar 视为损坏——存在性快路径不再把空文件当「已完整」跳过
+                // （用户反馈「显示文件需补全但自动修复失效」的一种静默形态）
+                var jarCandidates = new[]
+                {
+                    Path.Combine(gameDir, "versions", merged.Id, $"{merged.Id}.jar"),
+                    version.InheritsFrom is { } pid ? Path.Combine(gameDir, "versions", pid, $"{pid}.jar") : null,
+                };
+                if (jarCandidates.Any(p => p is not null && File.Exists(p) && new FileInfo(p).Length == 0))
+                    return "客户端 jar 为空（0 字节，疑似损坏），需要重新下载";
+                return "文件已完整，无需修复";
+            }
+            var task = DownloadManager.Instance.EnqueueGroup($"自动修复 {versionId}",
+                (ctx, ct) => installer.InstallAsync(merged, ctx, ct));
+            await task.Completion;
+            if (task.TerminalState != DownloadTaskState.Completed)
+                throw new InvalidOperationException($"补全未完成（{task.TerminalState}）");
+            // AL10.2：下载后质检（含哈希）——修复不得"虚假成功"（下载列表曾静默跳过 url 形式库），缺失如实报告
+            var report = await VerifyFilesAsync(merged, gameDir, verifyHashes: true);
+            if (!report.IsComplete)
+                throw new InvalidOperationException($"补全后仍缺 {report.Missing} 个文件（首例：{report.MissingFiles[0]}）");
+            // 8-22 步骤3：修复完成事件（UI/日志订阅）
+            Launcher.Core.Events.AppEvents.Publish(new Launcher.Core.Events.RepairCompletedEvent(versionId, report.Present, DateTime.Now));
+            return $"补全完成（{report.SummaryText}）";
         }
-        var merged = VersionJsonMerger.ResolveChain(version, id => LoadParentJson(gameDir, id));
-        // AL31 修复快路径：先诊断缺失清单——0 缺失直接返回，不排下载队列（修复时"缺 0 个也全流程跑"是
-        // 慢的体感来源之一；诊断本身是本地磁盘遍历，秒级）
-        var preReport = await VerifyFilesAsync(merged, gameDir, version.InheritsFrom);
-        if (preReport.IsComplete) return "文件已完整，无需修复";
-        var task = DownloadManager.Instance.EnqueueGroup($"自动修复 {versionId}",
-            (ctx, ct) => installer.InstallAsync(merged, ctx, ct));
-        await task.Completion;
-        if (task.TerminalState != DownloadTaskState.Completed)
-            throw new InvalidOperationException($"补全未完成（{task.TerminalState}）");
-        // AL10.2：下载后质检（含哈希）——修复不得"虚假成功"（下载列表曾静默跳过 url 形式库），缺失如实报告
-        var report = await VerifyFilesAsync(merged, gameDir, verifyHashes: true);
-        if (!report.IsComplete)
-            throw new InvalidOperationException($"补全后仍缺 {report.Missing} 个文件（首例：{report.MissingFiles[0]}）");
-        // 8-22 步骤3：修复完成事件（UI/日志订阅）
-        Launcher.Core.Events.AppEvents.Publish(new Launcher.Core.Events.RepairCompletedEvent(versionId, report.Present, DateTime.Now));
-        return $"补全完成（{report.SummaryText}）";
+        catch (Exception ex)
+        {
+            // 8-23 修：修复失败发布事件（全局订阅者弹错误提示）——此前失败原因只进日志，UI 无感知
+            Launcher.Core.Events.AppEvents.Publish(new Launcher.Core.Events.RepairFailedEvent(versionId, ex.Message, DateTime.Now));
+            throw;
+        }
     }
 
     /// <summary>校验版本文件完整性：client jar + 本 OS 实际需要的 libraries 本地存在；返回质检报告（AL62）。

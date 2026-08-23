@@ -124,6 +124,8 @@ public partial class LoaderPickerViewModel : ViewModelBase
             if (task.State == DownloadTaskState.Completed)
             {
                 StatusText = $"已安装 {_kind} {lv}";
+                // 8-23：记录最近安装版本（主页下拉自动选中）
+                Launcher.Core.AppState.SetLastInstalledVersion(_service.LastInstalledVersionId);
                 _onInstalled();
             }
             else if (task.Error is { } err)

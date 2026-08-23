@@ -226,6 +226,9 @@ public partial class DownloadDetailVM : ObservableObject
             // 全部文件子任务并列，有真实 weight/进度/大小。旧写法 (p, c) 匹配 progress 重载 → 扁平单任务
             // "一次性"且 TotalBytes=0 显示 "0 B"
             await service.InstallAsync(plan, ctx, ct);
+            // 8-23：加载器安装完成 → 记录 loader id（主页自动选中；targetId 是 MC 原版 id，别用）
+            if (service.LastInstalledVersionId is { } loaderId)
+                Launcher.Core.AppState.SetLastInstalledVersion(loaderId);
         }
     }
 
@@ -265,6 +268,10 @@ public partial class DownloadDetailVM : ObservableObject
             if (task.State == DownloadTaskState.Completed)
             {
                 if (Id == targetId) Installed = true;
+                // 8-23：记录最近安装版本（主页下拉自动选中）——加载器安装的 loader id 已在
+                // InstallWithLoaderAsync 写入；纯原版这里写 targetId，加载器场景不覆盖
+                if (choice is null or { IsVanilla: true })
+                    Launcher.Core.AppState.SetLastInstalledVersion(targetId);
                 _onInstalled(targetId);
                 NotificationService.Success(repair ? $"{targetId} 修复完成" : $"{targetId} 安装完成");
             }

@@ -471,10 +471,20 @@ public sealed class EcosystemService
         // 把 mod 装进实例目录（游戏 game_directory=根、只读根 mods → 装完游戏不加载）；
         // 隔离关恒装共享目录；隔离开恒装实例目录（缺则创建——手改路径后新建实例也装对地方）
         var isolated = Launcher.Core.Utils.LauncherSettings.Current.VersionIsolation;
-        // 幂等（8-19 生态修缮）：输入已是最终落点不再重复拼接——隔离开识别 {base}\versions\{id}\{sub}；
-        // 隔离关识别 {base}\{sub}（PCL 式：弹窗默认值/浏览选中 mods 文件夹直达安装）
-        var needle = (isolated ? Path.Combine("versions", instanceId, sub) : sub).Replace('\\', '/');
-        if (norm.EndsWith(needle, StringComparison.OrdinalIgnoreCase)) return gameDirectory;
+        // 幂等（8-19 生态修缮）：输入已是最终落点不再重复拼接——隔离开识别 {base}\versions\{某实例}\{sub}；
+        // 隔离关识别 {base}\{sub}（PCL 式：弹窗默认值/浏览选中 mods 文件夹直达安装）。
+        // 8-23 修复（TACZ 嵌套路径 bug）：隔离开旧守卫按 instanceId 精确匹配——instanceId 与路径内实例名
+        // 不一致时失配，二次拼接成 {sub}\versions\{id}\{sub}（如 ...\mods\versions\TACZgun\mods）。
+        // 改为识别「任意实例」的 versions/{X}/{sub}：用户手改/浏览选了别的实例的 mods 目录也直接使用。
+        if (isolated)
+        {
+            if (Regex.IsMatch(norm, @"/versions/[^/]+/" + Regex.Escape(sub) + "$", RegexOptions.IgnoreCase))
+                return gameDirectory;
+        }
+        else if (norm.EndsWith("/" + sub, StringComparison.OrdinalIgnoreCase))
+        {
+            return gameDirectory;
+        }
         var baseDir = isolated
             ? Path.Combine(gameDirectory, "versions", instanceId)
             : gameDirectory;

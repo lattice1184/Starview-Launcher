@@ -17,6 +17,15 @@ public static class AppState
     /// <summary>当前选中版本 ID（如 fabric-loader-0.19.3-26.1.2；未选 = 空）</summary>
     public static string CurrentVersionId { get; private set; } = "";
 
+    /// <summary>最近安装的版本 ID（8-23：主页下拉自动选中最新安装——下载模组「跟随实例」落到正确目标）</summary>
+    public static string LastInstalledVersionId { get; private set; } = "";
+
+    /// <summary>版本安装完成时记录（主页刷新据此自动选中）</summary>
+    public static void SetLastInstalledVersion(string? versionId)
+    {
+        lock (Gate) { if (!string.IsNullOrEmpty(versionId)) LastInstalledVersionId = versionId; }
+    }
+
     /// <summary>启动器初始化时写入实例根（App 启动处调用一次）</summary>
     public static void InitInstanceRoot(string root)
     {
