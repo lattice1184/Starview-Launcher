@@ -18,8 +18,8 @@
             </ResourceDictionary.MergedDictionaries>
 
         <!-- ========== 设计令牌（单一调色板，视图引用资源而非硬编码） ========== -->
-        <!-- 背景色（含 alpha；ApplyBackgroundColor 运行时覆盖；XAML 默认值兜底 = 旧版硬编码值） -->
-        <Color x:Key="BackgroundColor">#B81D222C</Color>
+        <!-- 背景色（含 alpha；ApplyBackgroundColor 运行时覆盖；XAML 默认值兜底 = 8-23 加深 90%） -->
+        <Color x:Key="BackgroundColor">#E61D222C</Color>
         <!-- 表面层（ApplyBackgroundColor 运行时按背景色亮暗翻转覆盖——浅色背景 → 深字白卡；此处默认值兜底） -->
         <Color x:Key="BgBase">#14181F</Color>
         <Color x:Key="BgSurface">#1D222C</Color>

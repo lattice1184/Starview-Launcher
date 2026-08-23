@@ -12,8 +12,8 @@ public sealed record Rgba32(byte A, byte R, byte G, byte B);
 /// </summary>
 public static class BackgroundPaletteMath
 {
-    /// <summary>背景色默认值（= 旧版硬编码 ContentSurface 背景，老用户零变化）</summary>
-    public const string DefaultBackground = "#B81D222C";
+    /// <summary>背景色默认值（8-23 加深：0xB8=72% → 0xE6=90%——白色应用透不过半透明窗口，白字可读）</summary>
+    public const string DefaultBackground = "#E61D222C";
 
     /// <summary>校验并解析背景色：#RRGGBB（alpha=FF）或 #AARRGGBB；非法返回 null</summary>
     public static Rgba32? TryParse(string? hex)

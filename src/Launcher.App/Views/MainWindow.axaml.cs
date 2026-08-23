@@ -676,7 +676,9 @@ public partial class MainWindow : Window
         if (DataContext is not MainViewModel main || RootSurface?.Material is not ExperimentalAcrylicMaterial m) return;
         var opacity = main.Settings.WindowOpacity;
         var tint = 0.30 + (opacity - 0.7) * 2.1667;
-        if (Math.Abs(m.TintOpacity - tint) < 0.001) return;
+        var navTint = 0.55 + (opacity - 0.7) * 1.4; // 8-23 对齐 ApplyAppearance 的 NavSurface 映射
+        if (NavSurface?.Material is not ExperimentalAcrylicMaterial nm) return;
+        if (Math.Abs(m.TintOpacity - tint) < 0.001 && Math.Abs(nm.TintOpacity - navTint) < 0.001) return;
         ApplyAppearance(opacity, (DensityMode)main.Settings.DensityIndex);
     }
 
@@ -688,6 +690,12 @@ public partial class MainWindow : Window
         if (RootSurface?.Material is ExperimentalAcrylicMaterial m)
         {
             m.TintOpacity = 0.30 + (opacity - 0.7) * 2.1667; // 0.7→0.30，1.0→0.95
+        }
+        // 8-23 补：左导航随滑块变（此前恒 0.88，滑块只动内容区，观感像「没生效」）。
+        // 导航较实保可读：0.7→0.55，1.0→0.97
+        if (NavSurface?.Material is ExperimentalAcrylicMaterial nm)
+        {
+            nm.TintOpacity = 0.55 + (opacity - 0.7) * 1.4; // 0.7→0.55，1.0→0.97
         }
 
         // 密度：整 UI 缩放（AL7 上调：紧凑 0.95 / 标准 1.0 / 舒适 1.15——旧 0.9 默认把整 UI 缩 10%，字太小主因）

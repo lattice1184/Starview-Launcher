@@ -39,6 +39,14 @@ public class BackgroundPaletteMathTests
     }
 
     [Fact]
+    public void Derive_DeepenedDefault_StillDark() // 8-23 加深到 0xE6(90%) 后不误翻亮
+    {
+        var p = BackgroundPaletteMath.Derive(BackgroundPaletteMath.TryParse("#E61D222C")!);
+        Assert.False(p.IsLight);
+        Assert.Equal(BackgroundPaletteMath.DarkPalette, p);
+    }
+
+    [Fact]
     public void Derive_LightColor_FlipsToLightTheme() // 浅色背景 → 亮主题
     {
         var p = BackgroundPaletteMath.Derive(BackgroundPaletteMath.TryParse("#F0F0F0")!);
