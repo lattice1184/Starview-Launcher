@@ -31,10 +31,12 @@ public sealed class ResolvingDlSourceMapper : IDlSourceResolver
         _extra = extra ?? [];
     }
 
-    /// <summary>默认三候选：官方直连 + BMCLAPI + mcimirror（Modrinth 文件 CDN 镜像）。
-    /// 8-22 加 mcimirror：Fabric API 等官方 CDN 渐进限速几十 KB/s，mcimirror 提供第三候选竞速。</summary>
+    /// <summary>默认四候选：官方直连 + BMCLAPI(cdn-alt) + mcimirror + cdn-raw（Modrinth 原版 CDN）。
+    /// 8-22 加 mcimirror：Fabric API 等官方 CDN 渐进限速几十 KB/s，提供第三候选竞速。
+    /// 8-23 加 cdn-raw：Modrinth 官方对中国区强制重定向到 cdn-alt（IP 少、限速），cdn-raw 直连实测
+    /// 4 倍于官方（91KB/s vs 23KB/s）——真正的提速源，谁快用谁。</summary>
     public static ResolvingDlSourceMapper Default { get; } =
-        new(new DefaultDlSourceMapper(), new BmclapiDlSourceMapper(), new McimirrorDlSourceMapper());
+        new(new DefaultDlSourceMapper(), new BmclapiDlSourceMapper(), new McimirrorDlSourceMapper(), new ModrinthRawDlSourceMapper());
 
     public IReadOnlyList<string> Resolve(string url)
     {
@@ -70,6 +72,18 @@ public sealed class McimirrorDlSourceMapper : IDlSourceMapper
 public sealed class DefaultDlSourceMapper : IDlSourceMapper
 {
     public string Map(string url) => url;
+}
+
+/// <summary>8-23 Modrinth 原版 CDN（cdn-raw）：官方把中国区流量强制重定向到 cdn-alt（IP 少、限速几十 KB/s），
+/// cdn-raw 直连实测 91KB/s vs 官方 23KB/s（4 倍）——加入竞速候选，SHA1 校验兜底，谁快用谁。</summary>
+public sealed class ModrinthRawDlSourceMapper : IDlSourceMapper
+{
+    public string Map(string url)
+    {
+        if (url.Contains("cdn.modrinth.com"))
+            return url.Replace("https://cdn.modrinth.com", "https://cdn-raw.modrinth.com");
+        return url;
+    }
 }
 
 /// <summary>
