@@ -20,6 +20,7 @@ public partial class CrashReportWindow : Window
     private string _error = "";
     private string? _fixVersionId;
     private string? _fixGameDir;
+    private string _diagLog = ""; // 诊断用完整日志（供禁用冲突模组提取 mod id）
 
     public CrashReportWindow()
     {
@@ -40,13 +41,14 @@ public partial class CrashReportWindow : Window
         win.Title = title;
         win.ErrorText.Text = error;
         win.LogPreview.Text = logPreview;
+        win._diagLog = logPreview; // 完整日志供禁用冲突模组提取 mod id
         if (diagnostics is { Count: > 0 })
         {
             win.DiagSection.IsVisible = true;
             var hasFixable = false;
             foreach (var h in diagnostics)
             {
-                var fixable = h.Fix is FixKind.Redownload or FixKind.ReExtractNatives;
+                var fixable = h.Fix is FixKind.Redownload or FixKind.ReExtractNatives or FixKind.DisableConflictingMods;
                 hasFixable |= fixable;
                 win.DiagList.Items.Add(new DiagLine($"▸ 匹配：{h.Snippet}\n  说明：{h.Explanation}",
                     fixable ? "· 可自动修复" : "· 需手动处理",
@@ -55,6 +57,19 @@ public partial class CrashReportWindow : Window
             win.RepairBtn.IsVisible = hasFixable && !string.IsNullOrEmpty(fixVersionId);
             win._fixVersionId = fixVersionId;
             win._fixGameDir = fixGameDir;
+            // 8-23：报错弹窗出现时自动修复就自动运行，不需要用户点按钮——窗口显示后自动触发（模态/独立都覆盖）
+            if (win.RepairBtn.IsVisible)
+            {
+                win.Opened += async (_, _) =>
+                {
+                    try
+                    {
+                        await Task.Delay(200); // 等窗口完全渲染，避免 UI 未就绪
+                        await win.RunRepairAsync(autoRun: true);
+                    }
+                    catch { /* 自动修复失败走按钮重试 */ }
+                };
+            }
         }
         if (Application.Current?.ApplicationLifetime is
             Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime { MainWindow: { } main }
@@ -172,33 +187,40 @@ public partial class CrashReportWindow : Window
 
     private void OnClose(object? sender, RoutedEventArgs e) => Close();
 
-    /// <summary>AL9 一键修复：补全重下走下载队列/重解压 natives，完成后提示用户重新启动。
+    /// <summary>AL9 一键修复：补全重下走下载队列/重解压 natives/禁用冲突模组，完成后提示用户重新启动。
     /// B1 修复：去掉 Task.Run——FixRedownloadAsync 内部 EnqueueGroup 要在 UI 线程入队
     /// （DownloadManager.Tasks 是 UI 绑定 ObservableCollection，后台线程 Add 会跨线程崩溃）；
-    /// 全程 await IO 不阻塞 UI，后台执行由下载队列自身承担。</summary>
-    private async void OnRepair(object? sender, RoutedEventArgs e)
+    /// 全程 await IO 不阻塞 UI，后台执行由下载队列自身承担。
+    /// 8-23：autoRun=true（报错弹窗自动触发）时不做 ModRepairFlow 确认弹窗（模态窗口叠加会冲突）。</summary>
+    private async void OnRepair(object? sender, RoutedEventArgs e) => await RunRepairAsync(autoRun: false);
+
+    private async Task RunRepairAsync(bool autoRun)
     {
         var versionId = _fixVersionId;
         // 8-22 步骤7：修复路径统一到当前实例——_fixGameDir 来自启动链路（已正确），空时兜底 AppState.InstanceRoot
-        var gameDir = string.IsNullOrEmpty(_fixGameDir) ? global::Launcher.Core.AppState.InstanceRoot : _fixGameDir;        if (string.IsNullOrEmpty(versionId)) return;
+        var gameDir = string.IsNullOrEmpty(_fixGameDir) ? global::Launcher.Core.AppState.InstanceRoot : _fixGameDir;
+        if (string.IsNullOrEmpty(versionId)) return;
         RepairBtn.IsEnabled = false;
         RepairBtn.Content = "正在修复…";
         try
         {
             var kind = DiagList.Items.OfType<DiagLine>()
-                .FirstOrDefault(l => l.Kind is FixKind.Redownload or FixKind.ReExtractNatives)?.Kind ?? FixKind.Redownload;
+                .FirstOrDefault(l => l.Kind is FixKind.Redownload or FixKind.ReExtractNatives or FixKind.DisableConflictingMods)?.Kind ?? FixKind.Redownload;
             string result;
             try
             {
-                result = kind == FixKind.ReExtractNatives
-                    ? AutoRepairService.FixNatives(versionId, gameDir)
-                    : await AutoRepairService.FixRedownloadAsync(versionId, gameDir);
+                result = kind switch
+                {
+                    FixKind.ReExtractNatives => AutoRepairService.FixNatives(versionId, gameDir),
+                    FixKind.DisableConflictingMods => AutoRepairService.FixConflictingMods(gameDir, versionId, _diagLog),
+                    _ => await AutoRepairService.FixRedownloadAsync(versionId, gameDir),
+                };
             }
             catch (Exception ex) { result = $"修复失败：{ex.Message}"; }
             RepairBtn.Content = result.StartsWith("修复失败") ? "修复失败（看日志）" : "修复完成，请重新启动";
-            // AL57 模组缺失自愈：版本文件修复后读游戏日志，缺失前置 → 确认 → 自动补全
+            // AL57 模组缺失自愈：版本文件修复后读游戏日志，缺失前置 → 确认 → 自动补全（自动路径不弹确认）
             if (!result.StartsWith("修复失败") && gameDir.Length > 0)
-                await ModRepairFlow.TryRepairAsync(gameDir, versionId, this);
+                await ModRepairFlow.TryRepairAsync(gameDir, versionId, autoRun ? null : this, requireConfirm: !autoRun);
         }
         finally { RepairBtn.IsEnabled = true; }
     }

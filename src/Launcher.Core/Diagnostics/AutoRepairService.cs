@@ -1,4 +1,6 @@
+using System.IO.Compression;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Launcher.Core.Download;
 using Launcher.Core.Launch;
 using Launcher.Core.Model.Mojang;
@@ -240,5 +242,125 @@ public sealed class AutoRepairService
         var profile = new JavaArgumentsBuilder().Build(version, gameDir, "", "", "", "", 0);
         GameLaunchService.ExtractNatives(profile.NativeJars, profile.NativesDirectory, clearFirst: true);
         return $"已重新解压 {profile.NativeJars.Length} 个 natives 库";
+    }
+
+    /// <summary>
+    /// 禁用与游戏版本不兼容的模组（8-23）：从日志提取「Incompatible mods found」冲突模组 id，
+    /// 扫实例 mods 目录 jar（读 fabric.mod.json 的 id 精确匹配），命中重命名 .jar→.jar.disabled。
+    /// 让游戏能启动；用户可在版本页重新启用或换适配版本。返回处理描述；无冲突/已处理返回说明。
+    /// logText 非空时优先用它提取（调用方手里的完整日志——启动器 launch-*.log 内容），
+    /// 否则回退读实例 latest.log + 崩溃报告。</summary>
+    public static string FixConflictingMods(string gameDir, string versionId, string? logText = null)
+    {
+        try
+        {
+            // 1. 从日志提取冲突模组 id（优先调用方传入的完整诊断文本）
+            var conflicts = string.IsNullOrWhiteSpace(logText)
+                ? ExtractConflictingModIds(gameDir, versionId)
+                : ExtractConflictingModIdsFromText(logText);
+            if (conflicts.Count == 0)
+                return "日志中未识别到明确的冲突模组（可能是其他原因导致退出）";
+
+            // 2. 扫实例 mods 目录，按 fabric.mod.json 的 id 精确匹配并禁用
+            var modsDir = Path.Combine(gameDir, "versions", versionId, "mods");
+            if (!Directory.Exists(modsDir)) return $"未找到 mods 目录（{modsDir}）";
+            var disabled = new List<string>();
+            foreach (var jar in Directory.EnumerateFiles(modsDir, "*.jar"))
+            {
+                var id = ReadModId(jar);
+                if (id is null || !conflicts.Contains(id, StringComparer.OrdinalIgnoreCase)) continue;
+                try
+                {
+                    File.Move(jar, jar + ".disabled");
+                    disabled.Add($"{id}（{Path.GetFileName(jar)}）");
+                }
+                catch { /* 单个文件禁用失败不阻断其他 */ }
+            }
+            if (disabled.Count == 0)
+                return $"日志列出了冲突模组（{string.Join("、", conflicts)}），但 mods 目录未找到匹配的 jar";
+            return $"已禁用与游戏版本不兼容的模组：{string.Join("、", disabled)}。" +
+                   "游戏可以启动了；可在版本页重新启用这些模组（需换适配当前版本的版本）";
+        }
+        catch (Exception ex)
+        {
+            Launcher.Core.Events.AppEvents.Publish(new Launcher.Core.Events.RepairFailedEvent(versionId, ex.Message, DateTime.Now));
+            throw;
+        }
+    }
+
+    /// <summary>从实例日志文件提取「Incompatible mods found」里的冲突模组 id（Fabric 版）——
+    /// 读 latest.log（尾部 200KB）+ 崩溃报告，合并后交 FromText 提取。</summary>
+    private static List<string> ExtractConflictingModIds(string gameDir, string versionId)
+    {
+        var sb = new System.Text.StringBuilder();
+        var log = ModRepairService.LatestLogPath(gameDir, versionId);
+        if (File.Exists(log))
+        {
+            try
+            {
+                var tail = File.ReadAllText(log);
+                sb.AppendLine(tail.Length > 200_000 ? tail[^200_000..] : tail); // 尾部 200KB
+            }
+            catch { /* 日志读失败不影响 */ }
+        }
+        if (ModRepairService.LatestCrashReportPath(gameDir, versionId) is { } cr && File.Exists(cr))
+        {
+            try { sb.AppendLine(File.ReadAllText(cr)); } catch { }
+        }
+        return ExtractConflictingModIdsFromText(sb.ToString());
+    }
+
+    /// <summary>从日志文本提取「Incompatible mods found」里的冲突模组 id。
+    /// 特征：中文版 "模组 'Iris' (iris) 1.7.3+mc1.21" / 英文版 "mod 'X' (x)"，
+    /// 或 Fabric 的 "Some of your mods are incompatible" 后 "将 模组 'X' (id) ... 替换为"。
+    /// 正则匹配 '(name)' (id) 元组，取括号内 id（英文 Fabric 也输出同构 "Mod 'x' (x)"）。</summary>
+    private static List<string> ExtractConflictingModIdsFromText(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return [];
+        if (!text.Contains("Incompatible", StringComparison.OrdinalIgnoreCase)
+            && !text.Contains("mods are incompatible", StringComparison.OrdinalIgnoreCase)
+            && !text.Contains("replace", StringComparison.OrdinalIgnoreCase)
+            && !text.Contains("替换为", StringComparison.OrdinalIgnoreCase))
+            return [];
+
+        var ids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        // 中文版：模组 'Iris' (iris) 1.7.3+mc1.21 / 英文版：mod 'X' (x) / 模组 'Sodium' (sodium)
+        foreach (Match m in Regex.Matches(text, @"'([^']+)'\s*\(([a-zA-Z0-9_\-]+)\)"))
+        {
+            var id = m.Groups[2].Value;
+            if (IsPlausibleModId(id)) ids.Add(id);
+        }
+        // 兜底：中文「将 模组 'Iris' (iris) 1.7.3+mc1.21 替换为」里 id 已在上面正则覆盖；再补「- iris」风格行
+        foreach (Match m in Regex.Matches(text, @"[\s,(（]?([a-zA-Z][a-zA-Z0-9_\-]{1,24})\s+\d+\.\d+", RegexOptions.IgnoreCase))
+        {
+            var id = m.Groups[1].Value.Trim();
+            if (IsPlausibleModId(id)) ids.Add(id);
+        }
+        return ids.ToList();
+    }
+
+    /// <summary>模组 id 合理性过滤：排除 Fabric 常见非模组词</summary>
+    private static bool IsPlausibleModId(string id)
+    {
+        if (id.Length < 2 || id.Length > 40) return false;
+        if (id[0] == '_' || id[0] == '-') return false;
+        return id is not ("minecraft" or "fabric" or "java" or "loader" or "api" or "mod" or "version" or "client" or "server" or "replace" or "reason" or "add" or "remove" or "hint" or "fix" or "missing" or "required" or "dependency" or "dependencies" or "the" or "you" or "that");
+    }
+
+    /// <summary>读 jar（zip）内 fabric.mod.json 的 id；无 / 解析失败返回 null（不匹配任何冲突）</summary>
+    private static string? ReadModId(string jarPath)
+    {
+        try
+        {
+            using var zip = ZipFile.OpenRead(jarPath);
+            var entry = zip.GetEntry("fabric.mod.json");
+            if (entry is null) return null; // 非 Fabric 模组（Forge 等）不参与禁用
+            using var reader = new StreamReader(entry.Open());
+            using var doc = JsonDocument.Parse(reader.ReadToEnd());
+            if (doc.RootElement.TryGetProperty("id", out var id))
+                return id.GetString();
+            return null;
+        }
+        catch { return null; }
     }
 }

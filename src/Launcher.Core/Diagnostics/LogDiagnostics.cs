@@ -4,13 +4,13 @@ namespace Launcher.Core.Diagnostics;
 
 /// <summary>修复动作分类（AL9 自修复引擎）：AdviceOnly=仅建议；Redownload=版本文件补全重下；ReExtractNatives=重解压 natives；
 /// RetryDownload=下载自动重试一次；RestartService=重启联机服务；ReinstallModule=重装联机模块；CheckNetwork=网络建议（建议类）</summary>
-public enum FixKind { AdviceOnly, Redownload, ReExtractNatives, RetryDownload, RestartService, ReinstallModule, CheckNetwork }
+public enum FixKind { AdviceOnly, Redownload, ReExtractNatives, DisableConflictingMods, RetryDownload, RestartService, ReinstallModule, CheckNetwork }
 
 /// <summary>单条诊断命中（结构化，供自修复引擎与崩溃窗诊断区使用）</summary>
 public sealed record DiagnosticHit(string Snippet, string Explanation, FixKind Fix)
 {
     /// <summary>是否可执行修复动作（UI「一键修复」按钮显隐）；CheckNetwork/AdviceOnly 属建议类</summary>
-    public bool IsAutoFixable => Fix is FixKind.Redownload or FixKind.ReExtractNatives or FixKind.RetryDownload or FixKind.RestartService or FixKind.ReinstallModule;
+    public bool IsAutoFixable => Fix is FixKind.Redownload or FixKind.ReExtractNatives or FixKind.DisableConflictingMods or FixKind.RetryDownload or FixKind.RestartService or FixKind.ReinstallModule;
 }
 
 /// <summary>
@@ -53,9 +53,14 @@ public static class LogDiagnostics
         (new Regex(@"Unexpected error while creating framebuffer|Draw buffers \[\d+, \d+\] Status", RegexOptions.IgnoreCase),
             "渲染帧缓冲创建失败：常见于 Iris 光影与显卡驱动冲突。可尝试关闭光影或更新显卡驱动。",
             FixKind.AdviceOnly),
-        (new Regex(@"Missing or unsupported mandatory dependencies|Could not find required mod|requires .* that is missing|would be incompatible", RegexOptions.IgnoreCase),
+        (new Regex(@"Missing or unsupported mandatory dependencies|Could not find required mod|requires .* that is missing", RegexOptions.IgnoreCase),
             "模组依赖缺失或不兼容：缺少依赖模组或版本冲突。请补全依赖或移除冲突模组。",
             FixKind.AdviceOnly),
+        // 8-23 模组版本不匹配游戏版本：Fabric 启动器「Incompatible mods found」（如 iris/sodium 是 1.21 版配 26.1 游戏、malilib/tweakeroo 要 26.2）
+        // 自动修复=禁用冲突模组 jar（.jar→.jar.disabled，可在版本页重新启用），让游戏能启动。
+        (new Regex(@"Incompatible mods found|Some of your mods are incompatible|is not compatible with the game|to a compatible version", RegexOptions.IgnoreCase),
+            "模组版本与游戏版本不匹配（如模组是 1.21 版、游戏是 26.1；或模组要求 26.2 而装了 26.1）。将自动禁用这些冲突模组，游戏即可启动（可在版本页重新启用或换适配版本）。",
+            FixKind.DisableConflictingMods),
         (new Regex(@"BindException|Address already in use|Port \d+ was already in use", RegexOptions.IgnoreCase),
             "端口被占用：服务端口已被其他程序（或另一个服务端）占用。修改 server.properties 的 server-port 后重试。",
             FixKind.AdviceOnly),
