@@ -16,6 +16,8 @@ REVIEW-E.md
 宣传/
 
 # 发布期本地配置/工具（不随仓库分发）
+# 8-23 CF key 持久化位置（gitignore 本机文件，发布脚本读它注入）
+.local/
 obfuscar.xml
 scripts/check-obfuscation.py
 scripts/attach-test.ps1
