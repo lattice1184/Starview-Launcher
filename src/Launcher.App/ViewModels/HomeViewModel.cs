@@ -759,13 +759,14 @@ public partial class HomeViewModel : ViewModelBase
             // 用户反馈「自动修复失效且没有报错提示」的根因）。复用崩溃窗带诊断 + 一键修复，真实原因 fx.Message 展示。
             if (lastFixError is not null)
             {
-                var logTail = string.Join(Environment.NewLine, GameLogs.TakeLast(40));
-                var diag = LogDiagnostics.DiagnoseDetailed(ex.Message + "\n" + logTail);
+                // 8-23 修：修复失败 → 大窗口弹窗 + 附带完整日志（用户明确不要 toast）
+                var logPreview = BuildDiagText(ex.Message); // 内存控制台 + 本次 launch-*.log 完整内容
+                var diag = LogDiagnostics.DiagnoseDetailed(ex.Message + "\n" + string.Join("\n", GameLogs.TakeLast(60)));
                 Avalonia.Threading.Dispatcher.UIThread.Post(() =>
                     Views.CrashReportWindow.Show($"启动失败 · 自动修复未成功",
                         $"版本 {version.Name} 启动失败，自动修复未能完成。\n\n修复原因：{lastFixError}\n\n" +
                         (ShowRepairGuide ? "你的客户端文件缺失，启动不了。" : ex.Message),
-                        logTail, diag, version.Name, gameDir));
+                        logPreview, diag, version.Name, gameDir));
             }
             else
             {
