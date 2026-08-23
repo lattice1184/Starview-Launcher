@@ -12,7 +12,7 @@ public static class ThirdPartyLicenses
     /// <summary>启动器自身与移植组件的开源声明</summary>
     public static readonly string[] ProjectNotices =
     [
-        "Lattice Launcher 依据 Apache-2.0 许可开源。",
+        "Starview Launcher 依据 Apache-2.0 许可开源。",
         "PCL.Core 为 PCL Community 开源核心库，依据 Apache-2.0 许可（见 NOTICE）。",
         "联机模块 Terracotta 源自 BlockHelm-Launcher，依据 GPL-3.0 许可。",
         "联机隧道底层与独立联机方案 EasyTier 依据 LGPL-3.0 许可（源码：github.com/EasyTier/EasyTier）。",
