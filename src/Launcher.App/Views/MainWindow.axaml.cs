@@ -521,7 +521,7 @@ public partial class MainWindow : Window
                 return (bg, Brushes.White);
             }
         }
-        return (Brushes.Transparent, new SolidColorBrush(Color.Parse("#8A93A6"))); // TextSecondary
+        return (Brushes.Transparent, new SolidColorBrush(Color.Parse("#AEB8C9"))); // 8-24 调亮：白底叠加时细字对比度（原 #8A93A6 被毛玻璃 wash 糊住）
     }
 
     /// <summary>激活指示条滑到目标按钮：首次直接定位，之后 180ms 平滑滑动（host=Indicator 互斥打断连点）。
@@ -677,6 +677,25 @@ public partial class MainWindow : Window
             ApplyAppearance(main.Settings.Opacity, (DensityMode)main.Settings.DensityIndex);
         else
             ApplyAppearance(LauncherSettings.Current.Opacity, (DensityMode)LauncherSettings.Current.Density);
+    }
+
+    /// <summary>8-24 窗口内模态覆盖层：承载确认弹窗（DialogOverlay）。主窗口内渲染 → 不开第二个
+    /// 顶层窗口 → 主窗口不失活、亚克力合成不降级，弹窗期间保持透明（根治「点确认弹窗回调实色」）。</summary>
+    internal void ShowDialogOverlay(UserControl content)
+    {
+        DialogContent.Content = content;
+        DialogHost.Opacity = 0;
+        DialogHost.IsVisible = true;
+        DialogHost.Opacity = 1; // 走 DialogHost 声明的 DoubleTransition 淡入（失败也稳停在 1）
+        ApplyAppearanceFromVm(); // 保险：打开覆盖层期间重放用户观感
+    }
+
+    /// <summary>关闭覆盖层：清内容、隐藏，重放观感兜底。</summary>
+    internal void HideDialogOverlay()
+    {
+        DialogHost.IsVisible = false;
+        DialogContent.Content = null;
+        ApplyAppearanceFromVm();
     }
 
     /// <summary>应用外观设置：窗口观感档 + 界面密度（强调色由 App 应用）。

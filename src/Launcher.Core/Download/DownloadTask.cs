@@ -632,7 +632,9 @@ public partial class DownloadTask : ObservableObject
         return dt > 0.25 && db >= 0 ? db / dt : SpeedBps;
     }
 
-    /// <summary>聚合采样入口：字节回退（新子任务挂载）时清窗口，避免负速/虚高</summary>
+    /// <summary>聚合采样入口：字节回退（新子任务挂载）时清窗口，避免负速/虚高。
+    /// 8-24 补 AL70 封顶：与叶子 Report 一致（min(inst, 全程平均×1.5)）——组任务开局大量
+    /// 小库完成/多源竞速首字节并发时聚合字节猛跳，无封顶会显示几百 MB/s 假爆发。</summary>
     private void UpdateSpeedSample(long bytes)
     {
         var now = _watch.Elapsed.TotalSeconds;
@@ -641,7 +643,9 @@ public partial class DownloadTask : ObservableObject
             _speedSamples.Clear();
             _lastBytes = -1;
         }
-        SpeedBps = SampleSpeed(now, bytes);
+        var inst = SampleSpeed(now, bytes);
+        var avg = now > 0.05 ? bytes / now : inst;
+        SpeedBps = Math.Min(inst, avg * 1.5); // 与叶子 AL70 封顶一致的纯截断
         _lastBytes = bytes;
     }
 

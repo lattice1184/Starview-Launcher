@@ -280,6 +280,21 @@
                 </ItemsControl.ItemTemplate>
             </ItemsControl>
 
+            <!-- 8-24 模态确认覆盖层：主窗口内渲染，不再开第二个顶层窗口（避免主窗口失活 → 亚克力合成降级回调实色） -->
+            <Grid x:Name="DialogHost" IsVisible="False" Background="#66000000" ZIndex="200">
+                <Grid.Transitions>
+                    <Transitions>
+                        <DoubleTransition Property="Opacity" Duration="0:0:0.18"/>
+                    </Transitions>
+                </Grid.Transitions>
+                <Border HorizontalAlignment="Center" VerticalAlignment="Center"
+                        Background="{DynamicResource BgSurface}" CornerRadius="12"
+                        BorderBrush="#4D2F3745" BorderThickness="1"
+                        MinWidth="360" MaxWidth="480" Padding="26,22">
+                    <ContentControl x:Name="DialogContent"/>
+                </Border>
+            </Grid>
+
             </Grid>
         </ExperimentalAcrylicBorder>
     </Border>

@@ -108,6 +108,10 @@ public class RampUpTests
     // 8-22 Fabric API 治本：渐进限速 CDN（Modrinth/GitHub）小文件（≤8MB）快源也保底 4——
     // 探测开局全速 → 旧逻辑给 1 连接 → CDN 按连接累积量掉到几十 KB/s 全程磨（升片守卫 8MB 对小文件永不触发）
     [InlineData("https://cdn.modrinth.com/data/x/fabric-api.jar", 4)]
+    // 8-24 实际赢家源补齐：cdn-raw/cdn-alt/mcimirror 同属渐进限速，小文件同样保底 4（漏掉则只给探测 1 连接）
+    [InlineData("https://cdn-raw.modrinth.com/data/x/f.jar", 4)]
+    [InlineData("https://cdn-alt.modrinth.com/data/x/f.jar", 4)]
+    [InlineData("https://mod.mcimirror.top/data/x/f.jar", 4)]
     [InlineData("https://github.com/user/repo/f.jar", 4)]
     // 普通域小文件快源保持 1（限并发源不受影响——回归保护）
     [InlineData("https://example.com/f.jar", 1)]
@@ -124,7 +128,7 @@ public class RampUpTests
             Assert.Equal(expected, concurrency);
             // 8-22 域特征快速路径：渐进限速域小文件免探测——不发起任何请求（探测对它们纯浪费）；
             // 普通域仍走探测（1 次请求）
-            Assert.Equal(url.Contains("modrinth") || url.Contains("github") ? 0 : 1, handler.Ranges.Count);
+            Assert.Equal(url.Contains("modrinth") || url.Contains("github") || url.Contains("mcimirror") ? 0 : 1, handler.Ranges.Count);
         }
         finally
         {
@@ -149,6 +153,32 @@ public class RampUpTests
         finally
         {
             File.Delete(dest);
+        }
+    }
+
+    [Theory]
+    // 8-24 渐进限速 CDN 大文件（>8MB）快源满并发起步：每连接独立被限速，起步满并发直接拉高总吞吐
+    // （此前只给 4，升片阈值 300KB/s 又低于 1MB/s 平台期 → 永不升片 → 110MB 后卡 1MB/s）
+    [InlineData("https://cdn-raw.modrinth.com/data/x/big.jar", 8)]
+    [InlineData("https://cdn.modrinth.com/data/x/big.jar", 8)]
+    [InlineData("https://mod.mcimirror.top/data/x/big.jar", 8)]
+    // 普通域快源大文件保持 4（非渐进限速，不盲目堆并发——RTT 摊薄即可）
+    [InlineData("https://example.com/big.bin", 4)]
+    public async Task Probe_FastSource_LargeFile_ProgressiveThrottleUsesMax(string url, int expected)
+    {
+        var handler = new RangeHandler { Delay = TimeSpan.FromMilliseconds(50) }; // 1MB/50ms ≈ 20MB/s 快源
+        var svc = CreateService(handler);
+        var partDir = Path.Combine(Path.GetTempPath(), $"probe4-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(partDir);
+        try
+        {
+            var concurrency = await svc.ProbeAndDecideConcurrencyAsync(url, 9 * 1024 * 1024, partDir, CancellationToken.None,
+                new DownloadService.ThrottleState());
+            Assert.Equal(expected, concurrency);
+        }
+        finally
+        {
+            try { Directory.Delete(partDir, true); } catch { }
         }
     }
 }

@@ -3,4 +3,12 @@
   <Target Name="SignOutputs" AfterTargets="Build">
     <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildThisFileDirectory)scripts\sign-output.ps1&quot; -TargetDir &quot;$(TargetDir)&quot;" />
   </Target>
+  <!-- 8-24 瘦身：发布后清理 native PDB（libSkiaSharp/HarfBuzzSharp 自带 ~100MB 符号，不进单文件 EXE，
+       只撑爆构建目录）。Release 发布 DebugType=None，输出里的 *.pdb 全是 NuGet native 符号，删之安全。 -->
+  <Target Name="DeleteNativePdb" AfterTargets="Publish">
+    <ItemGroup>
+      <NativePdb Include="$(TargetDir)*.pdb" />
+    </ItemGroup>
+    <Delete Files="@(NativePdb)" />
+  </Target>
 </Project>

@@ -36,7 +36,7 @@ public sealed class ResolvingDlSourceMapper : IDlSourceResolver
     /// 8-23 加 cdn-raw：Modrinth 官方对中国区强制重定向到 cdn-alt（IP 少、限速），cdn-raw 直连实测
     /// 4 倍于官方（91KB/s vs 23KB/s）——真正的提速源，谁快用谁。</summary>
     public static ResolvingDlSourceMapper Default { get; } =
-        new(new DefaultDlSourceMapper(), new BmclapiDlSourceMapper(), new McimirrorDlSourceMapper(), new ModrinthRawDlSourceMapper());
+        new(new DefaultDlSourceMapper(), new ModrinthRawDlSourceMapper(), new McimirrorDlSourceMapper(), new BmclapiDlSourceMapper());
 
     public IReadOnlyList<string> Resolve(string url)
     {

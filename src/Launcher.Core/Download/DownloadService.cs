@@ -1419,7 +1419,7 @@ public sealed class DownloadService
         return speed >= FastSingleBps
             ? totalSize <= 8 * 1024 * 1024
                 ? IsProgressiveThrottleCdn(url) ? Math.Min(4, maxChunks) : 1
-              : IsGitHubCdn(url) ? maxChunks : Math.Min(4, maxChunks)
+              : (IsGitHubCdn(url) || IsProgressiveThrottleCdn(url)) ? maxChunks : Math.Min(4, maxChunks) // 8-24 渐进限速大文件满并发起步：每连接独立限速，并发越高总和越高
             : speed >= SlowSingleBps ? Math.Min(4, maxChunks)
             : maxChunks;
     }
@@ -1432,7 +1432,10 @@ public sealed class DownloadService
         try
         {
             var host = new Uri(url).Host;
-            return IsGitHubCdn(url) || host == "cdn.modrinth.com" || host == "api.modrinth.com";
+            // 8-24 补实际赢家源：cdn-raw/cdn-alt/mcimirror 与 cdn.modrinth.com 同为按连接累积量限速——
+            // 之前漏掉导致渐进限速特判（小文件保底并发/大文件满并发）对真实下载源不生效
+            return IsGitHubCdn(url) || host is "cdn.modrinth.com" or "api.modrinth.com"
+                or "cdn-raw.modrinth.com" or "cdn-alt.modrinth.com" or "mod.mcimirror.top";
         }
         catch { return false; }
     }

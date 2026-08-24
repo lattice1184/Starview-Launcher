@@ -1,0 +1,29 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="Launcher.App.Views.DialogOverlay">
+    <StackPanel Spacing="16">
+        <StackPanel Spacing="8">
+            <!-- 8-24 覆盖层无系统标题栏，标题以正文呈现 -->
+            <TextBlock x:Name="TitleText" FontSize="15" FontWeight="SemiBold"
+                       Foreground="{DynamicResource TextPrimary}"/>
+            <TextBlock x:Name="MessageText" TextWrapping="Wrap" FontSize="14"
+                       Foreground="{DynamicResource TextPrimary}"/>
+            <!-- 警告对话框的补充说明（普通色小字；Warn 用） -->
+            <TextBlock x:Name="DetailText" TextWrapping="Wrap" FontSize="12"
+                       Foreground="{DynamicResource TextSecondary}" IsVisible="False"/>
+            <!-- 安装路径确认专用：可编辑目录 + 实时落点预览 + 浏览 -->
+            <StackPanel x:Name="PathPanel" Spacing="6" IsVisible="False">
+                <TextBox x:Name="PathInput" FontSize="13" TextChanged="OnPathChanged"
+                         Watermark="安装目录（改这里）"/>
+                <TextBlock x:Name="PathPreviewText" TextWrapping="Wrap" FontSize="12"
+                           Foreground="{DynamicResource TextSecondary}"/>
+                <Button x:Name="BrowseBtn" Content="浏览…" Classes="ghost" FontSize="12" Padding="10,4"
+                        HorizontalAlignment="Left" Click="OnBrowse"/>
+            </StackPanel>
+        </StackPanel>
+        <StackPanel Orientation="Horizontal" Spacing="10" HorizontalAlignment="Right">
+            <Button x:Name="CancelBtn" Content="取消" Classes="ghost" Click="OnCancel"/>
+            <Button x:Name="ConfirmBtn" Content="确定" Classes="primary" Click="OnConfirm"/>
+        </StackPanel>
+    </StackPanel>
+</UserControl>
