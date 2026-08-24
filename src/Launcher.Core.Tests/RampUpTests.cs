@@ -35,6 +35,27 @@ public class RampUpTests
             BackoffProvider = _ => TimeSpan.Zero,
         }, Path.GetTempPath(), (_, _) => Task.FromResult(true));
 
+    [Fact]
+    public void BuildDownloadRequest_ProgressiveThrottleCdn_ForcesHttp11()
+    {
+        // 8-24 渐进 CDN 强制 h1：openssl ALPN 实测 cdn-raw/cdn-alt/mcimirror 均协商 h2，h2 多路复用
+        // 把分片折叠到同一条 TCP、共享 per-连接限速配额——强制 h1 让每分片独占 TCP。
+        // 必须 RequestVersionExact：OrLower 会被 HttpClient「Version==1.1 && OrLower → 用 DefaultRequestVersion(h2)
+        // 覆盖」规则改写，是 no-op（8-24 测试抓出）。
+        var req = DownloadService.BuildDownloadRequest("https://cdn-raw.modrinth.com/a/b.jar");
+        Assert.Equal(HttpVersion.Version11, req.Version);
+        Assert.Equal(HttpVersionPolicy.RequestVersionExact, req.VersionPolicy);
+    }
+
+    [Fact]
+    public void BuildDownloadRequest_OtherHost_KeepsDefaultVersion()
+    {
+        // 非渐进域不强制（保持默认 1.1 + OrLower → 客户端会用 DefaultRequestVersion 协商版本）
+        var req = DownloadService.BuildDownloadRequest("https://example.com/f.bin");
+        Assert.Equal(HttpVersion.Version11, req.Version);
+        Assert.Equal(HttpVersionPolicy.RequestVersionOrLower, req.VersionPolicy);
+    }
+
     [Theory]
     // 快源：探测 0.1s 拉完 1MB → ~10MB/s → 单连接（限并发源：分片只会触发限流）
     [InlineData(100, 1)]
@@ -82,10 +103,10 @@ public class RampUpTests
     }
 
     [Theory]
-    // 8-19 快源大文件保底并发：RTT 惩罚对吞吐不可见（升片永不触发）——探测时刻摊薄 4 并发
-    [InlineData(100, 100L * 1024 * 1024, 4)]  // 快源 + 100MB → 保底 4
-    [InlineData(100, 8L * 1024 * 1024, 1)]    // 快源 + 恰 8MB → 1（限并发源不受影响）
-    [InlineData(100, 8L * 1024 * 1024 + 1, 4)] // 快源 + 8MB+1 → 保底 4
+    // 8-24 快源大文件统一满并发（原保底 4→满）：探测已证快源（>800KB/s），16/8 并发是下载管理器常态
+    [InlineData(100, 100L * 1024 * 1024, 8)]  // 快源 + 100MB → 满并发 8（第三方 ISO/Mojang 等）
+    [InlineData(100, 8L * 1024 * 1024, 1)]    // 快源 + 恰 8MB → 1（≤8MB 非渐进小文件，限并发源不受影响）
+    [InlineData(100, 8L * 1024 * 1024 + 1, 8)] // 快源 + 8MB+1 → 满并发 8
     public async Task Probe_FastSource_LargeFile_FloorsConcurrency(int delayMs, long totalSize, int expected)
     {
         var handler = new RangeHandler { Delay = TimeSpan.FromMilliseconds(delayMs) };
@@ -105,14 +126,14 @@ public class RampUpTests
     }
 
     [Theory]
-    // 8-22 Fabric API 治本：渐进限速 CDN（Modrinth/GitHub）小文件（≤8MB）快源也保底 4——
+    // 8-22 Fabric API 治本：渐进限速 CDN（Modrinth/GitHub）小文件（≤8MB）快源满并发——
     // 探测开局全速 → 旧逻辑给 1 连接 → CDN 按连接累积量掉到几十 KB/s 全程磨（升片守卫 8MB 对小文件永不触发）
-    [InlineData("https://cdn.modrinth.com/data/x/fabric-api.jar", 4)]
-    // 8-24 实际赢家源补齐：cdn-raw/cdn-alt/mcimirror 同属渐进限速，小文件同样保底 4（漏掉则只给探测 1 连接）
-    [InlineData("https://cdn-raw.modrinth.com/data/x/f.jar", 4)]
-    [InlineData("https://cdn-alt.modrinth.com/data/x/f.jar", 4)]
-    [InlineData("https://mod.mcimirror.top/data/x/f.jar", 4)]
-    [InlineData("https://github.com/user/repo/f.jar", 4)]
+    // 8-24 4→满并发（每连接限速，并发线性叠加；片数受 1MB 片边界约束，4-8MB 实际 4-8 片）
+    [InlineData("https://cdn.modrinth.com/data/x/fabric-api.jar", 8)]
+    [InlineData("https://cdn-raw.modrinth.com/data/x/f.jar", 8)]
+    [InlineData("https://cdn-alt.modrinth.com/data/x/f.jar", 8)]
+    [InlineData("https://mod.mcimirror.top/data/x/f.jar", 8)]
+    [InlineData("https://github.com/user/repo/f.jar", 8)]
     // 普通域小文件快源保持 1（限并发源不受影响——回归保护）
     [InlineData("https://example.com/f.jar", 1)]
     public async Task Probe_FastSource_SmallFile_ThrottleCdnFloorsConcurrency(string url, int expected)
@@ -162,8 +183,8 @@ public class RampUpTests
     [InlineData("https://cdn-raw.modrinth.com/data/x/big.jar", 8)]
     [InlineData("https://cdn.modrinth.com/data/x/big.jar", 8)]
     [InlineData("https://mod.mcimirror.top/data/x/big.jar", 8)]
-    // 普通域快源大文件保持 4（非渐进限速，不盲目堆并发——RTT 摊薄即可）
-    [InlineData("https://example.com/big.bin", 4)]
+    // 8-24 普通域快源大文件也满并发（原保底 4→满）——探测已证快源，堆并发是常态
+    [InlineData("https://example.com/big.bin", 8)]
     public async Task Probe_FastSource_LargeFile_ProgressiveThrottleUsesMax(string url, int expected)
     {
         var handler = new RangeHandler { Delay = TimeSpan.FromMilliseconds(50) }; // 1MB/50ms ≈ 20MB/s 快源

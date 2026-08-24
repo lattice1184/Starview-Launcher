@@ -732,5 +732,13 @@ public partial class MainWindow : Window
             scaleTransform.ScaleX = scale;
             scaleTransform.ScaleY = scale;
         }
+
+        // 8-24 透明档字体糊修复：毛玻璃=per-pixel alpha 合成面，子像素 AA 有已知 bug 变厚发糊 → 强制灰度抗锯齿；
+        // 实色档恢复子像素保最锐。TextOptions 是继承型附加属性，挂窗口根节点即覆盖全部后代文字。
+        Avalonia.Media.TextOptions.SetTextRenderingMode(
+            this,
+            mode == OpacityMode.Solid
+                ? Avalonia.Media.TextRenderingMode.SubpixelAntialias
+                : Avalonia.Media.TextRenderingMode.Antialias);
     }
 }

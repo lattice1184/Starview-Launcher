@@ -1,3 +1,5 @@
+using Launcher.Core.Utils;
+
 namespace Launcher.Core.Download;
 
 /// <summary>
@@ -31,12 +33,13 @@ public sealed class ResolvingDlSourceMapper : IDlSourceResolver
         _extra = extra ?? [];
     }
 
-    /// <summary>默认四候选：官方直连 + BMCLAPI(cdn-alt) + mcimirror + cdn-raw（Modrinth 原版 CDN）。
+    /// <summary>默认五候选：官方直连 + BMCLAPI(cdn-alt) + mcimirror + cdn-raw（Modrinth 原版 CDN）+ CF 镜像。
     /// 8-22 加 mcimirror：Fabric API 等官方 CDN 渐进限速几十 KB/s，提供第三候选竞速。
     /// 8-23 加 cdn-raw：Modrinth 官方对中国区强制重定向到 cdn-alt（IP 少、限速），cdn-raw 直连实测
-    /// 4 倍于官方（91KB/s vs 23KB/s）——真正的提速源，谁快用谁。</summary>
+    /// 4 倍于官方（91KB/s vs 23KB/s）——真正的提速源，谁快用谁。
+    /// 8-24 加 CurseforgeCdnDlSourceMapper：edge.forgecdn.net 原单候选直连（最大空白），配置镜像前缀后进竞速。</summary>
     public static ResolvingDlSourceMapper Default { get; } =
-        new(new DefaultDlSourceMapper(), new ModrinthRawDlSourceMapper(), new McimirrorDlSourceMapper(), new BmclapiDlSourceMapper());
+        new(new DefaultDlSourceMapper(), new ModrinthRawDlSourceMapper(), new McimirrorDlSourceMapper(), new BmclapiDlSourceMapper(), new CurseforgeCdnDlSourceMapper());
 
     public IReadOnlyList<string> Resolve(string url)
     {
@@ -83,6 +86,25 @@ public sealed class ModrinthRawDlSourceMapper : IDlSourceMapper
         if (url.Contains("cdn.modrinth.com"))
             return url.Replace("https://cdn.modrinth.com", "https://cdn-raw.modrinth.com");
         return url;
+    }
+}
+
+/// <summary>
+/// 8-24 CurseForge 文件 CDN 镜像竞速：edge.forgecdn.net（CF 文件 CDN，国内直连慢）配置
+/// CurseForgeCdnPrefix 后映射为镜像候选（{prefix}/{path}，与旧 ApplyCdnPrefix 语义一致）——
+/// 让 CF 文件进 AL32 多候选竞速（官方 vs 镜像先到先得，15s 淘汰慢源）。
+/// 无镜像配置或非 edge.forgecdn.net URL 原样返回（单候选直连，行为不变）。
+/// </summary>
+public sealed class CurseforgeCdnDlSourceMapper : IDlSourceMapper
+{
+    private const string Official = "https://edge.forgecdn.net/";
+
+    public string Map(string url)
+    {
+        if (!url.StartsWith(Official)) return url;
+        var prefix = LauncherSettings.Current.CurseForgeCdnPrefix?.Trim();
+        if (string.IsNullOrEmpty(prefix)) return url;
+        return prefix.TrimEnd('/') + "/" + url[Official.Length..];
     }
 }
 

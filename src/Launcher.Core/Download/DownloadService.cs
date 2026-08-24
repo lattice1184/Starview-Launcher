@@ -981,7 +981,7 @@ public sealed class DownloadService
             from = 0;
         }
 
-        using var request = new HttpRequestMessage(HttpMethod.Get, url);
+        using var request = BuildDownloadRequest(url);
         if (from > 0) request.Headers.Range = new RangeHeaderValue(from, null);
 
         using var response = await SendWith416RetryAsync(request, destPath, ct);
@@ -1058,6 +1058,8 @@ public sealed class DownloadService
         {
             File.Delete(destPath + ".tmp"); // AL29 H1：416 只删中间产物，destPath 未验证前不动
             var retry = new HttpRequestMessage(HttpMethod.Get, request.RequestUri!);
+            retry.Version = request.Version; // 保留渐进 CDN 的 h1 强制（8-24 折叠修复）
+            retry.VersionPolicy = request.VersionPolicy;
             return await SendWithHeaderTimeoutAsync(retry, ct);
         }
     }
@@ -1377,12 +1379,12 @@ public sealed class DownloadService
         if (totalSize < ProbeBytes) return maxChunks; // 小文件（<1MB）保持旧满片行为——按连接限速源（Modrinth 单连几十 KB/s）
                                                       // 的 MC 小库文件需要分片；探测对它们无意义（探测段≈整个文件）
         // 8-22 域特征快速路径（看请求对象直接决策，免探测）：渐进限速 CDN（Modrinth/GitHub）+ ≤8MB
-        // 决策恒为 4 并发（每连接传输量摊在 CDN「前几 MB 快窗口」内）——探测 1MB 对这类文件是纯浪费
-        // （白下 1MB + 白等窗口；Fabric API 1.6MB 探测占 60% 流量）。>8MB 大文件仍走探测
-        // （快/慢源分档对大文件有决策价值——满并发 vs 保底 4 差 4 个连接）。
+        // 8-24 满并发起步（原 4 并发）：CDN 每连接限速，并发越高总和越高（片数受 1MB 片边界约束，
+        // 4-8MB 文件实际 4-8 片）——探测 1MB 对这类文件是纯浪费（白下 1MB + 白等窗口）。
+        // >8MB 大文件仍走探测（快/慢源分档对大文件有决策价值——满并发 vs 保底 4 差 4 个连接）。
         // 后续可加「按域经验记忆」（同域判死/成功记录复用决策）——静态特征先行，探测兜底仍在
         if (totalSize <= 8 * 1024 * 1024 && IsProgressiveThrottleCdn(url))
-            return Math.Min(4, maxChunks);
+            return maxChunks;
 
         // 8-15 GitHub CDN 档位：更大探测窗口让渐进式限速暴露（默认档会误判高速给 1 片 → 大文件掉速）
         var probeLimit = IsGitHubCdn(url) ? ProbeBytesGitHub : ProbeBytes;
@@ -1418,8 +1420,9 @@ public sealed class DownloadService
         // 升片守卫（剩余 ≥8MB）对小文件永不触发，探测阶段必须决策正确
         return speed >= FastSingleBps
             ? totalSize <= 8 * 1024 * 1024
-                ? IsProgressiveThrottleCdn(url) ? Math.Min(4, maxChunks) : 1
-              : (IsGitHubCdn(url) || IsProgressiveThrottleCdn(url)) ? maxChunks : Math.Min(4, maxChunks) // 8-24 渐进限速大文件满并发起步：每连接独立限速，并发越高总和越高
+                ? IsProgressiveThrottleCdn(url) ? maxChunks : 1 // 8-24 渐进小文件 4→满并发（每连接限速，并发线性叠加）
+                : maxChunks // 8-24 快源大文件统一满并发：第三方 ISO/Mojang/未知快源——探测已证快源（>800KB/s），
+                            // 16 并发是下载管理器常态（原 else min(4,max) 把第三方文件线程分片卡在 4）
             : speed >= SlowSingleBps ? Math.Min(4, maxChunks)
             : maxChunks;
     }
@@ -1440,6 +1443,22 @@ public sealed class DownloadService
         catch { return false; }
     }
 
+    /// <summary>构建下载 GET 请求。渐进限速 CDN（cdn-raw/cdn-alt/mcimirror）强制 HTTP/1.1——openssl ALPN 实测
+    /// 三者均协商 h2，而 h2 多路复用把多分片折叠到同一条 TCP、共享同一 per-连接限速配额（8-24「满并发起步」
+    /// 不生效）；强制 h1 让每分片独占 TCP、独享每连接限速（91KB/s×并发线性叠加）。其他 host 保持默认版本。
+    /// 必须 RequestVersionExact：HttpClient 的规则是「Version==1.1 && policy==RequestVersionOrLower 时用
+    /// DefaultRequestVersion(h2) 覆盖」——OrLower 是 no-op（8-24 测试抓出）。</summary>
+    internal static HttpRequestMessage BuildDownloadRequest(string url)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Get, url);
+        if (IsProgressiveThrottleCdn(url))
+        {
+            request.Version = HttpVersion.Version11;
+            request.VersionPolicy = HttpVersionPolicy.RequestVersionExact;
+        }
+        return request;
+    }
+
     private async Task DownloadChunkAsync(string url, string partPath, long start, long end, CancellationToken ct,
         ThrottleState? throttle = null, ChunkProgress? cp = null, string? destName = null, long totalSize = 0,
         DownloadProgressHandler? progress = null, Action<long, long>? livePush = null, int attempt = 0)
@@ -1457,7 +1476,7 @@ public sealed class DownloadService
                 have = 0;
             }
 
-            using var request = new HttpRequestMessage(HttpMethod.Get, url);
+            using var request = BuildDownloadRequest(url);
             request.Headers.Range = new RangeHeaderValue(start + have, end); // 从断点续传
             using var response = await SendWithHeaderTimeoutAsync(request, ct); // AL64 响应头超时
             var isPartial = response.StatusCode == HttpStatusCode.PartialContent; // 206 才追加；200（服务器忽略 Range）重写防错位

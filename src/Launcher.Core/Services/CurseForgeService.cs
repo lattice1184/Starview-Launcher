@@ -239,18 +239,11 @@ public sealed class CurseForgeService
         var targetDir = EcosystemService.ResolveInstallPath(gameDirOverride ?? _gameDirectory, instanceId, type);
         var destPath = Path.Combine(targetDir, Path.GetFileName(file.fileName));
         var sha1 = file.hashes?.FirstOrDefault(h => h.algo == 1)?.value; // CF algo: 1=SHA1 2=MD5
-        await _downloads.DownloadFileAsync(ApplyCdnPrefix(file.downloadUrl), destPath, sha1, file.fileLength, progress, ct);
+        // 8-24 竞速化：传原始 edge.forgecdn.net URL，镜像前缀由 CurseforgeCdnDlSourceMapper 在
+        // ResolvingDlSourceMapper.Default 里映射为多候选（官方 vs 镜像）进 AL32 并行竞速（原 ApplyCdnPrefix
+        // 单值替换已删——双路替换会冲突）。无镜像配置时单候选直连，行为不变。
+        await _downloads.DownloadFileAsync(file.downloadUrl, destPath, sha1, file.fileLength, progress, ct);
         return destPath;
-    }
-
-    /// <summary>CF 文件 CDN 加速：设置里可配置镜像/代理前缀替换官方 edge.forgecdn.net（国内直连慢）。
-    /// 每次读设置（改前缀即时生效）；前缀为空或 URL 非官方域名时原样返回。</summary>
-    private static string ApplyCdnPrefix(string url)
-    {
-        const string official = "https://edge.forgecdn.net/";
-        var prefix = LauncherSettings.Current.CurseForgeCdnPrefix?.Trim();
-        if (string.IsNullOrEmpty(prefix) || !url.StartsWith(official)) return url;
-        return prefix.TrimEnd('/') + "/" + url[official.Length..];
     }
 
     /// <summary>
