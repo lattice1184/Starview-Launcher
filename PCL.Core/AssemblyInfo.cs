@@ -1,13 +1,7 @@
 using System.Runtime.CompilerServices;
-using System.Windows.Markup;
 
-[assembly: XmlnsDefinition("https://ce.pclc.cc/core/ui/animation", "PCL.Core.UI.Animation")]
-[assembly: XmlnsDefinition("https://ce.pclc.cc/core/ui/animation", "PCL.Core.UI.Animation.Core")]
-[assembly: XmlnsDefinition("https://ce.pclc.cc/core/ui/animation", "PCL.Core.UI.Animation.Easings")]
-[assembly: XmlnsPrefix("https://ce.pclc.cc/core/ui/animation", "ani")]
-
-[assembly:XmlnsDefinition("https://ce.pclc.cc/core/utils/validate", "PCL.Core.Utils.Validate")]
-[assembly:XmlnsPrefix("https://ce.pclc.cc/core/utils/validate", "val")]
+// 8-24 砍 WPF：移除 System.Windows.Markup 的 XmlnsDefinition/XmlnsPrefix 程序集属性（WPF XAML 命名空间映射，
+// 启动器纯 Avalonia 不用；它们引用 System.Xaml/PresentationFramework 强制拉入 WPF 运行时）
 
 [assembly: DisableRuntimeMarshalling]
 [assembly: InternalsVisibleTo("PCL.Core.Test")]

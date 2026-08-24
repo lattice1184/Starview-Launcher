@@ -18,7 +18,7 @@
         <ProjectGuid>{A0C2209D-64FB-4C11-9459-8E86304B6F94}</ProjectGuid>
         <RootNamespace>PCL.Core</RootNamespace>
         <TargetFramework>net10.0-windows</TargetFramework>
-        <UseWPF>true</UseWPF>
+        <UseWPF>false</UseWPF>
         <EnableWindowsTargeting>true</EnableWindowsTargeting>
         <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
         <LangVersion>14.0</LangVersion>
@@ -29,6 +29,11 @@
         <PlatformTarget>$(Platform)</PlatformTarget>
         <NoWarn>$(NoWarn);CS9113</NoWarn>
     </PropertyGroup>
+    <!-- 8-24 瘦身：UseWPF=false 下 SDK 仍为 -windows TFM 解析 WindowsDesktop 框架（拉入 PresentationCore/
+         PresentationFramework ~25MB）——强制移除。WindowsBase 属 NETCore.App 基础运行时，保留。 -->
+    <ItemGroup>
+        <FrameworkReference Remove="Microsoft.WindowsDesktop.App" />
+    </ItemGroup>
     <!-- 构建配置 -->
     <PropertyGroup Condition="'$(Configuration)' == 'Debug' Or '$(Configuration)' == 'CI' Or '$(Configuration)' == 'DebugCI'">
         <DebugSymbols>true</DebugSymbols>
@@ -47,7 +52,6 @@
     <ItemGroup>
         <!-- UI -->
         <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
-        <PackageReference Include="Microsoft.Xaml.Behaviors.Wpf" Version="1.1.142" />
         <PackageReference Include="Wacton.Unicolour" Version="8.0.0" />
         <!-- 语言和系统特性 -->
         <PackageReference Include="Microsoft.CSharp" Version="4.7.0" />
@@ -89,7 +93,27 @@
     </PropertyGroup>
     <ItemGroup>
         <Compile Include="**\*.cs" Exclude="bin\**;obj\**;publish\**;**\*.g.cs;SourceGenerators\**" />
-        <Page Include="**\*.xaml" Exclude="bin\**;obj\**;publish\**" />
+        <!-- 8-24 瘦身：排除 PCL.Core 自带的 WPF 机器（动画/特效/主题/SvgIcon/本地化等整套死代码，启动器零使用，
+             保留文件 VersionName/LogService/SaveManager/Curseforge/LifecycleFlow 已核实 0 真实 WPF 引用）。
+             目录 glob 覆盖强耦合子系统；其余为散落 WPF 文件。 -->
+        <Compile Remove="UI\Animation\**;UI\Controls\SvgIcon\**;UI\Effects\**;UI\Theme\**;Link\**;
+App\Localization\LocalizationFontService.cs;App\Localization\LocalizationFormatConverter.cs;
+App\Essentials\ApplicationService.cs;App\Essentials\StartupValidation.cs;App\Essentials\MainWindowService.cs;
+App\Essentials\RpcService.cs;App\Essentials\SingleInstanceService.cs;App\Essentials\StartupService.cs;UI\BackgroundPresenter.cs;
+UI\Controls\BlurBorder.cs;UI\Controls\MotdRenderer.xaml.cs;UI\Controls\Tooltip.cs;UI\Controls\WaterfallPanel.cs;
+UI\Converters\NullToVisibilityConverter.cs;UI\Converters\NColorConverter.cs;UI\Converters\EasingConverter.cs;UI\ImageLoaderHelper.cs;
+UI\Media\ImageConverter.cs;UI\NColor.cs;UI\NRotateTransform.cs;UI\NScaleTransform.cs;UI\ToastNotification.cs;
+Utils\Exts\LanguageSpecificStringDictionaryExtensions.cs;Utils\Exts\UiExtension.cs;
+Utils\WinRT\Interface\Windows\Data\Xml\Dom\IXmlDocumentIO.cs;Utils\WpfUtils.cs;
+Utils\OS\ClipboardUtils.cs;Utils\OS\DragHelper.cs;UI\IconManager.cs;UI\IconModel.cs" />
+        <!-- 8-24 WPF 排除后无可用 XAML（全是 WPF Page/ResourceDictionary）——移除 Page 项 -->
+        <Page Remove="**\*.xaml" />
+        <!-- 8-24 保留 AnimationService + 其非 WPF 依赖（Launcher.Animation 的 AvaloniaUIAccessProvider 实现
+             IUIAccessProvider；App.axaml.cs 注入 UIAccessProviderFactory）。其余动画文件全砍（WPF 或死代码）。 -->
+        <Compile Include="UI\Animation\Core\AnimationService.cs;UI\Animation\Core\IAnimation.cs;UI\Animation\Core\IAnimationFrame.cs;
+UI\Animation\Core\AnimationStatus.cs;UI\Animation\Animatable\IAnimatable.cs;UI\Animation\Clock\IClock.cs;
+UI\Animation\Clock\WinMMClock.cs;UI\Animation\ValueProcessor\ValueProcessorManager.cs;UI\Animation\ValueProcessor\IValueProcessor.cs;
+UI\Animation\ValueProcessor\DoubleValueProcessor.cs;UI\Animation\UIAccessProvider\IUIAccessProvider.cs" />
         <Resource Include="UI\Assets\*" />
         <Resource Include="UI\Assets\Shaders\*.ps" />
         <Resource Include="UI\Assets\IconPacks\**\*.svg" />

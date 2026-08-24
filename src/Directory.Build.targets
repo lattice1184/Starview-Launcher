@@ -1,0 +1,13 @@
+<Project>
+  <!-- 8-24 瘦身（砍 WPF）：Socks5→Pipelines.Extensions→Microsoft.VisualStudio.Threading.Only 包传递引用
+       Microsoft.WindowsDesktop.App.WPF。评估期 <FrameworkReference Remove> 会被 SDK 的 AddTransitiveFrameworkReferences
+       目标（ResolvePackageAssets 之后）原样加回，必须在该目标之后移除，否则自包含发布捆绑整套 WPF (~35MB)。
+       纯 Avalonia 启动器项目无任何 WPF 类型使用（ICommand 走 System.ObjectModel，不依赖 WPF）。 -->
+  <Target Name="RemoveWindowsDesktopFrameworkRef" AfterTargets="AddTransitiveFrameworkReferences">
+    <ItemGroup>
+      <FrameworkReference Remove="Microsoft.WindowsDesktop.App" />
+      <FrameworkReference Remove="Microsoft.WindowsDesktop.App.WPF" />
+      <FrameworkReference Remove="Microsoft.WindowsDesktop.App.WindowsForms" />
+    </ItemGroup>
+  </Target>
+</Project>

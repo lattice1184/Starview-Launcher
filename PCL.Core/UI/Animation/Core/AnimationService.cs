@@ -40,14 +40,9 @@ public sealed class AnimationService : GeneralService
 
     private static void _RegisterValueProcessors()
     {
-        // 在这里注册所有的 ValueProcessor
+        // 8-24 砍 WPF：仅注册非 WPF 处理器（Double）。Matrix/NColor/NRotateTransform/NScaleTransform/Point/Thickness
+        // 依赖 WPF 类型（含经 NColor 的传递依赖），启动器纯 Avalonia 从不推动画，无需这些处理器
         ValueProcessorManager.Register(new DoubleValueProcessor());
-        ValueProcessorManager.Register(new MatrixValueProcessor());
-        ValueProcessorManager.Register(new NColorValueProcessor());
-        ValueProcessorManager.Register(new NRotateTransformValueProcessor());
-        ValueProcessorManager.Register(new NScaleTransformValueProcessor());
-        ValueProcessorManager.Register(new PointValueProcessor());
-        ValueProcessorManager.Register(new ThicknessValueProcessor());
     }
 
     private static Channel<(IAnimation Animation, IAnimatable Target)> _animationChannel = null!;

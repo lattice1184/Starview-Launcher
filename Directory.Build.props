@@ -1,7 +1,9 @@
 <Project>
   <!-- 统一构建配置。PCL.Core*（vendor 原样）不应用这些默认值，保持其 csproj 原样 -->
+  <!-- 8-24 瘦身：UseWPF 从 true 改 false——全部子项目是纯 Avalonia（动画/毛玻璃自研），不引用任何 WPF 类型；
+       UseWPF=true 会把 WindowsDesktop 运行时拖进自包含发布（~35MB）。ICommand 走 System.ObjectModel 不依赖 WPF。 -->
   <PropertyGroup Condition="'$(MSBuildProjectName)' != 'PCL.Core' And !$(MSBuildProjectName.StartsWith('PCL.Core'))">
-    <UseWPF>true</UseWPF>
+    <UseWPF>false</UseWPF>
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
     <LangVersion>14.0</LangVersion>
   </PropertyGroup>

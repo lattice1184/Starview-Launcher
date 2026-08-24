@@ -92,9 +92,9 @@ partial class Lifecycle
     private static readonly object _ExitLock = new();
 
     /// <summary>
-    /// WPF 应用程序容器，在 <see cref="LifecycleState.BeforeLoading"/> 阶段为空值
+    /// 8-24 砍 WPF：原为 WPF Application 容器（启动器纯 Avalonia 不设置、不使用），降为 object? 占位
     /// </summary>
-    public static Application CurrentApplication { get; set; } = null!;
+    public static object? CurrentApplication { get; set; }
 
     /// <summary>
     /// 是否正在关闭程序

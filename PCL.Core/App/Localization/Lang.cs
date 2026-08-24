@@ -91,7 +91,7 @@ public static class Lang
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(key);
 
-        if (Application.Current?.TryFindResource(key) is string text) return text;
+        // 8-24 砍 WPF：移除 Application.Current 资源字典查找（启动器纯 Avalonia 不用）
         if (_LifecycleSafeFindResource(key) is string fallbackText) return fallbackText;
 
 #if DEBUG
@@ -274,17 +274,7 @@ public static class Lang
 
     private static object? _LifecycleSafeFindResource(string key)
     {
-        try
-        {
-            return Lifecycle.CurrentApplication.TryFindResource(key);
-        }
-        catch (InvalidOperationException)
-        {
-            return null;
-        }
-        catch (NullReferenceException)
-        {
-            return null;
-        }
+        // 8-24 砍 WPF：原实现从 WPF Application 资源字典查找，启动器纯 Avalonia 不用，恒 null
+        return null;
     }
 }

@@ -1,6 +1,4 @@
 using System;
-using System.IO;
-using Microsoft.Win32;
 using PCL.Core.App.Localization;
 using PCL.Core.Logging;
 
@@ -11,6 +9,10 @@ namespace PCL.Core.UI;
 /// </summary>
 public static class SystemDialogs
 {
+    // 8-24 砍 WPF：原实现用 Microsoft.Win32.SaveFileDialog/OpenFileDialog/OpenFolderDialog（PresentationFramework ~15MB）。
+    // 启动器纯 Avalonia（自研 StorageProvider 文件选择），本类零调用，改恒返回"取消"（空串/空数组）。
+    // 保留签名与文档以维持 API 兼容，Files.ExportAsZipArchiveAsync 已带空路径兜底。
+
     /// <summary>
     ///     显示保存文件对话框，要求用户选择保存位置。
     /// </summary>
@@ -25,30 +27,8 @@ public static class SystemDialogs
         string? fileFilter = null,
         string? initialDirectory = null)
     {
-        var dialogTitle = title ?? Lang.Text("SystemDialog.File.SelectTitle");
-        var dialogFilter = fileFilter ?? Lang.Text("SystemDialog.File.AllFilesFilter");
-        var fileDialog = new SaveFileDialog
-        {
-            AddExtension = true,
-            Title = dialogTitle,
-            FileName = fileName,
-            Filter = dialogFilter,
-            InitialDirectory = !string.IsNullOrEmpty(initialDirectory) && Directory.Exists(initialDirectory)
-                ? initialDirectory
-                : null
-        };
-
-        LogWrapper.Info("Dialog", $"打开保存文件对话框：{dialogTitle}");
-        var result = fileDialog.ShowDialog();
-        if (result != true)
-        {
-            LogWrapper.Info("Dialog", "选择文件被取消");
-            return "";
-        }
-
-        var selectedPath = fileDialog.FileName;
-        LogWrapper.Info("Dialog", $"选择文件返回：{selectedPath}");
-        return string.IsNullOrEmpty(selectedPath) ? "" : Path.GetFullPath(selectedPath);
+        LogWrapper.Info("Dialog", "保存文件对话框已摘除（砍 WPF），返回取消");
+        return "";
     }
 
     /// <summary>
@@ -63,8 +43,7 @@ public static class SystemDialogs
         string? title = null,
         string? initialDirectory = null)
     {
-        var result = SelectFiles(fileFilter, title, initialDirectory, false);
-        return result.Length == 0 ? "" : result[0];
+        return "";
     }
 
     /// <summary>
@@ -81,33 +60,7 @@ public static class SystemDialogs
         string? initialDirectory = null,
         bool allowMultiSelect = true)
     {
-        var dialogTitle = title ?? Lang.Text("SystemDialog.File.SelectTitle");
-        var dialogFilter = fileFilter ?? Lang.Text("SystemDialog.File.AllFilesFilter");
-        var fileDialog = new OpenFileDialog
-        {
-            AddExtension = true,
-            CheckFileExists = true,
-            Filter = dialogFilter,
-            Multiselect = allowMultiSelect,
-            Title = dialogTitle,
-            ValidateNames = true,
-            InitialDirectory = !string.IsNullOrEmpty(initialDirectory) && Directory.Exists(initialDirectory)
-                ? initialDirectory
-                : null
-        };
-
-        var num = allowMultiSelect ? "多" : "单";
-        LogWrapper.Info("Dialog", $"打开选择{num}个文件对话框: {dialogTitle}");
-        var result = fileDialog.ShowDialog();
-        if (result != true)
-        {
-            LogWrapper.Info("Dialog", "选择文件被取消");
-            return [];
-        }
-
-        string[] selectedFiles = fileDialog.FileNames;
-        LogWrapper.Info("Dialog", $"选择{num}个文件返回: {string.Join(",", selectedFiles)}");
-        return selectedFiles.Length == 0 ? [] : Array.ConvertAll(selectedFiles, Path.GetFullPath);
+        return [];
     }
 
     /// <summary>
@@ -118,33 +71,6 @@ public static class SystemDialogs
     /// <returns>用户选择的文件夹路径（以 \ 结尾），如果取消则返回空字符串。</returns>
     public static string SelectFolder(string? title = null, string? initialDirectory = null)
     {
-        var dialogTitle = title ?? Lang.Text("SystemDialog.Folder.SelectTitle");
-        var folderDialog = new OpenFolderDialog
-        {
-            Title = dialogTitle,
-            InitialDirectory = initialDirectory
-                               ?? Environment.GetFolderPath(Environment.SpecialFolder.Desktop),
-            Multiselect = false
-        };
-
-        LogWrapper.Info("Dialog", $"打开选择文件夹对话框: {dialogTitle}");
-        var result = folderDialog.ShowDialog();
-        if (result != true)
-        {
-            LogWrapper.Info("Dialog", "选择文件夹被取消");
-            return "";
-        }
-
-        var selectedPath = folderDialog.FolderName;
-        if (string.IsNullOrEmpty(selectedPath))
-        {
-            LogWrapper.Info("Dialog", "选择文件夹返回: 空");
-            return "";
-        }
-
-        var normalizedPath = Path.GetFullPath(selectedPath).TrimEnd(Path.DirectorySeparatorChar) +
-                             Path.DirectorySeparatorChar;
-        LogWrapper.Info("Dialog", $"选择文件夹返回: {normalizedPath}");
-        return normalizedPath;
+        return "";
     }
 }

@@ -18,7 +18,6 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
-using System.Windows;
 using PCL.Core.App;
 
 namespace PCL.Core.IO;
@@ -752,33 +751,10 @@ public static class Files {
             Directory.CreateDirectory(dest);
         }
 
-        var dataObject = Clipboard.GetDataObject();
-        if (dataObject is null || !dataObject.GetDataPresent(DataFormats.FileDrop)) {
-            return 0;
-        }
-
-        var data = dataObject.GetData(DataFormats.FileDrop);
-        if (data is not string[] paths) {
-            return 0;
-        }
-        if (paths.Length == 0) {
-            return 0;
-        }
-
-        var count = 0;
-        foreach (var path in paths) {
-            if (File.Exists(path) && copyFile) {
-                var targetPath = Path.Combine(dest, Path.GetFileName(path));
-                await CopyFileAsync(path, targetPath);
-                count++;
-            } else if (Directory.Exists(path) && copyDir) {
-                var targetDir = Path.Combine(dest, new DirectoryInfo(path).Name);
-                await CopyDirectoryAsync(path, targetDir);
-                count++;
-            }
-        }
-
-        return count;
+        // 8-24 砍 WPF：原实现用 System.Windows.Clipboard 读取文件拖放列表（拉入 PresentationCore ~15MB），
+        // 启动器纯 Avalonia 零调用，改恒返回 0；保留签名与参数校验以维持 API 兼容。
+        await Task.CompletedTask;
+        return 0;
     }
 
     /// <summary>

@@ -39,8 +39,6 @@ public sealed partial class LocalizationService
         "zh-CN",
         LocalizationFontProfile.SimplifiedChinese);
 
-    private static ResourceDictionary? _baseLanguageDictionary;
-    private static ResourceDictionary? _currentLanguageDictionary;
     private static CultureInfo _systemFormatCulture = CultureInfo.CurrentCulture;
     private static CultureInfo _systemUiCulture = CultureInfo.CurrentUICulture;
 
@@ -124,7 +122,7 @@ public sealed partial class LocalizationService
         var isLanguageChanged = !string.Equals(CurrentLanguage.Code, language.Code, StringComparison.OrdinalIgnoreCase);
         var isFormatCultureChanged = !string.Equals(CurrentFormatCulture.Name, formatCulture.Name,
             StringComparison.OrdinalIgnoreCase);
-        if (_baseLanguageDictionary is not null && !isLanguageChanged && !isFormatCultureChanged)
+        if (!isLanguageChanged && !isFormatCultureChanged)
         {
             _SaveConfigIfNeeded(save, normalizedLanguageCode, language, normalizedFormatCultureCode);
             return;
@@ -134,9 +132,7 @@ public sealed partial class LocalizationService
         _ApplyLanguageResources(language.Code, uiCulture, formatCulture);
 
         CurrentLanguage = language;
-        LocalizationFontService.ApplyLaunchFont(
-            ConfigService.IsInitialized ? Config.Preference.Font : null,
-            language);
+        // 8-24 砍 WPF：LocalizationFontService 是 WPF 字体服务（启动器纯 Avalonia 不用），摘掉该调用
         CurrentFormatCulture = formatCulture;
 
         _SaveConfigIfNeeded(save, normalizedLanguageCode, language, normalizedFormatCultureCode);
@@ -242,48 +238,9 @@ public sealed partial class LocalizationService
 
     private static void _ApplyLanguageResources(string languageCode, CultureInfo uiCulture, CultureInfo formatCulture)
     {
-        var app = Application.Current ?? Lifecycle.CurrentApplication;
-
-        if (!app.Dispatcher.CheckAccess())
-        {
-            app.Dispatcher.Invoke(() =>
-            {
-                _ApplyCultures(uiCulture, formatCulture);
-                _ApplyLanguageResourcesCore(app, languageCode);
-            });
-            return;
-        }
-
-        _ApplyLanguageResourcesCore(app, languageCode);
-    }
-
-    private static void _ApplyLanguageResourcesCore(Application app, string languageCode)
-    {
-        var dictionaries = app.Resources.MergedDictionaries;
-
-        if (_baseLanguageDictionary is not null) dictionaries.Remove(_baseLanguageDictionary);
-        if (_currentLanguageDictionary is not null) dictionaries.Remove(_currentLanguageDictionary);
-
-        _baseLanguageDictionary = _LoadLanguageDictionary(DefaultLanguageCode);
-        dictionaries.Add(_baseLanguageDictionary);
-
-        if (string.Equals(languageCode, DefaultLanguageCode, StringComparison.OrdinalIgnoreCase))
-        {
-            _currentLanguageDictionary = null;
-        }
-        else
-        {
-            _currentLanguageDictionary = _LoadLanguageDictionary(languageCode);
-            dictionaries.Add(_currentLanguageDictionary);
-        }
-    }
-
-    private static ResourceDictionary _LoadLanguageDictionary(string languageCode)
-    {
-        return new ResourceDictionary
-        {
-            Source = new Uri($"{AssemblyResourcePrefix}{languageCode}.xaml", UriKind.Relative)
-        };
+        // 8-24 砍 WPF：原实现经 Application.Current/Dispatcher 往 WPF 资源字典写语言包（启动器纯 Avalonia 不用），
+        // 只保留文化设置
+        _ApplyCultures(uiCulture, formatCulture);
     }
 
     private static string _NormalizeConfigValue(string? value)
