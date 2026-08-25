@@ -62,7 +62,7 @@ public partial class ProjectCardVM : ObservableObject
         Id = hit.ProjectId;
         Source = "modrinth";
         SourceText = "Modrinth";
-        Title = hit.Title;
+        Title = ChineseNameCache.Apply("mr:" + hit.Slug, hit.Title); // 8-24 命中本地缓存 → 英文（中文）
         Author = hit.Author;
         Description = hit.Description;
         DownloadsText = FormatCount(hit.Downloads);
@@ -86,7 +86,7 @@ public partial class ProjectCardVM : ObservableObject
         Id = d.Id;
         Source = "modrinth";
         SourceText = "Modrinth";
-        Title = d.Title;
+        Title = ChineseNameCache.Apply("mr:" + d.Slug, d.Title); // 8-24 收藏/详情卡片也显示中文
         Author = "";
         Description = d.Description;
         DownloadsText = FormatCount(d.Downloads);
@@ -110,7 +110,7 @@ public partial class ProjectCardVM : ObservableObject
         Id = $"cf-{p.id}";
         Source = "curseforge";
         SourceText = "CurseForge";
-        Title = p.name;
+        Title = ChineseNameCache.Apply("cf:" + p.slug, p.name); // 8-24 CF 卡片也显示中文（中文链路的 name 已中文，Apply 原样）
         Author = p.authors is { Count: > 0 } ? string.Join("、", p.authors.Select(a => a.name)) : "";
         Description = p.summary ?? "";
         DownloadsText = FormatCount(p.downloadCount);

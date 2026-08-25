@@ -5,6 +5,7 @@ using Launcher.Core.Download;
 using Launcher.Core.Ecosystem;
 using Launcher.Core.Model.Modrinth;
 using Launcher.Core.Utils;
+using PCL.Core.Minecraft.ResourceProject.Curseforge;
 
 namespace Launcher.Core.Services;
 
@@ -27,10 +28,11 @@ public sealed class EcosystemService
     private readonly DownloadService _downloads;
     private readonly string _gameDirectory;
     private readonly McmodSearchService _mcmod;
+    private readonly CurseForgeService? _cf;
     private readonly string _cacheDir;
 
     public EcosystemService(HttpClient? http = null, DownloadService? downloads = null, string? gameDirectory = null,
-        McmodSearchService? mcmod = null, string? cacheDir = null)
+        McmodSearchService? mcmod = null, string? cacheDir = null, CurseForgeService? curseforge = null)
     {
         _http = http ?? HttpClientPool.Create();
         _http.DefaultRequestHeaders.UserAgent.ParseAdd("YanKa-Launcher/0.1");
@@ -38,6 +40,8 @@ public sealed class EcosystemService
         _gameDirectory = gameDirectory ?? GameDirectory.Detect();
         // 8-19 生态修缮：mcmod 搜索/详情页共享同一缓存目录（TTL 24h，重复搜索零网络）
         _mcmod = mcmod ?? new McmodSearchService(cacheDir);
+        // 8-24 CF 中文搜索：可注入 CurseForgeService（ViewModel 共享实例；null 时 CF 中文链不启用）
+        _cf = curseforge;
         // 8-16 批次 53：缓存目录可注入（测试隔离——磁盘缓存跨测试共享会污染请求计数断言）
         _cacheDir = cacheDir ?? Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Launcher", "cache");
@@ -78,22 +82,23 @@ public sealed class EcosystemService
             }
             catch { /* 别名单条失败跳过 */ }
         }
-        var slugs = await _mcmod.SearchSlugsAsync(query, maxResults: 10, ct);
+        var candidates = await _mcmod.SearchCandidatesAsync(query, maxResults: 10, ct);
         // 8-22 并行查询（旧串行：Modrinth API 国内直连 8.6s/请求 × 10 = 86s 干等——
         // 「中文搜不到」的真相是慢到用户放弃）。门 4 + 单条 10s 超时：最坏 ~20s，
         // 常见 2-3 条有 Modrinth 外链 → 几秒出结果
         using var gate = new SemaphoreSlim(4);
-        var tasks = slugs.Select(async item =>
+        var tasks = candidates.Select(async item =>
         {
             await gate.WaitAsync(ct);
             try
             {
                 using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
                 timeout.CancelAfter(TimeSpan.FromSeconds(10));
-                var detail = await GetProjectAsync(item.Slug, timeout.Token);
+                var detail = await GetProjectAsync(item.MrSlug, timeout.Token);
                 if (detail is null || !detail.ProjectType.Equals(typeName, StringComparison.OrdinalIgnoreCase))
                     return (Hit: (ModrinthSearchHit?)null, item.ChineseTitle);
                 if (!seen.Add(detail.Slug)) return (Hit: (ModrinthSearchHit?)null, item.ChineseTitle); // 别名已出，去重
+                ChineseNameCache.Put("mr:" + detail.Slug, item.ChineseTitle); // 8-24 养缓存：下次英文搜也显示中文
                 // 8-19 生态修缮：目标版本/加载器无匹配构建 → 过滤（版本列表走缓存，重复搜索零网络）
                 if (gameVersion is not null || loader is not null)
                 {
@@ -116,6 +121,46 @@ public sealed class EcosystemService
             if (hit is not null) hits.Add(hit);
         }
         return new ModrinthSearchResponse(hits, hits.Count, 0, 10);
+    }
+
+    /// <summary>CF 中文搜索（8-24）：MC百科链解出的 CurseForge slug → 复用 _cf.SearchAsync 按 slug 反查
+    /// （CF API 无按 slug 直取的端点，slug 精确搜索通常首条即命中）→ 精确匹配 → 标题替换为中文。
+    /// 需有效 CF API key（无 key / 未注入 _cf 返回空，调用方提示填 key）。</summary>
+    public async Task<List<CurseforgeProject>> SearchChineseCurseforgeAsync(
+        ProjectType type, string query, string? gameVersion = null, CancellationToken ct = default)
+    {
+        if (_cf is null || !_cf.IsEnabled) return [];
+        var candidates = await _mcmod.SearchCandidatesAsync(query, maxResults: 10, ct);
+        var cfItems = candidates
+            .Where(c => c.CfSlug is not null)
+            .Select(c => (Slug: c.CfSlug!, c.ChineseTitle))
+            .DistinctBy(c => c.Slug, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        using var gate = new SemaphoreSlim(4);
+        var tasks = cfItems.Select(async item =>
+        {
+            await gate.WaitAsync(ct);
+            try
+            {
+                using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                timeout.CancelAfter(TimeSpan.FromSeconds(10));
+                var page = await _cf.SearchAsync(type, item.Slug, gameVersion, ct: timeout.Token);
+                var proj = page?.Projects.FirstOrDefault(p =>
+                    string.Equals(p.slug, item.Slug, StringComparison.OrdinalIgnoreCase));
+                if (proj is null) return (Project: (CurseforgeProject?)null, item.ChineseTitle);
+                ChineseNameCache.Put("cf:" + proj.slug, item.ChineseTitle); // 8-24 养缓存：下次英文搜也显示中文
+                return (Project: proj with { name = item.ChineseTitle }, item.ChineseTitle);
+            }
+            catch { return (Project: (CurseforgeProject?)null, item.ChineseTitle); }
+            finally { gate.Release(); }
+        }).ToArray();
+        var results = new List<CurseforgeProject>();
+        foreach (var t in tasks)
+        {
+            var (proj, _) = await t;
+            if (proj is not null) results.Add(proj);
+        }
+        return results;
     }
 
     /// <summary>搜索（facets 按 类型|游戏版本|加载器|功能分类 过滤，offset 分页）</summary>

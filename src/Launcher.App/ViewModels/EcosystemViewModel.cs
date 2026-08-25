@@ -18,8 +18,8 @@ namespace Launcher.App.ViewModels;
 /// </summary>
 public partial class EcosystemViewModel : ViewModelBase
 {
-    private readonly EcosystemService _eco = new();
-    private readonly CurseForgeService _cf = new(); // key 直连（设置 DPAPI 密文落盘）
+    private readonly CurseForgeService _cf; // key 直连（设置 DPAPI 密文落盘）
+    private readonly EcosystemService _eco; // 8-24 CF 中文搜索共享同一 CF 实例
     private readonly ProjectType _type;
     private CancellationTokenSource? _searchCts;
     private int _requestSeq;
@@ -33,6 +33,8 @@ public partial class EcosystemViewModel : ViewModelBase
 
     public EcosystemViewModel(ProjectType type = ProjectType.Mod)
     {
+        _cf = new CurseForgeService();
+        _eco = new EcosystemService(curseforge: _cf);
         _type = type;
         SelectedSort = SortOptions[0];
         SelectedGameVersion = GameVersionOptions[0];
@@ -437,12 +439,16 @@ public partial class EcosystemViewModel : ViewModelBase
         }
         if (Launcher.Core.Services.McmodSearchService.ContainsChinese(Query))
         {
-            // 8-22 中文查询 + CF 源：CF 索引是英文标题，中文必 0 命中——明示而非白打 API
+            // 8-24 CF 中文搜索：MC百科链解出 CF slug → 按 slug 反查 CF API（需有效 key；
+            // 无命中（MC百科没 CF 条目 / slug 搜不到）显示空提示而非白打官网）
+            var results = await SlowQueryNotifier.WatchAsync(
+                _eco.SearchChineseCurseforgeAsync(_type, Query, gameVersion, ct),
+                "正在通过 MC百科搜索中文结果（较慢），请稍候…", TimeSpan.FromSeconds(3));
             if (seq != _requestSeq) return;
             Cards.Clear();
-            ManualBrowseUrl = "https://www.curseforge.com/minecraft";
-            FinishPage(seq, 0, gameVersion,
-                "CurseForge 暂不支持中文搜索（索引是英文标题）。请切换「Modrinth」或「全部」源，或用下方按钮到官网手动搜索。");
+            AddCards(results ?? [], p => p.name, p => p.summary, p => new ProjectCardVM(p));
+            FinishPage(seq, results?.Count ?? 0, gameVersion,
+                results is { Count: 0 } ? "中文搜索没在 CurseForge 找到匹配的模组（只有 MC百科有 CF 条目的才会出现）。" : null);
             return;
         }
         var sort = CfSortOf(SelectedSort?.Index);
@@ -460,6 +466,16 @@ public partial class EcosystemViewModel : ViewModelBase
     private static Task<CurseForgeSearchPage?> TryCfSearchAsync(Func<Task<CurseForgeSearchPage?>> search)
         => search();
 
+    /// <summary>8-24 双源中文：CF 侧走 MC百科链（包装成 CurseForgeSearchPage 形状并入双源合并）</summary>
+    private async Task<CurseForgeSearchPage?> SearchChineseCfAsync(int seq, string? gameVersion, CancellationToken ct)
+    {
+        var results = await SlowQueryNotifier.WatchAsync(
+            _eco.SearchChineseCurseforgeAsync(_type, Query, gameVersion, ct),
+            "正在通过 MC百科搜索中文结果（较慢），请稍候…", TimeSpan.FromSeconds(3));
+        if (seq != _requestSeq) return null;
+        return results is null ? null : new CurseForgeSearchPage(results, results.Count);
+    }
+
     private async Task RunBothSearchAsync(int seq, string? loader, string? gameVersion, string? category, CancellationToken ct)
     {
         var sort = CfSortOf(SelectedSort?.Index);
@@ -471,10 +487,12 @@ public partial class EcosystemViewModel : ViewModelBase
             : _eco.SearchAsync(_type, Query, gameVersion, loader, category,
                 index: SelectedSort?.Index ?? EcosystemService.SortIndex.Relevance,
                 limit: PageSize, offset: CurrentPage * PageSize, ct);
-        // 8-22 中文 query + 「全部」：CF 英文索引必 0 命中——直接跳过不白等（快一倍，且不误导）
-        var cfTask = !isChinese && _cf.IsEnabled
-            ? TryCfSearchAsync(() => _cf.SearchAsync(_type, Query, gameVersion, sort, PageSize, CurrentPage * PageSize, ct))
-            : Task.FromResult<CurseForgeSearchPage?>(null);
+        // 8-24 中文 query + 「全部」：CF 侧走 MC百科链反查（原 8-22 直接跳过不白等——现已支持）；英文走常规 CF 搜索
+        var cfTask = !_cf.IsEnabled
+            ? Task.FromResult<CurseForgeSearchPage?>(null)
+            : isChinese
+                ? SearchChineseCfAsync(seq, gameVersion, ct)
+                : TryCfSearchAsync(() => _cf.SearchAsync(_type, Query, gameVersion, sort, PageSize, CurrentPage * PageSize, ct));
         string? mrErr = null, cfErr = null;
         var mr = await TrySearchAsync(mrTask, ex => mrErr = ex.Message);
         var cf = await TrySearchAsync(cfTask, ex => cfErr = ex.Message);

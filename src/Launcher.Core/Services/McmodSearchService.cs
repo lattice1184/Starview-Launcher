@@ -83,6 +83,12 @@ public sealed class McmodSearchService
         @"data-original-title=""Modrinth""[^>]*?href=""//link\.mcmod\.cn/target/([A-Za-z0-9+/=]+)""",
         RegexOptions.Compiled | RegexOptions.Singleline);
 
+    /// <summary>详情页 CurseForge 外链（8-24 CF 中文搜索）：与 Modrinth 同构，data-original-title="CurseForge"。
+    /// 实抓 2723.html 确认：base64 解出 https://www.curseforge.com/minecraft/mc-mods/{slug}（slug 形式非数字 id）。</summary>
+    private static readonly Regex CurseForgeLinkRegex = new(
+        @"data-original-title=""CurseForge""[^>]*?href=""//link\.mcmod\.cn/target/([A-Za-z0-9+/=]+)""",
+        RegexOptions.Compiled | RegexOptions.Singleline);
+
     /// <summary>解析搜索结果页 → (条目 id, 中文标题) 列表</summary>
     public static List<(string ClassId, string Title)> ParseSearchResults(string html)
     {
@@ -105,14 +111,38 @@ public sealed class McmodSearchService
         {
             var url = Encoding.UTF8.GetString(Convert.FromBase64String(m.Groups[1].Value));
             var idx = url.IndexOf("/mod/", StringComparison.Ordinal);
-            return idx < 0 ? null : url[(idx + 5)..];
+            return idx < 0 ? null : TrimSlug(url[(idx + 5)..]);
         }
         catch { return null; }
     }
 
-    /// <summary>中文查询 → (Modrinth slug, 中文标题) 列表（去重，上限 maxResults；失败/无外链条目跳过）。
+    /// <summary>解析详情页 → CurseForge slug（8-24；无 CF 外链返回 null）。base64 解出
+    /// curseforge.com/minecraft/mc-mods/{slug}，取 slug 段（截断 ?/# 防 query 串污染）。</summary>
+    public static string? DecodeCurseforgeSlug(string detailHtml)
+    {
+        var m = CurseForgeLinkRegex.Match(detailHtml);
+        if (!m.Success) return null;
+        try
+        {
+            var url = Encoding.UTF8.GetString(Convert.FromBase64String(m.Groups[1].Value));
+            var idx = url.IndexOf("/mc-mods/", StringComparison.Ordinal);
+            return idx < 0 ? null : TrimSlug(url[(idx + "/mc-mods/".Length)..]);
+        }
+        catch { return null; }
+    }
+
+    /// <summary>截断 query/fragment（?/# 后），并 trim 尾部斜杠/空白</summary>
+    private static string TrimSlug(string slug)
+    {
+        var q = slug.IndexOfAny(['?', '#']);
+        var s = q >= 0 ? slug[..q] : slug;
+        return s.TrimEnd('/', ' ', '\t').Trim();
+    }
+
+    /// <summary>中文查询 → 候选列表 (Modrinth slug?, CurseForge slug?, 中文标题)（去重，上限 maxResults；
+    /// 失败/无外链条目跳过）。8-24 加 CF slug：同一详情页同时解 Modrinth + CurseForge 外链，无额外网络。
     /// 8-19 生态修缮：搜索页 + 详情页磁盘缓存（TTL 24h）——重复搜索零网络（此前每次重打 ≤11 请求）</summary>
-    public async Task<List<(string Slug, string ChineseTitle)>> SearchSlugsAsync(
+    public async Task<List<(string? MrSlug, string? CfSlug, string ChineseTitle)>> SearchCandidatesAsync(
         string query, int maxResults, CancellationToken ct)
     {
         var searchUrl = $"https://search.mcmod.cn/s?key={Uri.EscapeDataString(query)}";
@@ -120,8 +150,9 @@ public sealed class McmodSearchService
         if (html is null) return [];
         await WriteCachedAsync($"s:{query}", html, ct);
 
-        var slugs = new List<(string, string)>();
-        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var candidates = new List<(string?, string?, string)>();
+        var seenMr = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var seenCf = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var entries = ParseSearchResults(html).Take(maxResults).ToList();
         // 8-22 详情页并行解析（旧串行 10 条目 × 0.4-2s = 10s+ 干等，观感像死掉）；门 4 防打爆 mcmod
         using var gate = new SemaphoreSlim(4);
@@ -131,15 +162,19 @@ public sealed class McmodSearchService
             var detail = await GetPageAsync($"d:{entry.ClassId}",
                 $"https://www.mcmod.cn/class/{entry.ClassId}.html", ct);
             if (detail is not null) await WriteCachedAsync($"d:{entry.ClassId}", detail, ct);
-            return (Slug: detail is null ? null : DecodeModrinthSlug(detail), entry.Title);
+            return (Mr: detail is null ? null : DecodeModrinthSlug(detail),
+                    Cf: detail is null ? null : DecodeCurseforgeSlug(detail),
+                    entry.Title);
         }).ToArray();
         foreach (var t in tasks)
         {
-            var (slug, title) = await t;
-            if (slug is not null && seen.Add(slug))
-                slugs.Add((slug, title));
+            var (mr, cf, title) = await t;
+            var mrOk = mr is not null && seenMr.Add(mr);
+            var cfOk = cf is not null && seenCf.Add(cf);
+            if (mrOk || cfOk)
+                candidates.Add((mr, cf, title));
         }
-        return slugs;
+        return candidates;
     }
 
     /// <summary>查询是否含中文（CJK）——中文搜索链路触发条件</summary>
@@ -203,6 +238,10 @@ public static class ModAliasTable
         ["宝可梦"] = ["cobblemon"],
         ["滚轮整理"] = ["inventory-profiles-next"],
     };
+
+    /// <summary>全部别名条目（中文名, slug[]）——ChineseNameCache 种子用（8-24）</summary>
+    public static IEnumerable<(string Chinese, string[] Slugs)> AllEntries()
+        => Map.Select(kv => (kv.Key, kv.Value));
 
     /// <summary>中文 query → 命中的别名 slug 列表（8-19 生态修缮：多词查询命中全部键并集——
     /// 「钠 锂」→ sodium + lithium；旧实现只中一个键，多词搜索丢一半；无命中空）</summary>

@@ -1,3 +1,4 @@
+using System.Text;
 using Launcher.Core.Services;
 
 namespace Launcher.Core.Tests;
@@ -104,4 +105,38 @@ public class McmodSearchServiceTests
     [InlineData("钠", true)]
     public void ContainsChinese_DetectsCjk(string query, bool expected)
         => Assert.Equal(expected, McmodSearchService.ContainsChinese(query));
+
+    [Fact]
+    public void DecodeCurseforgeSlug_ExtractsSlugFromBase64Link()
+    {
+        // 8-24 CF 中文搜索：实抓 mcmod 详情页 2723.html 确认格式与 Modrinth 同构——
+        // base64("https://www.curseforge.com/minecraft/mc-mods/pretty-beaches")
+        var html = """
+            <li><a data-toggle="tooltip" data-original-title="CurseForge" target="_blank" rel="nofollow noreferrer" target="_blank"
+                href="//link.mcmod.cn/target/aHR0cHM6Ly93d3cuY3Vyc2Vmb3JnZS5jb20vbWluZWNyYWZ0L21jLW1vZHMvcHJldHR5LWJlYWNoZXM=">
+                <svg class="common-linkicon-curseforge"></svg></a></li>
+            """;
+        Assert.Equal("pretty-beaches", McmodSearchService.DecodeCurseforgeSlug(html));
+    }
+
+    [Fact]
+    public void DecodeCurseforgeSlug_NoCurseforgeLink_ReturnsNull()
+    {
+        // 只有 Modrinth 链接
+        var html = """
+            <a data-original-title="Modrinth" href="//link.mcmod.cn/target/aHR0cHM6Ly9tb2RyaW50aC5jb20vbW9kL3NvZGl1bQ==">
+            <svg class="common-linkicon-modrinth"></svg></a>
+            """;
+        Assert.Null(McmodSearchService.DecodeCurseforgeSlug(html));
+    }
+
+    [Fact]
+    public void DecodeCurseforgeSlug_TruncatesQueryString()
+    {
+        // 8-24 低风险 bug 修复：URL 带 ?/# 时 slug 只取到 query 前（防参数串进搜索词）
+        var url = "https://www.curseforge.com/minecraft/mc-mods/sodium?page=2#section";
+        var b64 = Convert.ToBase64String(Encoding.UTF8.GetBytes(url));
+        var html = $@"<a data-original-title=""CurseForge"" href=""//link.mcmod.cn/target/{b64}""></a>";
+        Assert.Equal("sodium", McmodSearchService.DecodeCurseforgeSlug(html));
+    }
 }

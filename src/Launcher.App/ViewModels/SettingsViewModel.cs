@@ -293,7 +293,8 @@ public partial class SettingsViewModel : ViewModelBase
     /// <summary>最近更新（关于页：改动最大的几条功能与修复，用户视角；随版本更新追加）</summary>
     public IReadOnlyList<string> ChangelogItems { get; } =
     [
-        // 1.1.1（8-24）：下载提速 + 文字修复 + 体积优化
+        // 1.1.1（8-24）：下载提速 + 文字修复 + 体积优化 + 中文搜索
+        "模组中文搜索增强：CurseForge 也能中文搜了，英文搜索结果自动带中文名（本地缓存越用越全）",
         "下载提速：Modrinth 等限速源每分片独立连接，大文件满并发真正生效，实测数倍提速",
         "第三方文件支持多线程分片：ISO、安装包等大文件并发下载，不再单线慢慢磨",
         "CurseForge 文件支持镜像竞速：配置 CDN 前缀后官方与镜像自动比快，谁快用谁",
