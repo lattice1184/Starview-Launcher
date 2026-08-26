@@ -4,6 +4,7 @@
              xmlns:local="using:Launcher.App"
              xmlns:behaviors="using:Launcher.App.Animations"
              xmlns:conv="using:Launcher.App.Converters"
+             xmlns:views="using:Launcher.App.Views"
              RequestedThemeVariant="Dark">
 
     <Application.DataTemplates>
@@ -78,12 +79,13 @@
             <Setter Property="FontFamily" Value="Microsoft YaHei UI, Segoe UI Variable, Segoe UI"/>
         </Style>
 
-        <!-- 按钮：弹性缩放由 SpringScaleBehavior 托管；涟漪由 RippleBehavior 托管（模板内置 RippleHost）。
-             hover 变色由 HoverBrushBehavior 托管（本地值驱动——样式伪类 Setter 对模板绑定的驱动在 Avalonia 12 不可靠，AD1 根治） -->
+        <!-- 8-26 内存瘦身：去不必要的按钮效果——SpringScale（hover/press 缩放）与 Ripple（点击水波）
+             全局默认关（无按钮显式开启；个别 View 残留的 Enabled=False 无害）。删模板 RippleHost Canvas
+             （每按钮一个视觉节点，纯装饰）。hover 变色保留（HoverBrushBehavior——用户要的悬停反馈）。 -->
         <Style Selector="Button">
             <Setter Property="RenderTransformOrigin" Value="50%,50%"/>
-            <Setter Property="behaviors:SpringScaleBehavior.Enabled" Value="True"/>
-            <Setter Property="behaviors:RippleBehavior.Enabled" Value="True"/>
+            <Setter Property="behaviors:SpringScaleBehavior.Enabled" Value="False"/>
+            <Setter Property="behaviors:RippleBehavior.Enabled" Value="False"/>
             <Setter Property="behaviors:HoverBrushBehavior.Enabled" Value="True"/>
             <Setter Property="behaviors:HoverBrushBehavior.HoverBrush" Value="{DynamicResource BgHover}"/>
             <Setter Property="Template">
@@ -93,14 +95,11 @@
                             BorderBrush="{TemplateBinding BorderBrush}"
                             BorderThickness="{TemplateBinding BorderThickness}"
                             ClipToBounds="True">
-                        <Grid>
-                            <ContentPresenter Content="{TemplateBinding Content}"
-                                              ContentTemplate="{TemplateBinding ContentTemplate}"
-                                              HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
-                                              VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
-                                              Margin="{TemplateBinding Padding}"/>
-                            <Canvas x:Name="RippleHost" IsHitTestVisible="False"/>
-                        </Grid>
+                        <ContentPresenter Content="{TemplateBinding Content}"
+                                          ContentTemplate="{TemplateBinding ContentTemplate}"
+                                          HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                          VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
+                                          Margin="{TemplateBinding Padding}"/>
                     </Border>
                 </ControlTemplate>
             </Setter>
@@ -375,7 +374,30 @@
                 </Transitions>
             </Setter>
         </Style>
-        <Style Selector="Border.row:hover">
+        <Style Selector="Border.row:pointerover">
+            <Setter Property="Background" Value="{DynamicResource BgRaised}"/>
+        </Style>
+        <!-- 8-25 下载页任务行去掉 hover（卡片 hover 残留根治）：taskRow 专属覆盖 row:pointerover——
+             优先级更高（Selector 更多类），仅下载页不受影响，其余 row 列表保留 hover -->
+        <Style Selector="Border.taskRow:pointerover">
+            <Setter Property="Background" Value="Transparent"/>
+        </Style>
+        <!-- 8-26 版本页悬浮：行是 Border.row 套在 ListBoxItem 里。用户实测后定案——
+             ① ListBoxItem 默认高亮（Fluent）与行内 Border.row:pointerover 叠加成「2个悬浮效果」→ 中和外层；
+             ② 行内 BgRaised 深色块用户明确「不要内层深色阴影」→ 版本行悬停背景改透明（只作用列表行，
+                设置/下载等其它 row 保留悬停） -->
+        <Style Selector="ListBoxItem:pointerover">
+            <Setter Property="Background" Value="Transparent"/>
+        </Style>
+        <Style Selector="ListBoxItem Border.row:pointerover">
+            <Setter Property="Background" Value="Transparent"/>
+        </Style>
+
+        <!-- 8-25/8-26 悬浮方案（对齐版本浏览页 row hover 同款）：Button:pointerover 驱动卡片背景 → BgRaised。
+             8-26 实锤：Avalonia 悬浮伪类是 :pointerover 不是 :hover——:hover 从第一版就是死选择器永不匹配。
+             8-26 真机实测：卡片只走此样式（行为双保险与样式打架 → 残影停在 BgRaised），行为在卡片上
+             保持禁用。modcard 自带 0.15s 背景过渡 → 平滑无残留。生态搜索卡 + 导航卡共用。 -->
+        <Style Selector="Button:pointerover Border.modcard">
             <Setter Property="Background" Value="{DynamicResource BgRaised}"/>
         </Style>
 

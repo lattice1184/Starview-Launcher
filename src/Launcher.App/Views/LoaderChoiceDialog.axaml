@@ -1,10 +1,9 @@
-<Window xmlns="https://github.com/avaloniaui"
-        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        x:Class="Launcher.App.Views.LoaderChoiceDialog"
-        Title="选择加载器" Width="440" SizeToContent="Height" CanResize="False"
-        WindowStartupLocation="CenterOwner"
-        Background="{DynamicResource BgSurface}">
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="Launcher.App.Views.LoaderChoiceDialog">
 
+    <!-- 8-26 转窗口内覆盖层：由 MainWindow.DialogHost 挂载（主窗不失活→不触发亚克力降级）。
+         背景由 DialogHost 的 Border 提供，这里不放背景 -->
     <StackPanel x:Name="Root" Margin="24,20" Spacing="14">
         <TextBlock x:Name="VersionTitle" FontSize="17" FontWeight="Bold"/>
 
@@ -42,4 +41,4 @@
             <Button x:Name="StartBtn" Content="开始下载" Classes="primary" Click="OnStart"/>
         </StackPanel>
     </StackPanel>
-</Window>
+</UserControl>

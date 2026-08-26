@@ -24,13 +24,18 @@ public sealed record ModpackImportInfo(
     ModpackFormat Format = ModpackFormat.Own,
     IReadOnlyList<CurseForgeFileRef>? CurseForgeFiles = null,
     IReadOnlyList<ModrinthPackFile>? MrpackFiles = null,
-    string? LoaderVersion = null);
+    string? LoaderVersion = null,
+    IReadOnlyList<MrpackModDependency>? ModDependencies = null);
 
 /// <summary>CurseForge manifest files[] 条目（API 兜底下载用）</summary>
 public sealed record CurseForgeFileRef(int ProjectId, int FileId, bool Required);
 
 /// <summary>mrpack files[] 条目（downloads 直链，含 sha1/size）</summary>
 public sealed record ModrinthPackFile(string Path, string Url, string? Sha1, long Size, bool ClientUnsupported);
+
+/// <summary>mrpack dependencies[] 里非 minecraft/loader 的模组前置（8-26：如 fabric-api → Modrinth 版本 id，
+/// 旧实现只取 minecraft + loader，模组类前置全丢 → 整合包「不下前置」）</summary>
+public sealed record MrpackModDependency(string ProjectKey, string VersionId);
 
 /// <summary>
 /// 整合包导入：解析自家/CurseForge/Modrinth 三种 zip 格式，
@@ -156,9 +161,17 @@ public sealed class ModpackImporter
                 f.FileSize,
                 f.Env?.Client == "unsupported"));
         }
+        // 8-26 模组类前置（fabric-api 等非 minecraft/loader 键）：值 = Modrinth 版本 id，按版本直装。
+        // 旧实现只取 minecraft + loader → 作者没把前置塞进 files[] 时「不下前置」。
+        var modDeps = deps
+            .Where(kv => kv.Key is not ("minecraft" or "fabric-loader" or "quilt-loader" or "forge" or "neoforge")
+                         && !string.IsNullOrWhiteSpace(kv.Value) && kv.Value != "*")
+            .Select(kv => new MrpackModDependency(kv.Key, kv.Value))
+            .ToList();
         return new ModpackImportInfo(
             m.Name, mc, loader?.Kind.ToString().ToLowerInvariant(), files.Count,
-            ModpackFormat.Modrinth, MrpackFiles: files, LoaderVersion: loader?.Version);
+            ModpackFormat.Modrinth, MrpackFiles: files, LoaderVersion: loader?.Version,
+            ModDependencies: modDeps.Count > 0 ? modDeps : null);
     }
 
     // ---------- 静态工具（可单测） ----------

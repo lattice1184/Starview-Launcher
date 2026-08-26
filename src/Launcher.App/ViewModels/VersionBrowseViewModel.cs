@@ -204,6 +204,9 @@ public partial class VersionBrowseViewModel : ViewModelBase
             // JarMissing 等磁盘态由 RefreshJarMissing 独立刷新
             SelectedVersion = row;
             Detail.RefreshJarMissing();
+            // 8-26 修「装完 mod 版本页列表不刷新」：磁盘 watcher 触达这里时重扫 mod 列表
+            // （旧代码只刷 JarMissing 红字，Mods 集合不重建 → 新装的前置/主文件不出现）
+            Detail.Manage?.ReloadMods();
         }
         else
         {
@@ -339,6 +342,15 @@ public partial class VersionBrowseViewModel : ViewModelBase
     {
         await LoadAsync();
         SelectById(versionId); // AL11：导入完成刷新列表并选中新版本
+    }
+
+    /// <summary>8-26 生态安装完成后通知：目标实例若正被选中，重扫其 mods 列表（跨 VM 联动，
+    /// 补 watcher 的目录/时机边界——装完回版本页列表实时刷新）</summary>
+    public void NotifyModsInstalled(string versionId)
+    {
+        if (SelectedVersion is { } row
+            && string.Equals(row.Id, versionId, StringComparison.OrdinalIgnoreCase))
+            Detail.Manage?.ReloadMods();
     }
 }
 

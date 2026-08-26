@@ -66,6 +66,28 @@ public class MirrorFallbackTests
     }
 
     [Fact]
+    public async Task PistonDataClientJar_HasMirrorCandidate()
+    {
+        // 8-26 回归锁定：client.jar 曾漏加 piston-data 镜像 → 版本安装里唯一候选(1) 单直连文件，
+        // Mojang 波动时无兜底（19:40 实测 26.7s）。官方失败 → 镜像必须接手。
+        var handler = new HostStubHandler();
+        handler.RouteBytes("piston-data.mojang.com/v1/objects/abcdef/client.jar", 500, []);
+        handler.RouteBytes("bmclapi2.bangbang93.com/v1/objects/abcdef/client.jar", 200, "12345"u8.ToArray());
+        var svc = CreateService(handler);
+        var dest = Path.Combine(Path.GetTempPath(), $"pistonmirror-{Guid.NewGuid():N}.jar");
+        try
+        {
+            var url = "https://piston-data.mojang.com/v1/objects/abcdef/client.jar";
+            await svc.DownloadFileAsync(url, dest, null, 5, null, CancellationToken.None);
+
+            Assert.True(File.Exists(dest));
+            Assert.Equal(5, new FileInfo(dest).Length);
+            Assert.Contains(handler.Requests, r => r.Contains("bmclapi2.bangbang93.com/v1/objects/abcdef"));
+        }
+        finally { if (File.Exists(dest)) File.Delete(dest); }
+    }
+
+    [Fact]
     public async Task OfficialWrongBytes_MirrorCorrectBytes_Wins()
     {
         var handler = new HostStubHandler();

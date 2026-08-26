@@ -2,6 +2,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:Launcher.App.ViewModels"
              xmlns:svc="using:Launcher.App.Services"
+             xmlns:app="using:Launcher.App.Converters"
              xmlns:conv="using:Avalonia.Data.Converters"
              x:Class="Launcher.App.Views.HomeView"
              x:DataType="vm:HomeViewModel">
@@ -11,10 +12,10 @@
         <!-- ① 启动控制卡（顶部一行高密度操作 + 阶段条） -->
         <Border Classes="card" Padding="12">
             <StackPanel Spacing="8">
-                <!-- 行1：头像（点击弹账号面板）+ 版本 + 启动/停止 + 状态（一行） -->
-                <Grid DockPanel.Dock="Top" ColumnDefinitions="Auto,Auto,*,Auto,Auto,Auto" ColumnSpacing="12">
+                <!-- 8-26 行1精简：头像（账号入口）+ 版本 + 启动/停止 + 状态——删玩家名板，名字看头像 ToolTip -->
+                <Grid DockPanel.Dock="Top" ColumnDefinitions="Auto,*,Auto,Auto,Auto" ColumnSpacing="12">
                     <Button x:Name="AvatarButton" Padding="0" Background="Transparent" BorderThickness="0"
-                            Click="OnAvatarClick" ToolTip.Tip="账号管理。登录、切换账号、换皮肤都在这">
+                            Click="OnAvatarClick" ToolTip.Tip="{Binding PlayerName}">
                         <Border Width="44" Height="44" CornerRadius="10" ClipToBounds="True" Background="{DynamicResource BgRaised}">
                             <!-- 8-13：头像加载期间首字母占位，不露白 -->
                             <Grid>
@@ -28,19 +29,8 @@
                             </Grid>
                         </Border>
                     </Button>
-                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="1">
-                        <StackPanel Orientation="Horizontal" Spacing="6">
-                            <TextBlock Text="{Binding PlayerName}" FontSize="15" FontWeight="SemiBold"
-                                       TextTrimming="CharacterEllipsis" MaxWidth="180" ToolTip.Tip="{Binding PlayerName}"/>
-                            <Border CornerRadius="3" Padding="6,1" BorderBrush="{DynamicResource Accent}" BorderThickness="1"
-                                    VerticalAlignment="Center" IsVisible="{Binding Account.IsLoggedIn}">
-                                <TextBlock Text="{Binding AccountTypeText}" FontSize="9" Foreground="{DynamicResource Accent}"/>
-                            </Border>
-                        </StackPanel>
-                        <TextBlock Text="Starview" FontSize="11" Classes="dim"/>
-                    </StackPanel>
-                    <ComboBox Grid.Column="2" ItemsSource="{Binding InstalledVersions}" SelectedItem="{Binding SelectedVersion}"
-                              PlaceholderText="选择版本" MinWidth="160" MaxWidth="240" VerticalAlignment="Center">
+                    <ComboBox Grid.Column="1" ItemsSource="{Binding InstalledVersions}" SelectedItem="{Binding SelectedVersion}"
+                              PlaceholderText="选择版本" MinWidth="160" MaxWidth="260" VerticalAlignment="Center">
                         <ComboBox.ItemTemplate>
                             <DataTemplate x:DataType="vm:VersionInstanceVM">
                                 <TextBlock Text="{Binding DisplayName}" TextTrimming="CharacterEllipsis"
@@ -48,20 +38,18 @@
                             </DataTemplate>
                         </ComboBox.ItemTemplate>
                     </ComboBox>
-                    <Button Grid.Column="3" Content="启动游戏" Classes="primary" Padding="26,9" FontSize="13"
+                    <Button Grid.Column="2" Content="启动游戏" Classes="primary" Padding="26,9" FontSize="13"
                             Command="{Binding LaunchCommand}" VerticalAlignment="Center"
+                            IsEnabled="{Binding CanLaunch}"
                             IsVisible="{Binding !IsRunning}"/>
-                    <Button Grid.Column="3" Content="停止" Padding="26,9" FontSize="13"
+                    <Button Grid.Column="2" Content="停止" Padding="26,9" FontSize="13"
                             Command="{Binding StopGameCommand}" VerticalAlignment="Center"
                             IsVisible="{Binding IsRunning}"/>
-                    <StackPanel Grid.Column="4" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center" MinWidth="84">
+                    <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center" MinWidth="84">
                         <Border Width="8" Height="8" CornerRadius="4" Background="{Binding StateColor}"
                                 VerticalAlignment="Center"/>
                         <TextBlock Text="{Binding LaunchState}" FontSize="12" Foreground="{DynamicResource TextSecondary}"/>
                     </StackPanel>
-                    <Button Grid.Column="5" Content="内存优化" Classes="ghost" FontSize="11" Padding="10,4" Cursor="Hand"
-                            Command="{Binding Settings.TrimMemoryNowCommand}"
-                            ToolTip.Tip="立即释放内存：点击即执行，释放后提示省下多少"/>
                 </Grid>
 
                 <!-- 行2：阶段指示条 + 状态文字（仅启动时显示，平时保持卡矮小） -->
@@ -88,9 +76,7 @@
                                VerticalAlignment="Center" TextAlignment="Right" TextTrimming="CharacterEllipsis"/>
                 </Grid>
 
-                <!-- 行3：配置摘要 -->
-                <TextBlock Text="{Binding LaunchConfigText}" Classes="dim" FontSize="10"/>
-
+                <!-- 8-26 删配置摘要小字（进设置页查看）；阶段条+状态已表达进度，删底部进度条 -->
                 <!-- 启动失败修复入口（客户端文件缺失时显示） -->
                 <StackPanel Spacing="6" IsVisible="{Binding ShowRepairGuide}">
                     <TextBlock Text="{Binding RepairGuideText}" Foreground="{StaticResource Danger}" FontSize="11"/>
@@ -101,19 +87,18 @@
                                 Command="{Binding OpenOfficialDownloadCommand}"/>
                     </StackPanel>
                 </StackPanel>
-                <!-- 进度条（卡内底部） -->
-                <ProgressBar Value="{Binding LaunchProgress}" Maximum="100" Height="4"
-                             IsVisible="{Binding IsLaunching}"/>
             </StackPanel>
         </Border>
 
         <!-- ② 日志卡（全宽；Tab 双视图：控制台 / 启动记录）。
              8-19 半透明化：日志卡实色与 72% 透明内容区反差大（透明度高时观感"变深割裂"），
-             改 80%/90% 半透明跟随窗口透明度 -->
-        <Border Classes="card" Grid.Row="1" Padding="0" Background="#CC1D222C">
+             改 80%/90% 半透明跟随窗口透明度。
+             8-25 再透一档：文字渲染已响应式适配透明档（毛玻璃不糊），日志卡降到 64%/85%。
+             8-25 控制台偏深 → 换淡色石板灰（BgHover）当底 + 近白文字，淡而不糊、对比清楚 -->
+        <Border Classes="card" Grid.Row="1" Padding="0" Background="#CC2C3544">
             <DockPanel>
                 <!-- 头部 Tab -->
-                <Border DockPanel.Dock="Top" Background="#E6242A36" Padding="12,8"
+                <Border DockPanel.Dock="Top" Background="#D9242A36" Padding="12,8"
                         BorderBrush="{DynamicResource BorderColor}" BorderThickness="0,0,0,1">
                 <Grid ColumnDefinitions="Auto,Auto,*,Auto,Auto" ColumnSpacing="8">
                     <Button Content="控制台" Classes="tab" Classes.active="{Binding IsConsoleTabSelected}"
@@ -137,8 +122,8 @@
                 </Grid>
                 </Border>
 
-                <!-- 主体：同格叠放两面板（可见者后声明收点击） -->
-                <Grid>
+                <!-- 8-26 主体：同格叠放两面板（可见者后声明收点击）；平时折叠（启动中/看历史时展开） -->
+                <Grid IsVisible="{Binding LogBodyVisible}">
                     <!-- 启动记录面板 -->
                     <ScrollViewer IsVisible="{Binding IsHistoryTabSelected}">
                         <StackPanel Spacing="4" Margin="12,10">
@@ -178,9 +163,11 @@
                         <ScrollViewer x:Name="LogScroll" HorizontalScrollBarVisibility="Auto">
                             <ItemsControl ItemsSource="{Binding GameLogs}">
                                 <ItemsControl.ItemTemplate>
-                                    <DataTemplate>
-                                        <TextBlock Text="{Binding}" FontFamily="Consolas" FontSize="12"
-                                                   Foreground="{StaticResource TextLog}" TextWrapping="NoWrap"/>
+                                    <DataTemplate x:DataType="vm:LogLine">
+                                        <!-- 8-26 报错区域标记：ERROR/WARN/FATAL/异常标红、启动器事件§强调青 -->
+                                        <SelectableTextBlock Text="{Binding Text}" FontFamily="Consolas" FontSize="12"
+                                                   Foreground="{Binding Kind, Converter={x:Static app:LogLineBrushConverter.Instance}}"
+                                                   TextWrapping="NoWrap"/>
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>

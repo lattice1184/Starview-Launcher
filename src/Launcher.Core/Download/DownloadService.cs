@@ -1019,7 +1019,7 @@ public sealed class DownloadService
                 livePush?.Invoke(read, Environment.TickCount64); // 逐读推拍（陪跑采样——绕开 250ms 上报节流量化）
                 // 8-22 补：剩余不足一片不判死（同分片路径——弃尾清零净亏，等流读完；total 未知时保持原判死行为）
                 // 8-20：单候选（allowSlowDeath=false）不判死——慢速大文件继续硬啃
-                if (allowSlowDeath && (total <= 0 || total - read >= ChunkSizeFor(total)) && slowDetector.ShouldAbort(read, ct))
+                if (allowSlowDeath && (total <= 0 || total - read >= ChunkSizeFor(total, IsProgressiveThrottleCdn(url))) && slowDetector.ShouldAbort(read, ct))
                     throw new SlowSourceException(_options.SlowSpeedBps, slowDetector.LastSpeed);
                 if (reportSw.ElapsedMilliseconds - lastReportMs >= 250)
                 {
@@ -1123,7 +1123,7 @@ public sealed class DownloadService
             // 8-19 片大小自适应（入口一次定、永不变化）：边界固定 → 已完成片跨 attempt/换源/并发变化
             // 全部复用（换源续进度核心）；大文件自动大片（少请求、RTT 惩罚小）——旧实现（totalSize/chunkCount
             // 片=并发）片数一变边界全变，旧 .part 全废——升片/重试必然从零重下。
-            var chunkSize = ChunkSizeFor(totalSize);
+            var chunkSize = ChunkSizeFor(totalSize, IsProgressiveThrottleCdn(url));
             var totalChunks = Math.Max(1, (int)Math.Ceiling(totalSize / (double)chunkSize));
             var currentConcurrency = Math.Clamp(await ProbeAndDecideConcurrencyAsync(url, totalSize, partDir, ct, throttle), 1, maxChunks);
             // 并发 = gate 槽位数（初始探测值，上限 maxChunks）；升片 = Release 腾出更多槽位，排队片自动进入
@@ -1306,14 +1306,22 @@ public sealed class DownloadService
     /// <summary>8-19 片大小上限（4MB）：零字节失败重下粒度 + 服务器忽略 Range 检测前浪费的代价上限</summary>
     private const long MaxChunkSize = 4 * 1024 * 1024;
 
+    /// <summary>8-25 渐进限速 CDN（Modrinth cdn-raw/cdn-alt）细片下限：慢源 ~100KB/s 时 1MB 片只给
+    /// 小模组 1-2 连接（100-200KB/s）；256KB 片 RTT 只占 ~4%（2.5s 传输 vs 0.1s 握手），
+    /// 分片数翻 4 倍 → 并发吃满 ~800KB/s。快源不受影响——保持 1MB 下限（8-18 RTT 教训）。</summary>
+    private const long FixedChunkSizeProgressive = 256 * 1024;
+
     /// <summary>
     /// 8-19 片大小自适应（纯函数）：小文件（&lt;64MB）恒 1MB（Modrinth 小库文件吃并发）；
     /// 大文件片 = totalSize/64（166MB → 2.6MB → 64 片，RTT 惩罚降 2.6 倍 vs 1MB）；
     /// 上限 4MB（1GB → 256 片，8 并发 32 波 = 3.2s）。片大小入口一次定、永不变化——
     /// 与并发解耦（探测/升片只动并发）→ 边界固定 → 换源续传复用语义保留。
+    /// 8-25 加 progressiveThrottleCdn：渐进限速源（cdn-raw/cdn-alt/mcimirror）下限降到 256KB——
+    /// 慢源每片传输秒级，RTT 占比可忽略，细片换并发（小模组 1-2 连接 → 8 连接）；快源不传该参数行为不变。
     /// </summary>
-    internal static long ChunkSizeFor(long totalSize)
-        => Math.Clamp(totalSize / TargetChunkCount, FixedChunkSize, MaxChunkSize);
+    internal static long ChunkSizeFor(long totalSize, bool progressiveThrottleCdn = false)
+        => Math.Clamp(totalSize / TargetChunkCount,
+            progressiveThrottleCdn ? FixedChunkSizeProgressive : FixedChunkSize, MaxChunkSize);
 
     /// <summary>ramp-up 探测段大小（1MB——快源 0.4s 内拉完提前决策，慢源 2s 窗口截断采样）</summary>
     private const long ProbeBytes = 1024 * 1024;

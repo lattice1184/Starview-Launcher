@@ -3,6 +3,7 @@
              xmlns:vm="using:Launcher.App.ViewModels"
              xmlns:core="using:Launcher.Core.Ecosystem"
              xmlns:app="using:Launcher.App.Converters"
+             xmlns:behaviors="using:Launcher.App.Animations"
              x:Class="Launcher.App.Views.EcosystemNavView"
              x:DataType="vm:EcosystemNavViewModel">
 
@@ -45,23 +46,20 @@
                     <DataTemplate x:DataType="vm:NavSiteItemVM">
                         <Button HorizontalAlignment="Stretch" Margin="0,1" Padding="0" Background="Transparent"
                                 BorderThickness="0" HorizontalContentAlignment="Stretch"
+                                behaviors:SpringScaleBehavior.Enabled="False"
+                                behaviors:HoverBrushBehavior.Enabled="False"
+                                behaviors:RippleBehavior.Enabled="False"
                                 Command="{Binding $parent[UserControl].((vm:EcosystemNavViewModel)DataContext).OpenSiteCommand}"
                                 CommandParameter="{Binding Site}">
-                            <Button.Styles>
-                                <Style Selector="Button:hover > Border.modcard">
-                                    <Setter Property="Background" Value="{DynamicResource BgHover}"/>
-                                    <Setter Property="BorderBrush" Value="#3C4757"/>
-                                </Style>
-                                <Style Selector="Button:pressed > Border.modcard">
-                                    <Setter Property="Background" Value="{DynamicResource BgActive}"/>
-                                </Style>
-                            </Button.Styles>
-                            <Border Classes="modcard" Background="Transparent"
+                            <!-- 8-25 卡片 hover 残留根治：禁用全局 Button 三行为 + 去掉 hover/pressed 背景变（静态卡） -->
+                            <!-- 8-25 hover 根因修复：modcard 删内联 Background（局部值压过样式 Setter） -->
+                            <Border Classes="modcard"
                                     Padding="12,9" BorderBrush="{DynamicResource BorderColor}"
                                     BorderThickness="0,0,0,1">
                                 <Border.Transitions>
                                     <Transitions>
-                                        <BrushTransition Property="Background" Duration="0:0:0.15"/>
+                                        <!-- 8-26 悬浮跟手：0.15s 过渡划过列表时高亮慢半拍（不跟手），缩到 0.06s -->
+                                        <BrushTransition Property="Background" Duration="0:0:0.06"/>
                                     </Transitions>
                                 </Border.Transitions>
                                 <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12">

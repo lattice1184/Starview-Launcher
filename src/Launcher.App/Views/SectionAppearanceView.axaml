@@ -62,7 +62,7 @@
                 <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
                     <Border Width="64" Height="34" CornerRadius="4" ClipToBounds="True" Background="#14181F"
                             BorderBrush="{DynamicResource BorderColor}" BorderThickness="1">
-                        <Image Source="{Binding BackgroundImagePathText}" Stretch="UniformToFill"
+                        <Image Source="{Binding BackgroundPreview}" Stretch="UniformToFill"
                                IsVisible="{Binding HasBackgroundImage}"/>
                     </Border>
                     <Button Content="选择图片…" Classes="ghost" FontSize="12" Padding="12,5" Click="OnPickBackgroundClick"/>

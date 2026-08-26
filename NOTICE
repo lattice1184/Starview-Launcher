@@ -10,3 +10,9 @@ PCL2 改良版启动器 — 来源声明
 其余代码（src/ 下所有项目）为本项目原创。
 
 原版 PCL（Plain Craft Launcher）受《PCL 分发有限许可》约束，其源码（含 UI 层实现）不包含在本仓库中。
+
+## 联机模块第三方声明
+
+- `src/Launcher.Core/Multiplayer/` 下 Terracotta 联机模块移植自 BlockHelm-Launcher（GPL-3.0），
+  文件头部保留移植注释与许可声明；运行时下载的联机内核（burningtnt/Terracotta）同样依据 GPL-3.0。
+- 独立联机方案 EasyTier 依据 LGPL-3.0（源码：github.com/EasyTier/EasyTier）。

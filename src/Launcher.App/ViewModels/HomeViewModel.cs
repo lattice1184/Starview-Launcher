@@ -16,6 +16,12 @@ using Microsoft.Extensions.Logging;
 
 namespace Launcher.App.ViewModels;
 
+/// <summary>启动日志行类别：普通 / 报错（ERROR/WARN/FATAL/异常）/ 启动器事件(§)</summary>
+public enum LogLineKind { Normal, Error, Launcher }
+
+/// <summary>启动日志行（控制台显示）：文本 + 类别（着色用）</summary>
+public sealed record LogLine(string Text, LogLineKind Kind);
+
 /// <summary>
 /// 主页：玩家信息 + 版本选择 + 启动状态机（阶段指示条）+ 游戏控制台。
 /// </summary>
@@ -30,7 +36,7 @@ public partial class HomeViewModel : ViewModelBase
     private readonly GameLaunchService _launcher = new();
     private readonly AccountService _accounts = AccountService.Shared;
     private LaunchProcess.LaunchResult? _running;
-    private const int MaxLogLines = 500;
+    private const int MaxLogLines = 300; // 8-26 内存瘦身：500→300（每行可能含长堆栈串）
     private volatile bool _userStopped;
 
     public ObservableCollection<VersionInstanceVM> InstalledVersions { get; } = [];
@@ -47,7 +53,11 @@ public partial class HomeViewModel : ViewModelBase
     {
         MainViewModel.Current!.CurrentVersion = value;
         Launcher.Core.AppState.SetCurrentVersion(value?.Name); // 8-22 步骤1：Core 层统一状态
+        OnPropertyChanged(nameof(CanLaunch)); // 8-26 启动按钮可点性随版本变化
     }
+
+    /// <summary>8-26 启动更直接：无版本/已在运行/正在启动时启动按钮置灰（不再弹「你还没选版本」模态）</summary>
+    public bool CanLaunch => SelectedVersion is not null && !IsLaunching && !IsRunning;
 
     [ObservableProperty]
     public partial string LaunchState { get; set; } = "就绪";
@@ -139,7 +149,20 @@ public partial class HomeViewModel : ViewModelBase
             main.RunningVersion = new RunningVersionInfo(SelectedVersion?.Name ?? "", "客户端");
         else if (main.RunningVersion?.Kind == "客户端")
             main.RunningVersion = null;
+        OnPropertyChanged(nameof(CanLaunch));
     }
+
+    /// <summary>启动按钮可点性随启动态变化</summary>
+    partial void OnIsLaunchingChanged(bool value)
+    {
+        OnPropertyChanged(nameof(CanLaunch));
+        OnPropertyChanged(nameof(LogBodyVisible)); // 8-26 日志卡主体：启动中或看历史时展开
+    }
+
+    /// <summary>8-26 日志卡主体可见性：启动中自动展开；平时折叠成一条（只看历史 tab 时展开）</summary>
+    public bool LogBodyVisible => IsLaunching || IsHistoryTabSelected;
+
+    partial void OnIsHistoryTabSelectedChanged(bool value) => OnPropertyChanged(nameof(LogBodyVisible));
 
     [ObservableProperty]
     public partial double LaunchProgress { get; set; }
@@ -165,7 +188,7 @@ public partial class HomeViewModel : ViewModelBase
     /// <summary>账号管理（登录/切换/删除，头像 Popup 面板承载）</summary>
     public AccountViewModel Account { get; } = new();
 
-    public ObservableCollection<string> GameLogs { get; } = [];
+    public ObservableCollection<LogLine> GameLogs { get; } = [];
 
     /// <summary>启动记录（跨会话，可回看失败原因）</summary>
     public ObservableCollection<LaunchHistoryEntry> LaunchHistory { get; } = [];
@@ -571,21 +594,19 @@ public partial class HomeViewModel : ViewModelBase
         // 本会话停过一次游戏，之后任何崩溃都被误判「已停止」（不弹崩溃窗/不自动修复/历史记 Stopped）
         _userStopped = false;
         var version = overrideVersion ?? SelectedVersion;
+        // 8-26 启动更直接：不弹模态——无版本时按钮已置灰（CanLaunch），这里只内联提示兜底
         if (version is null)
         {
             LaunchStatus = "你还没选版本";
-            await DialogService.Warn(DialogService.MainWindow(), "你还没选版本",
-                "选一个已安装的版本，再点启动。", "无法启动游戏", "知道了", "");
             return;
         }
         _lastLaunchVersionId = version.Name;
         ShowRepairGuide = false; // 清除上次失败的修复入口
         var account = _accounts.Current;
+        // 8-26 启动更直接：不弹模态——启动卡内联提示（点头像可登录）
         if (account is null)
         {
             LaunchStatus = "你还没登录账号";
-            await DialogService.Warn(DialogService.MainWindow(), "你还没登录账号",
-                "启动游戏要登录账号。点头像菜单离线登录，或用正版账号。", "无法启动游戏", "知道了", "");
             return;
         }
 
@@ -665,6 +686,43 @@ public partial class HomeViewModel : ViewModelBase
                 using var skinHttp = Launcher.Core.Download.HttpClientPool.CreateSharedClient(TimeSpan.FromSeconds(8));
                 skinUrl = await Launcher.Core.Account.LittleSkinSkinSync.ResolveTextureUrlAsync(skinHttp, account.Uuid);
             }
+            // 8-26 启动前模组兼容检查：发现与游戏版本明显不兼容的 mod → 启动前自动禁用（.jar→.jar.disabled）。
+            // 解决「开始前不检查冲突模组」——不等 Fabric 崩溃先查先禁用，用户可在版本页重新启用。
+            // 8-26 修：游戏版本必须解析真值（McVersion → inheritsFrom → 版本名）——此前直接传 version.Name
+            // （fabric-loader-0.19.3-26.1.2 实例 id），ModCompatibilityChecker 解析不出 → 预检静默跳过（「没看出来」根因）
+            var checkModsDir = Path.Combine(ModRepairService.InstanceRoot(gameDir, version.Name), "mods");
+            if (Directory.Exists(checkModsDir))
+            {
+                var checkGameVersion = ResolveCheckGameVersion(version, gameDir);
+                var incompatible = await Task.Run(() => ModCompatibilityChecker.FindIncompatible(checkModsDir, checkGameVersion));
+                if (incompatible.Count == 0)
+                {
+                    // 可见证据：无冲突也报告检查结果（回应「没看出来检查跑没跑」）
+                    AppendLog($"§ 模组兼容检查：游戏版本 {checkGameVersion}，共 {ModCompatibilityChecker.CountMods(checkModsDir)} 个模组，无冲突");
+                }
+                else
+                {
+                    // 8-26 自动修复升级：不止停用——先停用旧 jar 保证即使下载失败也能启动，再下载兼容版替换
+                    // （找不到适配版/下载失败才维持停用）。gameVersion 用解析过的真值（loader 名解析不出会装错版）。
+                    AppendLog($"§ 模组兼容检查：游戏版本 {checkGameVersion}，发现 {incompatible.Count} 个不兼容模组，自动修复中…");
+                    var disabled = await Task.Run(() => ModCompatibilityChecker.DisableIncompatible(checkModsDir, checkGameVersion));
+                    foreach (var m in disabled)
+                        AppendLog($"§ 已停用不兼容模组 {m.Id}（需要 {m.DeclaredRange}，游戏 {m.GameVersion}）");
+                    var loader = version.LoaderBadge.Length > 0 ? version.LoaderBadge : EcosystemService.GuessLoader(version.Name);
+                    AppendLog("§ 正在下载兼容版本替换（下载中心可见进度）…");
+                    var replace = await ModRepairFlow.TryReplaceModsAsync(
+                        gameDir, version.Name, checkGameVersion, loader, disabled.Select(m => m.Id).ToList());
+                    foreach (var r in replace.Replaced)
+                        AppendLog($"§ 已自动替换 {r}，正在启动…");
+                    foreach (var d in replace.DisabledOnly)
+                        AppendLog($"§ {d}，已停用");
+                    if (replace.Replaced.Count > 0)
+                        NotificationService.Success($"已自动修复：{string.Join("、", replace.Replaced)}", 5000);
+                    if (replace.DisabledOnly.Count > 0)
+                        NotificationService.Error($"已停用无适配版：{string.Join("、", replace.DisabledOnly)}");
+                    LaunchStatus = "不兼容模组已处理，正在启动…";
+                }
+            }
             _running = await Task.Run(() => _launcher.LaunchAsync(
                 version.Name, gameDir, account.Name, account.Uuid, accessToken,
                 memoryMb: memMb, extraJvmArgs: extraArgs,
@@ -679,8 +737,7 @@ public partial class HomeViewModel : ViewModelBase
             LaunchState = "运行中";
             LaunchProgress = 100;
             LaunchStatus = $"游戏运行中，账号 {account.Name}。点停止结束";
-            SetStage("运行中");
-            NotificationService.Success("游戏窗口已拉起");
+            SetStage("运行中"); // 8-26 删「已拉起」toast——窗口出现即反馈
 
             // 等待退出
             await Task.Run(() => _running.Process.WaitForExit());
@@ -700,8 +757,17 @@ public partial class HomeViewModel : ViewModelBase
             }
             else
             {
+                // 8-26 模组冲突清晰化：崩溃日志命中「Incompatible mods found」→ 明示冲突模组清单（兜底——
+                // 启动前预检已自动禁用大部分；能走到崩溃，通常是禁用失败/非 mods 目录场景）。
+                // 8-26 修：改读游戏自身 latest.log——启动器控制台/launch-*.log 被 IsKeyLine 过滤掉 INFO 级冲突明细，
+                // 旧代码从 BuildDiagText 提取恒为空（「自动修复没生效」根因）
+                var conflictIds = AutoRepairService.ExtractConflictingModIds(gameDir, version.Name);
+                var conflictHint = conflictIds.Count > 0
+                    ? $"模组冲突：{string.Join("、", conflictIds)} 与游戏版本 {version.Name} 不兼容。自动禁用未生效，请到版本页禁用这些模组或换适配当前游戏版本的版本。"
+                    : null;
                 LaunchState = $"异常退出（{code}）";
-                LaunchStatus = "游戏异常退出，请查看日志";
+                LaunchStatus = conflictHint ?? "游戏异常退出，请查看日志";
+                if (conflictHint is not null) AppendLog($"§ {conflictHint}");
                 LaunchHistoryService.Record(version.Name, LaunchOutcome.Crashed, $"退出码 {code}", _launchWatch?.Elapsed.TotalSeconds ?? 0, _launchLogPath);
                 // 崩溃弹窗（PCL 式）：游戏日志尾部 + 导出报告
                 var logTail = string.Join(Environment.NewLine, GameLogs.TakeLast(40));
@@ -720,7 +786,7 @@ public partial class HomeViewModel : ViewModelBase
                 var diag = LogDiagnostics.DiagnoseExit(code, string.Join(Environment.NewLine, GameLogs));
                 Avalonia.Threading.Dispatcher.UIThread.Post(() =>
                     Views.CrashReportWindow.Show($"游戏崩溃退出（退出码 {code}）",
-                        $"版本 {version.Name} 异常退出，退出码 {code}。" + Environment.NewLine
+                        (conflictHint ?? $"版本 {version.Name} 异常退出，退出码 {code}。") + Environment.NewLine
                         + Environment.NewLine + "最近日志：" + Environment.NewLine + logTail,
                         logTail, diag, version.Name, gameDir));
             }
@@ -794,13 +860,35 @@ public partial class HomeViewModel : ViewModelBase
         }
     }
 
+    /// <summary>8-26 解析预检用的真游戏版本（兜底链）：
+    /// ① VersionInstanceVM.McVersion（由 VersionScan.Inspect 读版本 json 的 inheritsFrom 填充）；
+    /// ② 兜底读 versions/{id}/{id}.json 的 inheritsFrom（部分构造路径 McVersion 为空）；
+    /// ③ 版本名本身（原生如 26.1.2 直接可解析；loader 名 fabric-loader-… 解析不出 → 预检跳过）。
+    /// 不能直接传 version.Name——实例 id 不是游戏版本，预检会静默空转。</summary>
+    private static string ResolveCheckGameVersion(VersionInstanceVM version, string gameDir)
+    {
+        if (!string.IsNullOrEmpty(version.McVersion)) return version.McVersion;
+        try
+        {
+            var json = Path.Combine(gameDir, "versions", version.Name, $"{version.Name}.json");
+            if (File.Exists(json))
+            {
+                using var doc = System.Text.Json.JsonDocument.Parse(File.ReadAllText(json));
+                if (doc.RootElement.TryGetProperty("inheritsFrom", out var p) && p.GetString() is { Length: > 0 } pid)
+                    return pid;
+            }
+        }
+        catch { /* 读不到就退回版本名 */ }
+        return version.Name;
+    }
+
     /// <summary>8-23 修复：自修复诊断输入 = 额外原因 + 内存控制台 + 本次启动日志文件（launch-*.log）。
     /// 此前只诊断内存 GameLogs（进程退出后丢失），用户诉求「自动读取当时日志执行修复」——日志文件才是完整证据。</summary>
     private string BuildDiagText(string extra)
     {
         var sb = new System.Text.StringBuilder();
         sb.AppendLine(extra);
-        foreach (var l in GameLogs) sb.AppendLine(l);
+        foreach (var l in GameLogs) sb.AppendLine(l.Text);
         try
         {
             if (_launchLogPath is not null && File.Exists(_launchLogPath))
@@ -834,8 +922,11 @@ public partial class HomeViewModel : ViewModelBase
             var result = hit.Fix switch
             {
                 FixKind.ReExtractNatives => AutoRepairService.FixNatives(version.Name, gameDir),
-                // 8-23 模组版本不匹配：禁用冲突模组（纯本地改名，秒级）——无需下载队列；传 diagText 提取冲突 id
-                FixKind.DisableConflictingMods => AutoRepairService.FixConflictingMods(gameDir, version.Name, diagText),
+                // 8-23 模组版本不匹配：禁用冲突模组（纯本地改名，秒级）——无需下载队列。
+                // 8-26 修：不传 diagText（null → 走 ExtractConflictingModIds 读游戏自身 latest.log）——
+                // 启动器控制台/launch-*.log 被 IsKeyLine 过滤掉 INFO 级冲突明细，传过滤后文本恒提取不到 id
+                // 8-26 升级：停用后再下载兼容版替换（自动修复=换成正确版本，不止停用）
+                FixKind.DisableConflictingMods => await FixConflictsWithReplaceAsync(version, gameDir),
                 _ => await AutoRepairService.FixRedownloadAsync(version.Name, gameDir),
             };
             AppendLog($"§ 自动修复完成：{result}");
@@ -849,6 +940,26 @@ public partial class HomeViewModel : ViewModelBase
             AppendLog($"§ 自动修复失败: {ex.Message}");
             return false;
         }
+    }
+
+    /// <summary>8-26 崩溃冲突修复升级：停用冲突模组（FixConflictingMods，读游戏自身 latest.log 提取 id）后，
+    /// 再下载兼容版替换（自动修复 = 换成正确版本，不是只停用）。返回组合描述。</summary>
+    private async Task<string> FixConflictsWithReplaceAsync(VersionInstanceVM version, string gameDir)
+    {
+        var result = AutoRepairService.FixConflictingMods(gameDir, version.Name, null);
+        var conflictIds = AutoRepairService.ExtractConflictingModIds(gameDir, version.Name);
+        if (conflictIds.Count > 0)
+        {
+            var gv = ResolveCheckGameVersion(version, gameDir);
+            var loader = version.LoaderBadge.Length > 0 ? version.LoaderBadge : EcosystemService.GuessLoader(version.Name);
+            AppendLog($"§ 正在下载兼容版本替换（下载中心可见进度）…");
+            var replace = await ModRepairFlow.TryReplaceModsAsync(gameDir, version.Name, gv, loader, conflictIds);
+            if (replace.Replaced.Count > 0)
+                result += "；并已下载兼容版：" + string.Join("、", replace.Replaced);
+            foreach (var r in replace.Replaced) AppendLog($"§ 已自动替换 {r}");
+            foreach (var d in replace.DisabledOnly) AppendLog($"§ {d}，已停用");
+        }
+        return result;
     }
 
     [RelayCommand]
@@ -867,10 +978,25 @@ public partial class HomeViewModel : ViewModelBase
             Dispatcher.UIThread.Post(() => AppendLog(line));
             return;
         }
+        // 8-26 屏幕也过滤 INFO 噪音（同落盘）：控制台只显示启动器事件 + 错误/警告/异常，不再刷屏
+        if (!IsKeyLine(line)) return;
         if (GameLogs.Count >= MaxLogLines) GameLogs.RemoveAt(0);
-        GameLogs.Add(line);
+        GameLogs.Add(new LogLine(line, Classify(line)));
         HasLogs = true;
         AppendToLaunchLog(line);
+    }
+
+    /// <summary>8-26 日志行着色类别：启动器事件(§)强调色；ERROR/WARN/FATAL/异常标红（报错区域标记）</summary>
+    private static LogLineKind Classify(string line)
+    {
+        if (line.StartsWith('§')) return LogLineKind.Launcher;
+        if (line.Contains("Exception", StringComparison.OrdinalIgnoreCase)
+            || line.Contains("Caused by", StringComparison.OrdinalIgnoreCase)
+            || line.Contains("Crashed!", StringComparison.OrdinalIgnoreCase)
+            || line.TrimStart().StartsWith("at ", StringComparison.Ordinal)) return LogLineKind.Error;
+        return System.Text.RegularExpressions.Regex.IsMatch(line,
+            @"\[(\w+)\/(ERROR|WARN|FATAL)\]", System.Text.RegularExpressions.RegexOptions.IgnoreCase)
+            ? LogLineKind.Error : LogLineKind.Normal;
     }
 
     /// <summary>8-18 本次启动的日志文件路径（启动会话固定——启动记录可关联查看；null=未开始落盘）</summary>
@@ -911,7 +1037,7 @@ public partial class HomeViewModel : ViewModelBase
         try
         {
             _launchLogPath = BuildLaunchLogPath();
-            File.WriteAllText(_launchLogPath, $"=== Lattice 启动日志 {DateTime.Now:yyyy-MM-dd HH:mm:ss} ===\n");
+            File.WriteAllText(_launchLogPath, $"=== Starview 启动日志 {DateTime.Now:yyyy-MM-dd HH:mm:ss} ===\n");
         }
         catch { _launchLogPath = null; }
     }

@@ -21,6 +21,7 @@ public class EcosystemServiceTests
     [InlineData(ProjectType.Modpack, "modpack")]
     [InlineData(ProjectType.Resourcepack, "resourcepack")]
     [InlineData(ProjectType.Shader, "shader")]
+    [InlineData(ProjectType.Datapack, "datapack")] // 8-26 修：曾落入 "mod" → 数据包页搜出模组
     public void FacetName_MapsCorrectly(ProjectType type, string expected)
         => Assert.Equal(expected, EcosystemService.FacetName(type));
 
@@ -79,6 +80,18 @@ public class EcosystemServiceTests
         }
         Assert.False(EcosystemService.TryParseGameVersion(instanceId, out _));
     }
+
+    // ---------- ResolveGameVersion（8-26：McVersion 优先——fabric-loader-… 实例名也正确）----------
+
+    [Theory]
+    [InlineData("26.1.2", "fabric-loader-0.19.3-26.1.2", "26.1.2")] // fabric 26.x：McVersion 优先（修复核心）
+    [InlineData("1.21.4", "fabric-loader-0.19.3-1.21.4", "1.21.4")]  // fabric 1.x
+    [InlineData("", "1.21.1-Fabric", "1.21.1")]                      // 回退实例名开头
+    [InlineData("", "26.1.2", "26.1.2")]                             // 原生版
+    [InlineData("", "fabric-loader-0.19.3-26.1.2", "")]              // 名不解析且无 McVersion → 空（不瞎猜）
+    [InlineData("", "foo", "")]                                      // 自定义名
+    public void ResolveGameVersion_McVersionFirst(string mcVersion, string instanceName, string expected)
+        => Assert.Equal(expected, EcosystemService.ResolveGameVersion(mcVersion, instanceName));
 
     // ---------- GuessLoader ----------
 

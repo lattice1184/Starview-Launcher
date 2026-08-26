@@ -83,6 +83,9 @@ public partial class VersionDownloadViewModel : ViewModelBase
             _svc.Entries.Where(e => e.Installed).Select(e => e.Id), StringComparer.OrdinalIgnoreCase);
         Sidebar.RefreshInstalled(installedSet);
         Detail.RefreshInstalled(installedSet);
+        // 8-26 下载完成后自动选中该版本（切侧栏选中 → 详情联动）
+        if (Sidebar.Items.FirstOrDefault(i => string.Equals(i.Id, versionId, StringComparison.OrdinalIgnoreCase)) is { } item)
+            Sidebar.SelectedItem = item;
     }
 }
 
@@ -148,7 +151,7 @@ public partial class DownloadDetailVM : ObservableObject
         var gen = ++_sizeGeneration;
         try
         {
-            var version = await _installer.GetOrFetchVersionJsonAsync(item.Id, item.ManifestUrl, CancellationToken.None);
+            var version = await _installer.GetVersionJsonAsync(item.Id, item.ManifestUrl, CancellationToken.None);
             if (gen != _sizeGeneration) return;
             long total = version.Downloads?.Client?.Size ?? 0;
             foreach (var lib in version.Libraries ?? [])
@@ -419,6 +422,11 @@ public partial class VersionSidebarViewModel : ObservableObject
         PageText = $"{CurrentPage + 1}/{TotalPages}";
         foreach (var e in all.Skip(CurrentPage * PageSize).Take(PageSize))
             Items.Add(_itemsById[e.Id]);
+
+        // 8-26 自动选中新版本：初始/切分类/换页时无选中或选中项不在本页 → 默认选本页第一条
+        // （数据源已按发布时间倒序，即最新版）
+        if (SelectedItem is null || !Items.Contains(SelectedItem))
+            SelectedItem = Items.FirstOrDefault();
 
         // 列表内容切换：先透明再淡入（DoubleTransition 平滑过渡）
         ListOpacity = 0;

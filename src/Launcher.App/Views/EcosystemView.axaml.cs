@@ -20,6 +20,23 @@ public partial class EcosystemView : UserControl
         };
     }
 
+    /// <summary>8-25 下拉列表式安装：点「安装 ▾」在指针处弹出动作菜单（安装到当前实例 / 收藏）——
+    /// 左键触发（ContextMenu 默认右键，这里 Click 显式打开）。</summary>
+    private void OnInstallMenuClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (sender is Button { ContextMenu: { } menu } b)
+            menu.Open(b);
+    }
+
+    /// <summary>8-25 修菜单命令失效：ContextMenu 是独立 Popup 视觉树，`$parent[UserControl]` 走不到父 VM →
+    /// 菜单项 DataContext 是卡片 VM（placement target 继承），父 VM 从这里拿，直调 InstallCardCommand。</summary>
+    private void OnInstallMenuItemClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (sender is MenuItem { DataContext: ProjectCardVM card }
+            && DataContext is EcosystemViewModel vm)
+            vm.InstallCardCommand.Execute(card);
+    }
+
     /// <summary>搜索/分页刷新（Clear 起手重填）→ 结果列表淡入 + 4px 上移（180ms Standard）</summary>
     private void OnCardsChanged(object? s, NotifyCollectionChangedEventArgs e)
     {

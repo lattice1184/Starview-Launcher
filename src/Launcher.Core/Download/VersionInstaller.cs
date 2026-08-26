@@ -67,6 +67,32 @@ public sealed class VersionInstaller
             ?? throw new InvalidDataException($"版本 JSON 解析失败: {id}");
     }
 
+    /// <summary>只读获取版本 JSON（体积估算等读路径用）：有磁盘缓存就读缓存，没有就从清单地址拉取但**不落盘、不打预取标记**。
+    /// 8-26 修复：原 LoadSizeAsync 走 GetOrFetchVersionJsonAsync，浏览下载页会把已删版本的 json 重新写回盘
+    /// （.prefetched + json-only 残件）→ 版本页显示成「需修复」（真机 26.1/1.21.10/1.21.11 删除后复活）。</summary>
+    public async Task<VersionJson> GetVersionJsonAsync(string id, string? manifestUrl, CancellationToken ct)
+    {
+        var safeId = SafeId(id);
+        var jsonPath = Path.Combine(_gameDirectory, "versions", safeId, $"{safeId}.json");
+
+        if (File.Exists(jsonPath))
+        {
+            try
+            {
+                var cached = JsonSerializer.Deserialize<VersionJson>(await File.ReadAllTextAsync(jsonPath, ct));
+                if (cached is not null) return cached;
+            }
+            catch (Exception) { /* 损坏则重新拉取 */ }
+        }
+
+        if (string.IsNullOrEmpty(manifestUrl))
+            throw new InvalidOperationException($"版本 {id} 缺少清单下载地址");
+
+        var json = await _http.GetStringAsync(manifestUrl, ct);
+        return JsonSerializer.Deserialize<VersionJson>(json)
+            ?? throw new InvalidDataException($"版本 JSON 解析失败: {id}");
+    }
+
     /// <summary>全量安装（client jar / libraries / assets / logging），进度经 DownloadProgressHandler 上报（旧展平路径）</summary>
     public Task InstallAsync(VersionJson version, DownloadProgressHandler? progress, CancellationToken ct)
         => InstallCoreAsync(version, ctx: null, progress, ct);

@@ -26,30 +26,21 @@ public partial class MainWindow : Window
     /// <summary>激活指示条是否已首次定位（首次直接落位，之后切换才滑动）</summary>
     private bool _navIndicatorFirst = true;
 
-    /// <summary>闲置内存让渡（8-18 批次 80）：无操作 3 分钟 → GC + 工作集修剪</summary>
-    private readonly IdleMemoryTuner _idleTuner = new();
-
     /// <summary>点击光晕残留防抖（8-18）：动画中断（快速连点/同 slot 抢占）时旧光晕不移除会卡在导航上</summary>
-    private readonly Dictionary<string, Ellipse> _navRipples = new();
 
     public MainWindow()
     {
         InitializeComponent();
-        // 闲置检测：窗口级输入事件（冒泡覆盖全部子元素）只更新原子时间戳，零开销。
-        // 8-18 修正：不含 PointerMoved——鼠标微动/漂移会不断重置计时导致永不修剪；只认明确输入
-        PointerPressed += (_, _) => _idleTuner.OnUserActivity();
-        PointerWheelChanged += (_, _) => _idleTuner.OnUserActivity();
-        KeyDown += (_, _) => _idleTuner.OnUserActivity();
-        // 8-18 失焦/最小化 → 立即修剪（用户离开马上让资源，不等 3 分钟；回来活动自动重置）
-        Deactivated += (_, _) =>
+        // 8-18 失焦 → 强制动画落终值（新窗口打开/弹窗时防 hover 色残留；8-25 内存释放代码已全删）
+        // 8-26 真因修正：主窗实色的根源是 Windows DWM 对失活窗口撤掉亚克力 → 材质回退 FallbackColor。
+        // 失活期间任何 hint 重协商都物理无效（Win32 只给活动窗口挂模糊）——原 ForceReapplyTransparency/
+        // ScheduleRenegotiate 已删（无效抖动）。根治 = 独立窗转窗口内覆盖层（见 LogCenterView），
+        // 主窗不失活 → 永不降级。此处保留激活返回时重放用户观感作为兜底。
+        Deactivated += (_, _) => UiAnim.FinishAll();
+        Activated += (_, _) =>
         {
-            _idleTuner.TrimNow();
-            UiAnim.FinishAll(); // 8-19：新窗口打开（详情/弹窗）失焦时强制动画落终值，防 hover 色残留
-        };
-        ((System.ComponentModel.INotifyPropertyChanged)this).PropertyChanged += (_, e) =>
-        {
-            if (e.PropertyName == nameof(WindowState) && WindowState == WindowState.Minimized)
-                _idleTuner.TrimNow();
+            ApplyAppearanceFromVm();
+            ApplyOpacityFallback();
         };
         // 8-18 透明度防御：合成降级（ActualTransparencyLevel → None）后恢复时重新应用用户透明度——
         // 某些页面/交互触发亚克力合成失败会丢透明度，恢复后自动回到用户设置值。
@@ -341,9 +332,10 @@ public partial class MainWindow : Window
         }
         try
         {
-            // 8-18：限宽解码（2560）——4K 壁纸全尺寸 BGRA 33MB，缩到窗口可用宽度省显存/内存（注释与实现终于对齐）
+            // 8-18：限宽解码（2560→8-26 改 1920→再改 1600）——4K 壁纸全尺寸 BGRA 33MB，缩到窗口可用宽度
+            // 省显存/内存。1600 对绝大多数屏幕无感知差异（UniformToFill + 压暗），省 ~2MB 常驻位图（唯一的大托管 Bitmap）
             using var stream = File.OpenRead(path);
-            var bitmap = Bitmap.DecodeToWidth(stream, 2560);
+            var bitmap = Bitmap.DecodeToWidth(stream, 1600);
             ContentSurface.Background = new ImageBrush(bitmap) { Stretch = Stretch.UniformToFill };
             BgDim.IsVisible = true;
         }
@@ -395,17 +387,7 @@ public partial class MainWindow : Window
         _navIcons["multiplayer"] = (NavMultiIconR, NavMultiIconF);
         _navIcons["ecosystem"] = (NavEcoIconR, NavEcoIconF);
         _navIcons["settings"] = (NavSettingsIconR, NavSettingsIconF);
-        _navIconHosts["home"] = NavHomeHost;
-        _navIconHosts["version"] = NavVersionHost;
-        _navIconHosts["download"] = NavDownloadHost;
-        _navIconHosts["server"] = NavServerHost;
-        _navIconHosts["multiplayer"] = NavMultiHost;
-        _navIconHosts["ecosystem"] = NavEcoHost;
-        _navIconHosts["settings"] = NavSettingsHost;
     }
-
-    /// <summary>图标容器 Grid（28×28；8-18 删 halo 圆块后保留——点击光晕 ripple 宿主）</summary>
-    private readonly Dictionary<string, Grid> _navIconHosts = new();
 
     private string? FindPage(Button btn)
     {
@@ -596,37 +578,9 @@ public partial class MainWindow : Window
 
     private void NavPress(object? sender, PointerPressedEventArgs e)
     {
+        // 8-26 内存瘦身：删点击光晕（Ellipse + 动画每击一个视觉节点，纯装饰）；只保留按下变深反馈
         if (sender is Button btn)
-        {
             UiAnim.TweenBrush(btn, TemplatedControl.BackgroundProperty, new SolidColorBrush(Color.Parse("#1A2029")), UiAnim.Durations.Fast, "nav"); // 按下变深
-            // 批次 75：自研点击光晕（弃 RippleBehavior——模板 RippleHost 查找不可靠实测无波纹）。
-            // 光晕叠加在图标容器 Grid 同格（Grid 单格子元素重叠不占布局），从点击点扩散淡出。
-            if (FindPage(btn) is { } page && _navIconHosts.TryGetValue(page, out var host))
-            {
-                // 8-18 防残留：动画中断（快速连点/同 slot 抢占）时旧光晕不移除会卡在导航上——先清旧
-                if (_navRipples.TryGetValue(page, out var oldRipple) && host.Children.Contains(oldRipple))
-                    host.Children.Remove(oldRipple);
-                    var size = 28.0;
-                    var ripple = new Ellipse
-                    {
-                        Width = size, Height = size,
-                        Fill = new SolidColorBrush(Color.Parse("#4DFFFFFF")),
-                        IsHitTestVisible = false,
-                        RenderTransform = new ScaleTransform(0, 0),
-                        RenderTransformOrigin = new RelativePoint(0.5, 0.5, RelativeUnit.Relative),
-                        Opacity = 0.4,
-                    };
-                    _navRipples[page] = ripple; // 登记防残留（onDone 移除后字典留空条目无害）
-                    // 圆心 = halo 容器中心（28×28，图标 14 居中）；扩散至 1.6 倍容器
-                    host.Children.Add(ripple);
-                    UiAnim.Animate(280, UiAnim.Curves.Standard, ev =>
-                    {
-                        var e2 = 1 - Math.Pow(1 - ev, 3); // cubic-out
-                        if (ripple.RenderTransform is ScaleTransform st) { st.ScaleX = 1.6 * e2; st.ScaleY = 1.6 * e2; }
-                        ripple.Opacity = 0.4 * (1 - e2);
-                    }, () => host.Children.Remove(ripple), ripple, slot: "navrip");
-                }
-            }
     }
 
     private void NavRelease(object? sender, PointerReleasedEventArgs e) => TweenNavBack(sender);
@@ -687,15 +641,32 @@ public partial class MainWindow : Window
         DialogHost.Opacity = 0;
         DialogHost.IsVisible = true;
         DialogHost.Opacity = 1; // 走 DialogHost 声明的 DoubleTransition 淡入（失败也稳停在 1）
-        ApplyAppearanceFromVm(); // 保险：打开覆盖层期间重放用户观感
     }
 
-    /// <summary>关闭覆盖层：清内容、隐藏，重放观感兜底。</summary>
+    /// <summary>关闭覆盖层：清内容、隐藏。</summary>
     internal void HideDialogOverlay()
     {
         DialogHost.IsVisible = false;
         DialogContent.Content = null;
-        ApplyAppearanceFromVm();
+    }
+
+    /// <summary>8-26 打开日志中心（窗口内覆盖层）：主窗内渲染 → 主窗不失活 → 亚克力不降级。
+    /// 根治「开日志中心主窗变实色」（DWM 对失活窗口撤模糊，独立顶层窗无解）。</summary>
+    internal void ShowLogCenter()
+    {
+        var view = new Views.LogCenterView();
+        view.CloseRequested += () => HideLogCenter();
+        LogCenterContent.Content = view;
+        LogCenterHost.Opacity = 0;
+        LogCenterHost.IsVisible = true;
+        LogCenterHost.Opacity = 1; // 走 LogCenterHost 声明的 DoubleTransition 淡入
+    }
+
+    /// <summary>关闭日志中心覆盖层。</summary>
+    internal void HideLogCenter()
+    {
+        LogCenterHost.IsVisible = false;
+        LogCenterContent.Content = null;
     }
 
     /// <summary>应用外观设置：窗口观感档 + 界面密度（强调色由 App 应用）。
@@ -715,7 +686,9 @@ public partial class MainWindow : Window
         NavSurface.Material = new ExperimentalAcrylicMaterial
         {
             TintColor = Avalonia.Media.Color.Parse("#12161F"),
-            BackgroundSource = mode == OpacityMode.Solid ? AcrylicBackgroundSource.None : AcrylicBackgroundSource.Digger,
+            // 8-26 内存真减：导航层 0.88 透明度下模糊基本不可见——透明档也改 None（纯 TintColor 半实色），
+            // 砍掉一张 GPU 模糊合成面（省内存，视觉无感）。RootSurface 主区保持 Digger 真玻璃。
+            BackgroundSource = AcrylicBackgroundSource.None,
             TintOpacity = mode == OpacityMode.Solid ? 1 : 0.88, // 8-18 调定：0.55 白壁纸下导航「花了」，接近实色保可读
             FallbackColor = Avalonia.Media.Color.Parse("#FF12161F"),
         };

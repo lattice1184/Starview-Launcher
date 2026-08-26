@@ -134,6 +134,71 @@ public class DiagnosticsTests
     }
 
     [Fact]
+    public void ExtractConflictingModIds_NewPreselectedFormat_GetsModId()
+    {
+        // 8-26 新版 Fabric loader（26.1.2 游戏）冲突行：HARD_DEP_INCOMPATIBLE_PRESELECTED entityculling …，
+        // mod id 不带引号括号——旧正则 'xxx' (id) 匹配不上（用户「自动修复点不动」根因）
+        var ids = AutoRepairService.ExtractConflictingModIdsFromText(
+            "Incompatible mods found!\nHARD_DEP_INCOMPATIBLE_PRESELECTED entityculling 1.7.3 {depends minecraft @ [1.21.x]}");
+
+        Assert.Contains("entityculling", ids);
+    }
+
+    [Fact]
+    public void FixConflictingMods_NewFabricFormat_DisablesPreselectedMod()
+    {
+        // 8-26 用户 26.1.2 真实报错端到端：预选冲突行 + 引号行并存 → 自动禁用 entityculling，兼容 mod 保留
+        var dir = Path.Combine(Path.GetTempPath(), $"modrepair-{Guid.NewGuid():N}");
+        var instanceId = "fabric-loader-0.19.3-26.1.2";
+        var modsDir = Path.Combine(dir, "versions", instanceId, "mods");
+        Directory.CreateDirectory(modsDir);
+        try
+        {
+            CreateFakeFabricMod(Path.Combine(modsDir, "entityculling-1.7.3.jar"), "entityculling");
+            CreateFakeFabricMod(Path.Combine(modsDir, "fabric-api.jar"), "fabric_api");
+
+            var result = AutoRepairService.FixConflictingMods(dir, instanceId,
+                "Incompatible mods found!\n" +
+                "Mod 'entityculling' (entityculling) 1.7.3 does not support game version 26.1.2\n" +
+                "HARD_DEP_INCOMPATIBLE_PRESELECTED entityculling 1.7.3 {depends minecraft @ [1.21.x]}");
+
+            Assert.Contains("entityculling", result);
+            Assert.False(File.Exists(Path.Combine(modsDir, "entityculling-1.7.3.jar")), "entityculling.jar 应被禁用");
+            Assert.True(File.Exists(Path.Combine(modsDir, "entityculling-1.7.3.jar.disabled")));
+            Assert.True(File.Exists(Path.Combine(modsDir, "fabric-api.jar")), "兼容 mod 应保留");
+        }
+        finally { try { Directory.Delete(dir, true); } catch { } }
+    }
+
+    [Fact]
+    public void FixConflictingMods_NoLogText_ReadsGameLatestLog()
+    {
+        // 8-26 崩溃自动修复读游戏自身 latest.log：启动器控制台/launch-*.log 被 IsKeyLine 过滤掉
+        // INFO 级冲突明细（Fabric 冲突行不过过滤——游戏直写）。不传 logText → 走 latest.log + 崩溃报告。
+        var dir = Path.Combine(Path.GetTempPath(), $"modrepair-{Guid.NewGuid():N}");
+        var instanceId = "fabric-loader-0.19.3-26.1.2";
+        var root = Path.Combine(dir, "versions", instanceId);
+        var modsDir = Path.Combine(root, "mods");
+        Directory.CreateDirectory(modsDir);
+        Directory.CreateDirectory(Path.Combine(root, "logs"));
+        try
+        {
+            CreateFakeFabricMod(Path.Combine(modsDir, "entityculling-1.7.3.jar"), "entityculling");
+            File.WriteAllText(Path.Combine(root, "logs", "latest.log"),
+                "Incompatible mods found!\n" +
+                "Mod 'entityculling' (entityculling) 1.7.3 does not support game version 26.1.2\n" +
+                "HARD_DEP_INCOMPATIBLE_PRESELECTED entityculling 1.7.3 {depends minecraft @ [1.21.x]}");
+
+            var result = AutoRepairService.FixConflictingMods(dir, instanceId, null); // 关键：null → 读 latest.log
+
+            Assert.Contains("entityculling", result);
+            Assert.False(File.Exists(Path.Combine(modsDir, "entityculling-1.7.3.jar")), "entityculling.jar 应被禁用");
+            Assert.True(File.Exists(Path.Combine(modsDir, "entityculling-1.7.3.jar.disabled")));
+        }
+        finally { try { Directory.Delete(dir, true); } catch { } }
+    }
+
+    [Fact]
     public void FixConflictingMods_DisablesMatchingJars()
     {
         var dir = Path.Combine(Path.GetTempPath(), $"modrepair-{Guid.NewGuid():N}");

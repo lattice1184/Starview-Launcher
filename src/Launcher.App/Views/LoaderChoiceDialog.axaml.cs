@@ -4,7 +4,6 @@ using Avalonia.Threading;
 using Launcher.Core.Download;
 using Launcher.Core.Model.Loader;
 
-using Launcher.App.Services;
 namespace Launcher.App.Views;
 
 /// <summary>下载前选择的加载器（null LoaderKind = 纯净原版）</summary>
@@ -14,12 +13,14 @@ public sealed record LoaderChoice(LoaderKind? Kind, string? Version, bool Instal
 }
 
 /// <summary>
-/// 下载加载器选择对话框（PCL 式）：纯净原版 / 四家加载器 + 版本下拉，[开始下载] 才下载。
+/// 8-26 转窗口内覆盖层：下载加载器选择（纯净原版 / 四家加载器 + 版本下拉，[开始下载] 才下载）。
+/// 由 MainWindow.DialogHost 挂载（主窗不失活 → 亚克力不降级），结果经 TaskCompletionSource 回传。
 /// </summary>
-public partial class LoaderChoiceDialog : Window
+public partial class LoaderChoiceDialog : UserControl
 {
     private readonly LoaderService _service = new();
     private TaskCompletionSource<LoaderChoice?>? _result;
+    private MainWindow? _host;
     private LoaderKind? _kind;
     private string _versionId = "";
 
@@ -35,27 +36,25 @@ public partial class LoaderChoiceDialog : Window
     public LoaderChoiceDialog()
     {
         InitializeComponent();
-        global::Launcher.App.Animations.UiAnim.AttachDialog(this, Root);
     }
 
-    /// <summary>展示加载器选择（versionId 为要下载的版本）；取消返回 null</summary>
-    public static async Task<LoaderChoice?> ShowAsync(Window? owner, string versionId)
+    /// <summary>展示加载器选择（versionId 为要下载的版本；host 为挂载的主窗）；取消返回 null。</summary>
+    public static Task<LoaderChoice?> ShowAsync(MainWindow host, string versionId)
     {
-        var win = new LoaderChoiceDialog { _versionId = versionId };
-        win.VersionTitle.Text = $"下载 {versionId}";
+        var view = new LoaderChoiceDialog { _versionId = versionId, _host = host };
+        view.VersionTitle.Text = $"下载 {versionId}";
         // AL28 预取全部加载器版本列表：网络慢（meta.fabricmc.net 实测 12s+、neoforged 同级别）时
         // 点 chip 直接秒出，不干等——四种并行后台拉，不阻塞对话框
         foreach (var kind in new[] { LoaderKind.Fabric, LoaderKind.Forge, LoaderKind.NeoForge, LoaderKind.Quilt })
-            win._prefetch[kind] = Task.Run(async () =>
+            view._prefetch[kind] = Task.Run(async () =>
             {
-                try { return await win._service.GetLoaderVersionsAsync(kind, versionId, CancellationToken.None); }
+                try { return await view._service.GetLoaderVersionsAsync(kind, versionId, CancellationToken.None); }
                 catch { return (List<LoaderMetaVersion>?)null; }
             });
         var tcs = new TaskCompletionSource<LoaderChoice?>();
-        win._result = tcs;
-        if (owner is not null) await win.ShowDialog(owner);
-        else win.Show();
-        return await tcs.Task;
+        view._result = tcs;
+        host.ShowDialogOverlay(view);
+        return tcs.Task;
     }
 
     /// <summary>加载器 chips 点击（Tag=加载器名；空 = 纯净原版）</summary>
@@ -149,11 +148,6 @@ public partial class LoaderChoiceDialog : Window
         Close();
     }
 
-    protected override void OnClosed(EventArgs e)
-    {
-        _result?.TrySetResult(null); // X/Alt+F4 兜底
-        base.OnClosed(e);
-    
-}
-
+    /// <summary>收起覆盖层（DialogHost 由主窗持有）</summary>
+    private void Close() => _host?.HideDialogOverlay();
 }

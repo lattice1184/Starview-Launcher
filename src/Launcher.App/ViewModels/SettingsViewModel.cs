@@ -1,4 +1,6 @@
 using System.Diagnostics;
+using Avalonia.Media;
+using Avalonia.Media.Imaging;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Launcher.App.Services;
@@ -112,48 +114,7 @@ public partial class SettingsViewModel : ViewModelBase
 
     // ---------- 内存优化（8-19 第二批：轻度 GC 零盘写默认开；工作集修剪默认关） ----------
 
-    [ObservableProperty]
-    public partial bool MemoryOptimizeEnabled { get; set; } = true;
-
-    [ObservableProperty]
-    public partial bool MemoryTrimEnabled { get; set; }
-
-    [ObservableProperty]
-    public partial int MemoryIdleMinutes { get; set; } = 5;
-
-    /// <summary>闲置分钟输入框文本（int↔string；空/非法输入不落盘）</summary>
-    public string MemoryIdleMinutesText
-    {
-        get => MemoryIdleMinutes.ToString();
-        set
-        {
-            if (int.TryParse(value, out var v) && v is >= 1 and <= 60)
-                MemoryIdleMinutes = v;
-        }
-    }
-
-    /// <summary>当前进程占用（设置页内存优化区实时显示；释放后刷新）</summary>
-    public string CurrentMemoryText => $"{Process.GetCurrentProcess().WorkingSet64 / 1024 / 1024} MB";
-
-    /// <summary>8-19 手动释放内存（点击式按钮）：立即执行并反馈释放量（不弹确认——用户主动点击即授权）</summary>
-    [RelayCommand]
-    private async Task TrimMemoryNow()
-    {
-        try
-        {
-            var freed = await IdleMemoryTuner.ManualTrimAsync();
-            OnPropertyChanged(nameof(CurrentMemoryText));
-            var currentMb = Process.GetCurrentProcess().WorkingSet64 / 1024 / 1024;
-            if (freed >= 1024 * 1024)
-                NotificationService.Success($"已释放内存 {freed / 1024 / 1024} MB，当前占用 {currentMb} MB");
-            else
-                NotificationService.Info($"内存已优化，当前占用 {currentMb} MB");
-        }
-        catch (Exception ex)
-        {
-            NotificationService.Error($"内存释放失败：{ex.Message}");
-        }
-    }
+    // 8-25 内存优化区已整体移除（IdleMemoryTuner 假释放，宁缺毋假）
 
     // ---------- 下载 ----------
 
@@ -394,9 +355,6 @@ public partial class SettingsViewModel : ViewModelBase
         SelectedJvmProfile = JvmProfileOptions.FirstOrDefault(o => o.Value == s.JvmProfile) ?? JvmProfileOptions[1];
         SelectedGamePriority = GamePriorityOptions.FirstOrDefault(o => o.Value == s.GamePriority) ?? GamePriorityOptions[1];
         StartupTipEnabled = s.StartupTipEnabled;
-        MemoryOptimizeEnabled = s.MemoryOptimizeEnabled; // 8-19 内存优化
-        MemoryTrimEnabled = s.MemoryTrimEnabled;
-        MemoryIdleMinutes = s.MemoryIdleMinutes;
         SelectedDownloadSource = DownloadSourceOptions.FirstOrDefault(o => o.Value == s.DownloadSource) ?? DownloadSourceOptions[0];
         MaxConcurrentDownloads = s.MaxConcurrentDownloads;
         SpeedLimitKbps = s.DownloadSpeedLimitKbps;
@@ -455,9 +413,6 @@ public partial class SettingsViewModel : ViewModelBase
         s.JvmProfile = SelectedJvmProfile?.Value ?? PerformanceProfile.Medium;
         s.GamePriority = SelectedGamePriority?.Value ?? GamePriority.Normal;
         s.StartupTipEnabled = StartupTipEnabled;
-        s.MemoryOptimizeEnabled = MemoryOptimizeEnabled; // 8-19 内存优化
-        s.MemoryTrimEnabled = MemoryTrimEnabled;
-        s.MemoryIdleMinutes = MemoryIdleMinutes;
         s.MaxConcurrentDownloads = MaxConcurrentDownloads;
         s.DownloadSpeedLimitKbps = SpeedLimitKbps;
         s.ChunkCount = ChunkCount;
@@ -484,11 +439,6 @@ public partial class SettingsViewModel : ViewModelBase
     }
 
     partial void OnVersionIsolationChanged(bool value) => Save();
-
-    // 8-19 内存优化：开关即时落盘；间隔防抖
-    partial void OnMemoryOptimizeEnabledChanged(bool value) => Save();
-    partial void OnMemoryTrimEnabledChanged(bool value) => Save();
-    partial void OnMemoryIdleMinutesChanged(int value) => DebouncedSave();
 
     partial void OnSelectedMemoryPresetChanged(MemoryPresetVM? value)
     {
@@ -557,10 +507,46 @@ public partial class SettingsViewModel : ViewModelBase
     /// <summary>是否已设置背景（缩略预览/移除按钮显隐）</summary>
     public bool HasBackgroundImage => BackgroundImagePathText.Length > 0;
 
+    /// <summary>背景预览位图（8-26 限宽 320 解码——此前绑路径字符串被 Avalonia 类型转换器全尺寸解码，
+    /// 4K 壁纸常驻 ~33MB、1080p 也 ~8MB，换图不释放。这是单块最大的可砍内存）</summary>
+    [ObservableProperty]
+    public partial IImage? BackgroundPreview { get; set; }
+
+    private string? _previewPath; // 快速连选竞态守卫：解码回来只认最后一次选的路径
+
     partial void OnBackgroundImagePathTextChanged(string value)
     {
         OnPropertyChanged(nameof(HasBackgroundImage));
         PreviewChanged?.Invoke();
+        _ = RefreshBackgroundPreviewAsync(value);
+    }
+
+    private async Task RefreshBackgroundPreviewAsync(string path)
+    {
+        if (string.IsNullOrEmpty(path) || !File.Exists(path))
+        {
+            DisposePreview();
+            BackgroundPreview = null;
+            return;
+        }
+        _previewPath = path;
+        try
+        {
+            var bmp = await Task.Run(() =>
+            {
+                using var fs = File.OpenRead(path);
+                return Bitmap.DecodeToWidth(fs, 320);
+            });
+            if (_previewPath != path) { bmp.Dispose(); return; } // 已改选，丢弃过期预览
+            DisposePreview();
+            BackgroundPreview = bmp;
+        }
+        catch { /* 解码失败不打断设置流程（预览留空） */ }
+    }
+
+    private void DisposePreview()
+    {
+        if (BackgroundPreview is IDisposable d) { try { d.Dispose(); } catch { } }
     }
 
     /// <summary>选择图片后应用（View code-behind FilePicker 回调；预览不写盘）</summary>

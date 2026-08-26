@@ -113,6 +113,9 @@ public partial class App : Application
 
             // [生命周期引导] 注入 Avalonia 适配层
             AnimationService.UIAccessProviderFactory = () => new AvaloniaUIAccessProvider();
+            // 8-26 内存/资源瘦身：启动器动画走自研 UiAnim，从不用 PCL.Core 动画引擎——
+            // 关掉其 60Hz 定时器 + N 个空转计算线程（见 AnimationService.DisableIdleEngine）
+            AnimationService.DisableIdleEngine = true;
             LogService.FatalErrorReporter = message =>
             {
                 Launcher.Core.Utils.AppLog.Instance?.LogError(null, "[fatal] {Message}", message);
@@ -259,15 +262,8 @@ public partial class App : Application
         catch { /* 背景色非法则保持现有资源 */ }
     }
 
-    /// <summary>8-22 步骤8：打开内部日志中心（Toast「查看日志」按钮）</summary>
-    private static void OpenLogCenter()
-    {
-        var win = new Views.LogViewerWindow();
-        if (Services.DialogService.MainWindow() is { } owner && owner.IsVisible)
-            win.ShowDialog(owner);
-        else
-            win.Show();
-    }
+    /// <summary>8-26 打开日志中心（Toast「查看日志」按钮）——窗口内覆盖层，主窗不失活不降级</summary>
+    private static void OpenLogCenter() => Views.LogCenterView.Open();
 
     /// <summary>生命周期调用兜底：异常只记录，不阻止窗口创建</summary>
     private static void Guard(string what, Action action)

@@ -123,7 +123,7 @@ public sealed class TerracottaLobbyService : IMultiplayerLobbyService
         }
 
         // 2. 拉起新进程：--hmcl2 {handoff}，50ms 轮询 handoff JSON（含 port），12s 超时
-        var handoffPath = Path.Combine(Path.GetTempPath(), $"blockhelm-terracotta-{Guid.NewGuid():N}.json");
+        var handoffPath = Path.Combine(Path.GetTempPath(), $"terracotta-handoff-{Guid.NewGuid():N}.json");
         var psi = new ProcessStartInfo(_module.ExePath)
         {
             WorkingDirectory = _module.Directory,

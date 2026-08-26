@@ -67,6 +67,39 @@ public class ChunkSizeTests
         }
     }
 
+    // ---------- 8-25 渐进限速 CDN 细片（模组提速） ----------
+
+    [Fact]
+    public void ProgressiveCdn_SmallFiles_Use256KBFloor()
+    {
+        // 慢源（cdn-raw/cdn-alt ~100KB/s）细片换并发：1.5MB 模组 1MB 片=2 连接（200KB/s），
+        // 256KB 片=6 连接（600KB/s）；普通源不受影响仍 1MB。
+        Assert.Equal(256 * 1024, DownloadService.ChunkSizeFor(500 * 1024, progressiveThrottleCdn: true));
+        Assert.Equal(256 * 1024, DownloadService.ChunkSizeFor(10 * MB, progressiveThrottleCdn: true));
+        Assert.Equal(256 * 1024, DownloadService.ChunkSizeFor(16 * MB - 1, progressiveThrottleCdn: true));
+        Assert.Equal(6, (int)Math.Ceiling(1.5 * MB / (256 * 1024)));   // 1.5MB → 6 片
+        // 普通源（GitHub 等快源）保持 1MB 下限——8-18 RTT 教训不动
+        Assert.Equal(MB, DownloadService.ChunkSizeFor(500 * 1024));
+        Assert.Equal(MB, DownloadService.ChunkSizeFor(10 * MB));
+    }
+
+    [Fact]
+    public void ProgressiveCdn_At64MB_SameAsNormal()
+    {
+        // 64MB/64 = 1MB 恰在下限以上——大文件渐进/普通源一致（细片只服务小文件并发）
+        Assert.Equal(MB, DownloadService.ChunkSizeFor(64 * MB, progressiveThrottleCdn: true));
+        Assert.Equal(MB, DownloadService.ChunkSizeFor(64 * MB));
+    }
+
+    [Fact]
+    public void ProgressiveCdn_MidRange_StillMoreParallel()
+    {
+        // 16-64MB 渐进源：totalSize/64 落 256KB..1MB 区间——比普通源 1MB 下限更细、并发更高
+        var cs32 = DownloadService.ChunkSizeFor(32 * MB, progressiveThrottleCdn: true);
+        Assert.InRange(cs32, 256 * 1024, MB);
+        Assert.Equal(64, (int)Math.Ceiling(32.0 * MB / cs32));
+    }
+
     // ---------- 集成：自适应边界端到端 ----------
 
     private sealed class RangeHandler : HttpMessageHandler

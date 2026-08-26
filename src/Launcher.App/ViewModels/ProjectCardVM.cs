@@ -165,5 +165,11 @@ public sealed record VersionInstanceVM(string Name, string SourceLabel = "", str
         }
     }
 
+    /// <summary>解析后的游戏版本（8-26 通用化）：优先 McVersion（inheritsFrom 解析，fabric-loader-… 实例名也对）；
+    /// 空则回退从实例名开头解析（原生版 /「1.21.1-Fabric」式命名）。空串 = 解析不出（快照/自定义名）。
+    /// 自动匹配/搜索/依赖修复统一走它——此前用 TryParseGameVersion(Name) 对 fabric 实例名恒返回 null，
+    /// 导致下载不按游戏版本过滤、装错版本（entityculling 实锤）。</summary>
+    public string ResolvedGameVersion => EcosystemService.ResolveGameVersion(McVersion, Name);
+
     private static string Cap(string s) => s.Length > 0 ? char.ToUpperInvariant(s[0]) + s[1..] : s;
 }

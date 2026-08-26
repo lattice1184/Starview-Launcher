@@ -305,8 +305,9 @@ public sealed class AutoRepairService
     }
 
     /// <summary>从实例日志文件提取「Incompatible mods found」里的冲突模组 id（Fabric 版）——
-    /// 读 latest.log（尾部 200KB）+ 崩溃报告，合并后交 FromText 提取。</summary>
-    private static List<string> ExtractConflictingModIds(string gameDir, string versionId)
+    /// 读游戏自身的 latest.log（尾部 200KB，Fabric 直写、不受启动器 IsKeyLine 过滤）+ 崩溃报告，合并后交
+    /// FromText 提取。崩溃明细的权威来源——启动器控制台/launch-*.log 会把 INFO 级冲突行过滤掉（8-26 实锤）。</summary>
+    public static List<string> ExtractConflictingModIds(string gameDir, string versionId)
     {
         var sb = new System.Text.StringBuilder();
         var log = ModRepairService.LatestLogPath(gameDir, versionId);
@@ -329,8 +330,11 @@ public sealed class AutoRepairService
     /// <summary>从日志文本提取「Incompatible mods found」里的冲突模组 id。
     /// 特征：中文版 "模组 'Iris' (iris) 1.7.3+mc1.21" / 英文版 "mod 'X' (x)"，
     /// 或 Fabric 的 "Some of your mods are incompatible" 后 "将 模组 'X' (id) ... 替换为"。
-    /// 正则匹配 '(name)' (id) 元组，取括号内 id（英文 Fabric 也输出同构 "Mod 'x' (x)"）。</summary>
-    private static List<string> ExtractConflictingModIdsFromText(string text)
+    /// 正则匹配 '(name)' (id) 元组，取括号内 id（英文 Fabric 也输出同构 "Mod 'x' (x)"）。
+    /// 8-26 补：新版 Fabric loader（26.x 游戏）的冲突行不带引号括号——
+    /// "HARD_DEP_INCOMPATIBLE_PRESELECTED entityculling 1.7.3 {depends minecraft @ [1.21.x]}"，
+    /// mod id 紧跟诊断关键字，按关键字取下一个 token。</summary>
+    public static List<string> ExtractConflictingModIdsFromText(string text)
     {
         if (string.IsNullOrWhiteSpace(text)) return [];
         if (!text.Contains("Incompatible", StringComparison.OrdinalIgnoreCase)
@@ -352,6 +356,15 @@ public sealed class AutoRepairService
             var id = m.Groups[1].Value.Trim();
             if (IsPlausibleModId(id)) ids.Add(id);
         }
+        // 8-26 新版 Fabric loader 诊断行（无引号括号）：HARD_DEP_INCOMPATIBLE_PRESELECTED entityculling 1.7.3 {…}
+        // / UNSUPPORTED_DEPENDENCY … —— mod id 是紧跟诊断关键字的第一个 token
+        foreach (Match m in Regex.Matches(text,
+            @"(?:HARD_DEP_INCOMPATIBLE_PRESELECTED|UNSUPPORTED_DEPENDENCY|DEPENDENCY_NOT_FOUND|UNSUPPORTED_MOD_LOADER|MOD_RESOLUTION_EXCEPTION)\s+([a-zA-Z][a-zA-Z0-9_\-]*)",
+            RegexOptions.IgnoreCase))
+        {
+            var id = m.Groups[1].Value;
+            if (IsPlausibleModId(id)) ids.Add(id);
+        }
         return ids.ToList();
     }
 
@@ -363,20 +376,8 @@ public sealed class AutoRepairService
         return id is not ("minecraft" or "fabric" or "java" or "loader" or "api" or "mod" or "version" or "client" or "server" or "replace" or "reason" or "add" or "remove" or "hint" or "fix" or "missing" or "required" or "dependency" or "dependencies" or "the" or "you" or "that");
     }
 
-    /// <summary>读 jar（zip）内 fabric.mod.json 的 id；无 / 解析失败返回 null（不匹配任何冲突）</summary>
+    /// <summary>读 jar（zip）内 fabric.mod.json 的 id；无 / 解析失败返回 null（不匹配任何冲突）。
+    /// 8-26 复用 ModCompatibilityChecker 的 jar 读取（读 id + depends.minecraft 一套逻辑）。</summary>
     private static string? ReadModId(string jarPath)
-    {
-        try
-        {
-            using var zip = ZipFile.OpenRead(jarPath);
-            var entry = zip.GetEntry("fabric.mod.json");
-            if (entry is null) return null; // 非 Fabric 模组（Forge 等）不参与禁用
-            using var reader = new StreamReader(entry.Open());
-            using var doc = JsonDocument.Parse(reader.ReadToEnd());
-            if (doc.RootElement.TryGetProperty("id", out var id))
-                return id.GetString();
-            return null;
-        }
-        catch { return null; }
-    }
+        => ModCompatibilityChecker.TryReadFabricMetadata(jarPath, out var id, out _) ? id : null;
 }

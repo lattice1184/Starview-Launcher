@@ -2,6 +2,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:Launcher.App.ViewModels"
              xmlns:app="using:Launcher.App.Converters"
+             xmlns:behaviors="using:Launcher.App.Animations"
              x:Class="Launcher.App.Views.EcosystemView"
              x:DataType="vm:EcosystemViewModel">
 
@@ -124,32 +125,34 @@
                             <DataTemplate x:DataType="vm:ProjectCardVM">
                                 <Button HorizontalAlignment="Stretch" Margin="0,1" Padding="0" Background="Transparent"
                                         BorderThickness="0" HorizontalContentAlignment="Stretch"
+                                        behaviors:SpringScaleBehavior.Enabled="False"
+                                        behaviors:HoverBrushBehavior.Enabled="False"
+                                        behaviors:RippleBehavior.Enabled="False"
                                         Command="{Binding $parent[UserControl].((vm:EcosystemViewModel)DataContext).OpenDetailCommand}"
                                         CommandParameter="{Binding}">
-                                    <Button.Styles>
-                                        <Style Selector="Button:hover > Border.modcard">
-                                            <Setter Property="Background" Value="{DynamicResource BgHover}"/>
-                                            <Setter Property="BorderBrush" Value="#3C4757"/>
-                                        </Style>
-                                        <Style Selector="Button:pressed > Border.modcard">
-                                            <Setter Property="Background" Value="{DynamicResource BgActive}"/>
-                                        </Style>
-                                    </Button.Styles>
-                                    <Border Classes="modcard" Background="Transparent"
-                                            Padding="10,8" BorderBrush="{DynamicResource BorderColor}"
+                                    <!-- 8-25 卡片 hover 残留根治：禁用全局 Button 三个行为（缩放/hover 变色/涟漪）+
+                                         去掉 hover/pressed 背景变（静态卡，无悬浮无残留）。
+                                         8-25 布局改下拉列表式：紧凑两行（标题行 + 描述/统计内联），
+                                         安装收进「安装 ▾」下拉菜单（左键弹菜单：安装到当前实例 / 收藏）——
+                                         去掉右列统计竖排 + 大号 primary 按钮（分散 + 色调不匹配） -->
+                                    <!-- 8-25 hover 根因修复：modcard 删内联 Background——局部值压过样式 Setter，hover 背景从未生效。
+                                         基态走默认透明，hover 由 Button:hover Border.modcard 样式驱动 BgRaised -->
+                                    <Border Classes="modcard"
+                                            Padding="10,7" BorderBrush="{DynamicResource BorderColor}"
                                             BorderThickness="0,0,0,1">
                                         <Border.Transitions>
                                             <Transitions>
-                                                <BrushTransition Property="Background" Duration="0:0:0.15"/>
+                                                <!-- 8-26 悬浮跟手：0.15s 过渡划过列表时高亮慢半拍（不跟手），缩到 0.06s -->
+                                                <BrushTransition Property="Background" Duration="0:0:0.06"/>
                                             </Transitions>
                                         </Border.Transitions>
-                                        <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="12">
-                                            <Border Width="40" Height="40" CornerRadius="{StaticResource RadiusLarge}"
+                                        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12">
+                                            <Border Width="36" Height="36" CornerRadius="{StaticResource RadiusLarge}"
                                                     ClipToBounds="True" Background="{DynamicResource BgActive}"
                                                     VerticalAlignment="Center">
-                                                <Image Source="{Binding Icon}" Width="40" Height="40" Stretch="Uniform"/>
+                                                <Image Source="{Binding Icon}" Width="36" Height="36" Stretch="Uniform"/>
                                             </Border>
-                                            <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+                                            <StackPanel Grid.Column="1" Spacing="3" VerticalAlignment="Center">
                                                 <StackPanel Orientation="Horizontal" Spacing="8">
                                                     <TextBlock Text="{Binding Title}" FontWeight="SemiBold" Foreground="White"
                                                                MaxLines="1" TextTrimming="CharacterEllipsis"/>
@@ -159,29 +162,36 @@
                                                     </Border>
                                                     <TextBlock Text="{Binding Author}" Foreground="{DynamicResource TextSecondary}" FontSize="12"/>
                                                 </StackPanel>
-                                                <TextBlock Text="{Binding Description}" Foreground="{StaticResource TextLog}" FontSize="12"
-                                                           MaxLines="2" TextTrimming="CharacterEllipsis"/>
+                                                <!-- 描述 + 统计内联一行（描述 * 列截断，统计靠右） -->
+                                                <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="10">
+                                                    <TextBlock Text="{Binding Description}" Foreground="{StaticResource TextLog}" FontSize="12"
+                                                               MaxLines="1" TextTrimming="CharacterEllipsis"/>
+                                                    <TextBlock Grid.Column="1" Foreground="{DynamicResource TextDim}" FontSize="11">
+                                                        <Run Text="{Binding DownloadsText}"/><Run Text=" 下载"/>
+                                                    </TextBlock>
+                                                    <TextBlock Grid.Column="2" Foreground="{DynamicResource TextDim}" FontSize="11"
+                                                               IsVisible="{Binding ShowFollows}">
+                                                        <Run Text="{Binding FollowsText}"/><Run Text=" 关注"/>
+                                                    </TextBlock>
+                                                    <TextBlock Grid.Column="3" Text="{Binding UpdatedText}" Foreground="{DynamicResource TextDim}" FontSize="10"/>
+                                                </Grid>
                                             </StackPanel>
-                                            <StackPanel Grid.Column="2" Spacing="2" VerticalAlignment="Center">
-                                                <TextBlock Foreground="{DynamicResource TextDim}" FontSize="11" TextAlignment="Right">
-                                                    <Run Text="{Binding DownloadsText}"/><Run Text=" 下载"/>
-                                                </TextBlock>
-                                                <TextBlock Foreground="{DynamicResource TextDim}" FontSize="11" TextAlignment="Right"
-                                                           IsVisible="{Binding ShowFollows}">
-                                                    <Run Text="{Binding FollowsText}"/><Run Text=" 关注"/>
-                                                </TextBlock>
-                                                <TextBlock Text="{Binding UpdatedText}" Foreground="{DynamicResource TextDim}"
-                                                           FontSize="10" TextAlignment="Right"/>
-                                            </StackPanel>
-                                            <StackPanel Grid.Column="3" Spacing="4" VerticalAlignment="Center">
-                                                <Button Content="安装" Classes="primary" FontSize="13" Padding="20,7"
-                                                        Command="{Binding $parent[UserControl].((vm:EcosystemViewModel)DataContext).InstallCardCommand}"
-                                                        CommandParameter="{Binding}"/>
-                                                <Button Classes="ghost" FontSize="14" Padding="4,0"
-                                                        Content="{Binding StarText}"
-                                                        Command="{Binding ToggleFavoriteCommand}"
-                                                        Foreground="{Binding StarColor}"/>
-                                            </StackPanel>
+                                            <Button Grid.Column="2" Classes="ghost" FontSize="12" Padding="10,5"
+                                                    VerticalAlignment="Center" Margin="0,0,2,0"
+                                                    Click="OnInstallMenuClick">
+                                                <Button.ContextMenu>
+                                                    <ContextMenu>
+                                                        <!-- 8-25 修：ContextMenu 是独立 Popup 视觉树，$parent[UserControl] 解析失败 →
+                                                             安装走 code-behind（OnInstallMenuItemClick 取卡片 + 父 VM 直调命令） -->
+                                                        <MenuItem Header="安装到当前实例" Click="OnInstallMenuItemClick"/>
+                                                        <MenuItem Header="{Binding StarText}" Command="{Binding ToggleFavoriteCommand}"/>
+                                                    </ContextMenu>
+                                                </Button.ContextMenu>
+                                                <StackPanel Orientation="Horizontal" Spacing="5">
+                                                    <TextBlock Text="安装"/>
+                                                    <TextBlock Text="▾" FontSize="9" VerticalAlignment="Center"/>
+                                                </StackPanel>
+                                            </Button>
                                         </Grid>
                                     </Border>
                                 </Button>

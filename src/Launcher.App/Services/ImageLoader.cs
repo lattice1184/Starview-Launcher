@@ -13,15 +13,17 @@ namespace Launcher.App.Services;
 /// </summary>
 public static class ImageLoader
 {
-    private static readonly HttpClient Http = Launcher.Core.Download.HttpClientPool.Create(TimeSpan.FromSeconds(8));
+    // 8-26 图标不显示修复：cdn-alt.modrinth.com 国内 2-3s（坏时 >8s 超时→空白）——超时放宽到 12s 减少失败
+    private static readonly HttpClient Http = Launcher.Core.Download.HttpClientPool.Create(TimeSpan.FromSeconds(12));
     private static readonly ConcurrentDictionary<string, Task<Bitmap?>> Cache = new();
     private static readonly SemaphoreSlim Gate = new(4);
     private static readonly string CacheDir = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Launcher", "imgcache");
     /// <summary>内存位图缓存上限（8-22 内存瘦身：旧实现只增不减——翻页/切 tab 攒几十上百张
     /// 位图常驻（每张 96px 解码 ≈36KB，300 张 = 10MB+）。超限整体清空：磁盘缓存（imgcache）
-    /// 兜底重新解码（毫秒级），无泄漏无失效。按「近似 LRU」——字典无序，整体清最简。</summary>
-    private const int CacheMaxEntries = 128;
+    /// 兜底重新解码（毫秒级），无泄漏无失效。按「近似 LRU」——字典无序，整体清最简。
+    /// 8-26 内存真减：128→64（≈2.3MB 上限→1.1MB；磁盘兜底秒级重解，翻页体验无感）。</summary>
+    private const int CacheMaxEntries = 64;
 
     public static Task LoadAsync(string? url, Action<Bitmap?> onLoaded, CancellationToken ct = default)
         => LoadAsync(url, onLoaded, 96, ct);
@@ -61,8 +63,9 @@ public static class ImageLoader
         }
     }
 
-    /// <summary>失败重试窗（毫秒，8-18）：失败后此窗内直接返回 null 不再请求，窗外重新尝试</summary>
-    private const long FailRetryMs = 60_000;
+    /// <summary>失败重试窗（毫秒，8-18）：失败后此窗内直接返回 null 不再请求，窗外重新尝试。
+    /// 8-26 60s→20s：cdn-alt 间歇慢导致图标偶发空白，缩短重试窗让图标尽快重新加载</summary>
+    private const long FailRetryMs = 20_000;
 
     /// <summary>url → 最近失败时间戳（8-18 替代永久 null 缓存）</summary>
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, long> _failedAt = new();

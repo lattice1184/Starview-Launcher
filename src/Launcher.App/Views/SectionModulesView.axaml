@@ -42,38 +42,7 @@
     </Border>
 
     <!-- 内存优化（8-19 第二批：PCL 式但低写盘） -->
-    <Border Classes="setting-group">
-        <StackPanel Spacing="10">
-            <TextBlock Text="内存优化" Classes="group-header"/>
-            <StackPanel Orientation="Horizontal" Spacing="8">
-                <TextBlock Text="当前占用 {Binding CurrentMemoryText}" Classes="setting-label" VerticalAlignment="Center"/>
-                <Button Content="立即释放内存" Classes="primary" FontSize="12" Padding="12,5" Cursor="Hand"
-                        Command="{Binding TrimMemoryNowCommand}"/>
-                <Border Classes="help-hint"
-                           ToolTip.Tip="点一下立即压缩并释放内存（不写磁盘；「工作集修剪」开着时会额外写入页面文件）。释放量受当前后台任务影响"
-                           VerticalAlignment="Center"><Path/></Border>
-            </StackPanel>
-            <TextBlock Text="自动模式：闲置或切出去时在后台压缩内存——轻度模式只压缩不写盘，对硬盘零影响；工作集修剪才是 PCL 那种把内存写进页面文件的方案，会增加硬盘读写，默认关。"
-                       Classes="dim" FontSize="11" TextWrapping="Wrap"/>
-            <StackPanel Orientation="Horizontal" Spacing="8">
-                <TextBlock Text="闲置时优化内存" Classes="setting-label" VerticalAlignment="Center"/>
-                <ToggleSwitch IsChecked="{Binding MemoryOptimizeEnabled}"/>
-            </StackPanel>
-            <StackPanel Orientation="Horizontal" Spacing="8">
-                <TextBlock Text="工作集修剪（写页面文件）" Classes="setting-label" VerticalAlignment="Center"/>
-                <ToggleSwitch IsChecked="{Binding MemoryTrimEnabled}"/>
-                <Border Classes="help-hint"
-                           ToolTip.Tip="把内存页写入页面文件换回物理内存——占用数字降得更狠，但会持续产生硬盘读写。固态盘寿命敏感就保持关闭"
-                           VerticalAlignment="Center"><Path/></Border>
-            </StackPanel>
-            <Grid Classes="setting-row" ColumnDefinitions="Auto,*,Auto">
-                <TextBlock Text="闲置多久触发（分钟）" Classes="setting-label" VerticalAlignment="Center"/>
-                <TextBlock Grid.Column="1"/>
-                <TextBox Grid.Column="2" Width="56" FontSize="12" Padding="6,3"
-                         Text="{Binding MemoryIdleMinutesText}" IsEnabled="{Binding MemoryOptimizeEnabled}"/>
-            </Grid>
-        </StackPanel>
-    </Border>
+    <!-- 8-25 内存优化区已整体移除（IdleMemoryTuner 假释放，宁缺毋假） -->
 
     </StackPanel>
 </UserControl>

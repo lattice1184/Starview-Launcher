@@ -386,7 +386,7 @@ public partial class EcosystemViewModel : ViewModelBase
                     : IsModType && instance is not null ? EcosystemService.GuessLoader(instance.Name) : null);
             var gameVersion = SelectedGameVersion?.Value
                 ?? (Launcher.Core.Utils.LauncherSettings.Current.EcoFollowInstance
-                    && instance is not null && EcosystemService.TryParseGameVersion(instance.Name, out var gv) ? gv : null);
+                    && instance is not null && instance.ResolvedGameVersion.Length > 0 ? instance.ResolvedGameVersion : null);
             var category = SelectedCategory?.Key;
 
             var source = SelectedSource?.Key;
@@ -439,7 +439,20 @@ public partial class EcosystemViewModel : ViewModelBase
         }
         if (Launcher.Core.Services.McmodSearchService.ContainsChinese(Query))
         {
-            // 8-24 CF 中文搜索：MC百科链解出 CF slug → 按 slug 反查 CF API（需有效 key；
+            // 8-26 快路径优先（对齐 Verse，真机实测 CF 中文走 mcmod 链 90s+ 干等）：本地别名表命中
+            // （钠/机械动力/小地图…）→ 直接 Modrinth 快搜 ~1s（SearchChineseAsync 内部有命中短路）。
+            if (Launcher.Core.Services.ModAliasTable.Resolve(Query).Count > 0)
+            {
+                var resp = await SlowQueryNotifier.WatchAsync(
+                    _eco.SearchChineseAsync(_type, Query, gameVersion, loader, ct),
+                    "正在搜索…", TimeSpan.FromSeconds(3));
+                if (seq != _requestSeq) return;
+                Cards.Clear();
+                AddCards(resp?.Hits ?? [], h => h.Title, h => h.Description, h => new ProjectCardVM(h));
+                FinishPage(seq, resp?.TotalHits ?? 0, gameVersion, null);
+                return;
+            }
+            // 8-24 兜底 CF 中文搜索：MC百科链解出 CF slug → 按 slug 反查 CF API（需有效 key；
             // 无命中（MC百科没 CF 条目 / slug 搜不到）显示空提示而非白打官网）
             var results = await SlowQueryNotifier.WatchAsync(
                 _eco.SearchChineseCurseforgeAsync(_type, Query, gameVersion, ct),
@@ -467,10 +480,14 @@ public partial class EcosystemViewModel : ViewModelBase
         => search();
 
     /// <summary>8-24 双源中文：CF 侧走 MC百科链（包装成 CurseForgeSearchPage 形状并入双源合并）</summary>
-    private async Task<CurseForgeSearchPage?> SearchChineseCfAsync(int seq, string? gameVersion, CancellationToken ct)
+    private async Task<CurseForgeSearchPage?> SearchChineseCfAsync(int seq, string? gameVersion, CancellationToken ct,
+        List<(string? MrSlug, string? CfSlug, string ChineseTitle)>? sharedCandidates = null)
     {
+        // 8-26 别名表命中时 Modrinth 侧已秒出，CF 侧直接返回空不拖后腿（否则「全部」双源等最慢的 mcmod 链）
+        if (Launcher.Core.Services.ModAliasTable.Resolve(Query).Count > 0)
+            return new CurseForgeSearchPage([], 0);
         var results = await SlowQueryNotifier.WatchAsync(
-            _eco.SearchChineseCurseforgeAsync(_type, Query, gameVersion, ct),
+            _eco.SearchChineseCurseforgeAsync(_type, Query, gameVersion, ct, sharedCandidates),
             "正在通过 MC百科搜索中文结果（较慢），请稍候…", TimeSpan.FromSeconds(3));
         if (seq != _requestSeq) return null;
         return results is null ? null : new CurseForgeSearchPage(results, results.Count);
@@ -482,8 +499,14 @@ public partial class EcosystemViewModel : ViewModelBase
         // 双源并行发起、独立捕获：单源失败（超时/网络/限流）只降级该源，另一源照常显示。
         // B5：中文 query 在「全部」双源模式也走 MC百科链（Modrinth 索引是英文，直搜 0 命中）
         var isChinese = Launcher.Core.Services.McmodSearchService.ContainsChinese(Query);
+        // 8-26 修「还是慢」真根因：双源中文查询先判别名表——命中就直接走快路径（Modrinth 秒出 + CF 空），
+        // 绝不在快路径前爬 mcmod（旧代码无条件 FetchChineseCandidatesAsync 爬 mcmod，最坏 10-75s 干等，
+        // 别名短路被挡在后面根本轮不到）。别名未命中才抓 mcmod 候选供兜底反查。
+        var aliasHit = isChinese && Launcher.Core.Services.ModAliasTable.Resolve(Query).Count > 0;
+        List<(string? MrSlug, string? CfSlug, string ChineseTitle)>? sharedCandidates = null;
+        if (isChinese && !aliasHit) sharedCandidates = await _eco.FetchChineseCandidatesAsync(Query, ct);
         var mrTask = isChinese
-            ? _eco.SearchChineseAsync(_type, Query, gameVersion, loader, ct)
+            ? _eco.SearchChineseAsync(_type, Query, gameVersion, loader, ct, sharedCandidates)
             : _eco.SearchAsync(_type, Query, gameVersion, loader, category,
                 index: SelectedSort?.Index ?? EcosystemService.SortIndex.Relevance,
                 limit: PageSize, offset: CurrentPage * PageSize, ct);
@@ -491,7 +514,7 @@ public partial class EcosystemViewModel : ViewModelBase
         var cfTask = !_cf.IsEnabled
             ? Task.FromResult<CurseForgeSearchPage?>(null)
             : isChinese
-                ? SearchChineseCfAsync(seq, gameVersion, ct)
+                ? SearchChineseCfAsync(seq, gameVersion, ct, sharedCandidates)
                 : TryCfSearchAsync(() => _cf.SearchAsync(_type, Query, gameVersion, sort, PageSize, CurrentPage * PageSize, ct));
         string? mrErr = null, cfErr = null;
         var mr = await TrySearchAsync(mrTask, ex => mrErr = ex.Message);
@@ -625,7 +648,7 @@ public partial class EcosystemViewModel : ViewModelBase
     private async Task InstallCard(ProjectCardVM card)
     {
         var instance = SelectedInstance;
-        var gameVersion = instance is not null && EcosystemService.TryParseGameVersion(instance.Name, out var gv) ? gv : null;
+        var gameVersion = instance is not null && instance.ResolvedGameVersion.Length > 0 ? instance.ResolvedGameVersion : null;
         if (card.Source == "curseforge")
         {
             await InstallCfCardAsync(card, instance, gameVersion);
@@ -635,9 +658,11 @@ public partial class EcosystemViewModel : ViewModelBase
         var loader = card.Type == ProjectType.Mod
             && instance is not null && instance.LoaderBadge.Length > 0 ? instance.LoaderBadge
             : card.Type == ProjectType.Mod && instance is not null ? EcosystemService.GuessLoader(instance.Name) : null;
+        // 8-26 整合包自带游戏版本（mrpack 里），不该拿选中实例版本过滤（会错配/卡匹配）——直接取最新 release
+        var effGameVersion = card.Type == ProjectType.Modpack ? null : gameVersion;
         try
         {
-            var version = await _eco.FindBestVersionAsync(card.Id, gameVersion, loader, CancellationToken.None);
+            var version = await _eco.FindBestVersionAsync(card.Id, effGameVersion, loader, CancellationToken.None);
             if (version is null)
             {
                 NotificationService.Error($"{card.Title} 没有适配当前实例的版本");
@@ -683,6 +708,8 @@ public partial class EcosystemViewModel : ViewModelBase
             }, targetPath: installDir);           // 跳转①：入队即去下载记录看进度；完成后跳回本 tab（跳转②由下载中心统一处理）
             MainViewModel.Current?.NavigateToDownloadQueue($"download:{DownloadViewModel.TabFor(_type)}");
             await task.Completion;
+            // 8-26 装完通知版本页刷新对应实例 mods（跨 VM 联动，补 watcher 边界）
+            MainViewModel.Current?.Versions?.NotifyModsInstalled(instanceName);
             if (task.State == DownloadTaskState.Completed)
             {
                 var path = report is { Installed.Count: > 0 } ? report.Installed[0].Path : "";
@@ -816,6 +843,8 @@ public partial class EcosystemViewModel : ViewModelBase
             }, targetPath: installDir);           // 跳转①：入队即去下载记录看进度；完成后跳回本 tab（跳转②由下载中心统一处理）
             MainViewModel.Current?.NavigateToDownloadQueue($"download:{DownloadViewModel.TabFor(_type)}");
             await task.Completion;
+            // 8-26 装完通知版本页刷新对应实例 mods（跨 VM 联动，补 watcher 边界）
+            MainViewModel.Current?.Versions?.NotifyModsInstalled(instanceName);
             if (task.State == DownloadTaskState.Completed)
             {
                 var path = report is { Installed.Count: > 0 } ? report.Installed[0].Path : "";

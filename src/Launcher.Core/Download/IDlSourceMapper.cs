@@ -123,11 +123,16 @@ public sealed class BmclapiDlSourceMapper : IDlSourceMapper
         if (url.Contains("cdn.modrinth.com"))
             return url.Replace("https://cdn.modrinth.com", "https://cdn-alt.modrinth.com");
         if (url.Contains("piston-meta.mojang.com") || url.Contains("launcher.mojang.com")
-            || url.Contains("resources.download.minecraft.net"))
+            || url.Contains("resources.download.minecraft.net") || url.Contains("piston-data.mojang.com"))
         {
             return url.Replace("https://piston-meta.mojang.com", Mirror)
                       .Replace("https://launcher.mojang.com", Mirror)
-                      .Replace("https://resources.download.minecraft.net", Mirror);
+                      .Replace("https://resources.download.minecraft.net", Mirror)
+                      // 8-26 补 client.jar：piston-data（client/server jar）此前不在镜像列表——19:40 实测
+                      // 整次安装 146 个下载里唯一候选(1) 单直连的文件，Mojang 波动时（8~27s）无镜像兜底。
+                      // BMCLAPI /v1/objects/{sha1}/{name} 实测 302→zhuqiy.top 签名 URL 可下（限速 68KB/s
+                      // 但竞速自动淘汰；SHA1 校验兜底防错文件）——BMCLAPI 快时用上，慢时无损。
+                      .Replace("https://piston-data.mojang.com", Mirror);
         }
         // AL39：maven.fabricmc.net 也走镜像——loader 本体/库从该域直连国内实测 21.5s（08-09），
         // 与 libraries.minecraft.net 同格式（bmclapi2/maven/...）；镜像不可达时多源竞速自动回退原源

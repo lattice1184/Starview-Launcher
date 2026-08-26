@@ -219,16 +219,13 @@ public partial class DownloadViewModel : ViewModelBase
 
     private int _preloadStarted;
 
-    /// <summary>进入下载页后错峰预热 4 个资源 tab 数据（建 VM + 加载数据，不建视图）——切 tab 秒开无撕裂</summary>
+    /// <summary>进入下载页只预热最常见「模组」tab（8-26 内存瘦身：5 个 EcoVM 各扫实例+拉清单+持 Cards/Instances，
+    /// 进下载页全常驻。其余 tab 首次切换再建（GetOrCreateTab 懒建），短暂加载可接受——用户优先内存）</summary>
     private async void PreloadTabs()
     {
         if (Interlocked.Exchange(ref _preloadStarted, 1) == 1) return;
-        var tabs = new[] { "mod", "modpack", "resourcepack", "shader", "datapack" };
-        for (var i = 0; i < tabs.Length; i++)
-        {
-            await Task.Delay(300 * (i + 1));
-            GetOrCreateTab(tabs[i]);
-        }
+        await Task.Delay(300);
+        GetOrCreateTab("mod");
     }
 
     [RelayCommand]

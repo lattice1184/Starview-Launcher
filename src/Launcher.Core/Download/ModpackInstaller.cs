@@ -271,6 +271,35 @@ public sealed class ModpackInstaller
                 rel.StartsWith("overrides/", StringComparison.OrdinalIgnoreCase)
                     ? rel["overrides/".Length..] : null, c);
         }).Completion.WaitAsync(ct);
+
+        // 8-26 修「整合包不下前置」：mrpack dependencies[] 里非 minecraft/loader 的模组前置
+        // （fabric-api 等，作者没塞进 files[] 的）→ 按版本 id 直装到 mods/。单条失败只计跳过。
+        foreach (var dep in info.ModDependencies ?? [])
+        {
+            try
+            {
+                var json = await _http.GetStringAsync(
+                    $"{EcosystemService.ApiBase}/version/{Uri.EscapeDataString(dep.VersionId)}", ct);
+                var v = JsonSerializer.Deserialize<ModrinthVersion>(json,
+                    new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                var primary = v?.Files?.FirstOrDefault(f => f.Primary) ?? v?.Files?.FirstOrDefault();
+                if (v is null || primary is null) { lock (skipped) skipped.Add((dep.ProjectKey, "版本解析失败")); continue; }
+                var modsDir = Path.Combine(versionDir, "mods");
+                Directory.CreateDirectory(modsDir);
+                var target = Path.Combine(modsDir, Path.GetFileName(primary.FileName));
+                var child = ctx.AddChild($"前置 {dep.ProjectKey}", primary.Size, async (p, c) =>
+                {
+                    await _downloads.DownloadFileAsync(primary.Url, target, primary.Hashes?.Sha1, primary.Size, p, c);
+                }, target);
+                await child.Completion.WaitAsync(ct);
+                if (child.TerminalState == DownloadTaskState.Failed)
+                    lock (skipped) skipped.Add((dep.ProjectKey, child.Error ?? "下载失败"));
+                else
+                    Interlocked.Increment(ref installed);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested) { }
+            catch (Exception ex) { lock (skipped) skipped.Add((dep.ProjectKey, ex.Message)); }
+        }
         return (installed, skipped);
     }
 

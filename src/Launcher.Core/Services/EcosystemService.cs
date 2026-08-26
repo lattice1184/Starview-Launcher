@@ -47,46 +47,84 @@ public sealed class EcosystemService
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Launcher", "cache");
     }
 
+    /// <summary>8-25 双源共享 mcmod 候选：一次抓取喂中文 Modrinth + CF 双源（旧各自重抓两遍 mcmod）。
+    /// 8-26 加 10s 上限：mcmod 连接挂起最坏 75s，长尾查询不干等（别名命中时根本不会调到这里）。</summary>
+    public Task<List<(string? MrSlug, string? CfSlug, string ChineseTitle)>> FetchChineseCandidatesAsync(
+        string query, CancellationToken ct = default)
+        => FetchCandidatesCappedAsync(query, null, ct);
+
+    /// <summary>8-26 mcmod 链硬上限：mcmod 对应用连接挂起不响应时最坏 ~75s（搜索页 15s + 详情页
+    /// 门4×4波×15s）——本地表未命中的长尾中文查询不再干等，10s 超时即放弃、快速空结果。
+    /// FetchAsync 会把取消当普通失败返回 null → SearchCandidatesAsync 返回 []，无需抛异常。</summary>
+    private async Task<List<(string? MrSlug, string? CfSlug, string ChineseTitle)>> FetchCandidatesCappedAsync(
+        string query, List<(string? MrSlug, string? CfSlug, string ChineseTitle)>? prefetched, CancellationToken ct)
+    {
+        if (prefetched is not null) return prefetched;
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeout.CancelAfter(TimeSpan.FromSeconds(10));
+        try { return await _mcmod.SearchCandidatesAsync(query, maxResults: 10, timeout.Token); }
+        catch (OperationCanceledException) { return []; }
+    }
+
     /// <summary>
     /// 中文搜索（AL63）：MC百科汉化链路——中文 → mcmod 条目 → 解 Modrinth slug → 项目详情 → 搜索结果。
     /// 无分页（mcmod 搜索不分页；结果上限 10）。中文查询走此路，英文查询走 SearchAsync。
     /// 8-19 生态修缮：gameVersion/loader 命中项目按版本列表过滤（不支持该版本/加载器的项目不出现在结果）
     /// </summary>
     public async Task<ModrinthSearchResponse?> SearchChineseAsync(
-        ProjectType type, string query, string? gameVersion = null, string? loader = null, CancellationToken ct = default)
+        ProjectType type, string query, string? gameVersion = null, string? loader = null, CancellationToken ct = default,
+        List<(string? MrSlug, string? CfSlug, string ChineseTitle)>? prefetchedCandidates = null)
     {
         // 8-22 别名直搜优先（PCL 式精准）：中文 query 命中内置映射 → 直接查 Modrinth slug
         // （缓存秒回）——「钠」直接出 Sodium 本体；MC百科结果合并去重（<em> 高亮/无外链都不再挡）
         var hits = new List<ModrinthSearchHit>();
         var typeName = type.ToString().ToLowerInvariant();
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var aliasSlug in ModAliasTable.Resolve(query))
+        var seenLock = new object();
+        // 8-25 提速：别名多 slug 由串行改门限并行（旧：8.6s × N 逐条干等）
+        var aliasSlugs = ModAliasTable.Resolve(query).ToArray();
+        if (aliasSlugs.Length > 0)
         {
-            try
+            using var aliasGate = new SemaphoreSlim(4);
+            var aliasTasks = aliasSlugs.Select(async aliasSlug =>
             {
-                using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
-                timeout.CancelAfter(TimeSpan.FromSeconds(10));
-                var detail = await GetProjectAsync(aliasSlug, timeout.Token);
-                if (detail is null || !detail.ProjectType.Equals(typeName, StringComparison.OrdinalIgnoreCase)) continue;
-                if (!seen.Add(detail.Slug)) continue;
-                // 8-19 生态修缮：目标版本/加载器无匹配构建 → 过滤（版本列表走缓存，重复搜索零网络）
-                if (gameVersion is not null || loader is not null)
+                await aliasGate.WaitAsync(ct);
+                try
                 {
-                    var support = await GetVersionsAsync(detail.Id, gameVersion, NormalizeLoaderForDependency(loader), timeout.Token);
-                    if (support.Count == 0) continue;
+                    using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                    timeout.CancelAfter(TimeSpan.FromSeconds(8));
+                    // 8-26 快路径改用 search 端点（实测官方 search 稳定 ~0.8s，project 端点 0.7-7s 抖动；
+                    // Verse 正是用 search 才「秒出」）。别名表已知 slug → 一次 search 顶条即命中，
+                    // 无需 project 详情 + 版本检查两连跳。search 有 5min 缓存，重复搜索秒回。
+                    var search = await SearchAsync(type, aliasSlug, gameVersion, loader,
+                        null, SortIndex.Relevance, 1, 0, timeout.Token);
+                    var top = search?.Hits.FirstOrDefault(h =>
+                        h.Slug.Equals(aliasSlug, StringComparison.OrdinalIgnoreCase))
+                        ?? search?.Hits.FirstOrDefault();
+                    if (top is null) return;
+                    lock (seenLock) { if (!seen.Add(top.Slug)) return; }
+                    // 标题用别名表中文名（搜「钠」看到「钠」）；其余数据取 search 命中
+                    var hit = new ModrinthSearchHit(top.ProjectId, top.ProjectType, top.Slug, "",
+                        ModAliasTable.TitleFor(query, top.Slug), top.Description, top.Categories, null,
+                        top.Versions, top.IconUrl, top.Downloads, top.Follows,
+                        top.DateCreated, top.DateModified, null);
+                    lock (hits) { hits.Add(hit); }
                 }
-                hits.Add(new ModrinthSearchHit(detail.Id, detail.ProjectType, detail.Slug, "",
-                    ModAliasTable.TitleFor(query, detail.Slug), detail.Description, detail.Categories, null,
-                    detail.Versions, detail.IconUrl, detail.Downloads, detail.Follows,
-                    detail.DateCreated, detail.DateModified, null));
-            }
-            catch { /* 别名单条失败跳过 */ }
+                catch { /* 别名单条失败跳过 */ }
+                finally { aliasGate.Release(); }
+            }).ToArray();
+            await Task.WhenAll(aliasTasks);
         }
-        var candidates = await _mcmod.SearchCandidatesAsync(query, maxResults: 10, ct);
+        // 8-26 对齐 Verse：本地表命中即短路返回——不再爬 mcmod（403/429 限流 + 慢），秒出。
+        // 表已扩到 ~79 条，常见中文模组名都走这里。
+        if (hits.Count > 0) return new ModrinthSearchResponse(hits, hits.Count, 0, 10);
+        var candidates = await FetchCandidatesCappedAsync(query, prefetchedCandidates, ct);
         // 8-22 并行查询（旧串行：Modrinth API 国内直连 8.6s/请求 × 10 = 86s 干等——
         // 「中文搜不到」的真相是慢到用户放弃）。门 4 + 单条 10s 超时：最坏 ~20s，
-        // 常见 2-3 条有 Modrinth 外链 → 几秒出结果
-        using var gate = new SemaphoreSlim(4);
+        // 常见 2-3 条有 Modrinth 外链 → 几秒出结果。
+        // 8-25 提速：门 4→8——Modrinth 反查是主瓶颈（每候选 detail+versions ≈17s 串行），
+        // 10 候选门4 = 3 波 ≈51s → 门8 = 2 波 ≈34s。版本过滤依赖 detail.Id 无法单候选内并行。
+        using var gate = new SemaphoreSlim(8);
         var tasks = candidates.Select(async item =>
         {
             await gate.WaitAsync(ct);
@@ -94,10 +132,11 @@ public sealed class EcosystemService
             {
                 using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
                 timeout.CancelAfter(TimeSpan.FromSeconds(10));
-                var detail = await GetProjectAsync(item.MrSlug, timeout.Token);
+                // 8-26 兜底反查也走镜像直查（官方 2-7s 抖动 vs 镜像 1.7s，实测）
+                var detail = await GetProjectFastAsync(item.MrSlug, timeout.Token);
                 if (detail is null || !detail.ProjectType.Equals(typeName, StringComparison.OrdinalIgnoreCase))
                     return (Hit: (ModrinthSearchHit?)null, item.ChineseTitle);
-                if (!seen.Add(detail.Slug)) return (Hit: (ModrinthSearchHit?)null, item.ChineseTitle); // 别名已出，去重
+                lock (seenLock) { if (!seen.Add(detail.Slug)) return (Hit: (ModrinthSearchHit?)null, item.ChineseTitle); } // 别名已出，去重
                 ChineseNameCache.Put("mr:" + detail.Slug, item.ChineseTitle); // 8-24 养缓存：下次英文搜也显示中文
                 // 8-19 生态修缮：目标版本/加载器无匹配构建 → 过滤（版本列表走缓存，重复搜索零网络）
                 if (gameVersion is not null || loader is not null)
@@ -127,10 +166,11 @@ public sealed class EcosystemService
     /// （CF API 无按 slug 直取的端点，slug 精确搜索通常首条即命中）→ 精确匹配 → 标题替换为中文。
     /// 需有效 CF API key（无 key / 未注入 _cf 返回空，调用方提示填 key）。</summary>
     public async Task<List<CurseforgeProject>> SearchChineseCurseforgeAsync(
-        ProjectType type, string query, string? gameVersion = null, CancellationToken ct = default)
+        ProjectType type, string query, string? gameVersion = null, CancellationToken ct = default,
+        List<(string? MrSlug, string? CfSlug, string ChineseTitle)>? prefetchedCandidates = null)
     {
         if (_cf is null || !_cf.IsEnabled) return [];
-        var candidates = await _mcmod.SearchCandidatesAsync(query, maxResults: 10, ct);
+        var candidates = await FetchCandidatesCappedAsync(query, prefetchedCandidates, ct);
         var cfItems = candidates
             .Where(c => c.CfSlug is not null)
             .Select(c => (Slug: c.CfSlug!, c.ChineseTitle))
@@ -222,11 +262,29 @@ public sealed class EcosystemService
     public Task<ModrinthProjectDetail?> GetProjectAsync(string projectIdOrSlug, CancellationToken ct = default)
         => GetJsonAsyncCached<ModrinthProjectDetail>($"{ApiBase}/project/{projectIdOrSlug}", ProjectCacheTtl, ct);
 
-    /// <summary>匹配最新可用版本（按游戏版本+加载器过滤后取最新）</summary>
+    /// <summary>8-26 快路径镜像直查：官方 api.modrinth.com 国内 2-7s 抖动（实测），mcimirror 镜像稳定 ~1.7s。
+    /// 仅中文快路径（已知 slug）用镜像，失败回退官方。不影响全局 ApiBase（镜像默认关的顾虑不扩散）。</summary>
+    private async Task<ModrinthProjectDetail?> GetProjectFastAsync(string slug, CancellationToken ct)
+    {
+        try
+        {
+            var mirror = await GetJsonAsyncCached<ModrinthProjectDetail>(
+                $"https://mod.mcimirror.top/modrinth/v2/project/{slug}", ProjectCacheTtl, ct);
+            if (mirror is not null) return mirror;
+        }
+        catch { /* 镜像失败/超时回退官方 */ }
+        return await GetProjectAsync(slug, ct);
+    }
+
+    /// <summary>匹配最新可用版本（按游戏版本+加载器过滤后取最新）。
+    /// 8-26 修：26.x 年份号 API 剥掉了 game_versions 过滤（GetVersionsAsync 全量返回）→ 这里客户端补
+    /// 过滤，防止「自动匹配」选到声明旧 MC 系（如 [1.21.x]）的版本装进 26.1.2 游戏（entityculling 实锤）。</summary>
     public async Task<ModrinthVersion?> FindBestVersionAsync(
         string projectId, string? gameVersion, string? loader, CancellationToken ct = default)
     {
         var versions = await GetVersionsAsync(projectId, gameVersion, loader, ct);
+        if (gameVersion is not null && IsYearFormatVersion(gameVersion))
+            versions = FilterByGameVersion(versions, gameVersion);
         return SelectBestVersion(versions);
     }
 
@@ -256,6 +314,29 @@ public sealed class EcosystemService
         // （api.modrinth.com 国内直连实测 8.6s/次，缓存后重复查询秒回；Fabric API 附带安装也吃这个缓存）
         var list = await GetJsonAsyncCached<List<ModrinthVersion>>(url, VersionsCacheTtl, ct);
         return list ?? [];
+    }
+
+    /// <summary>8-26 依赖解析快路径：镜像优先（官方 project/version 端点 2-7s 抖动，mcimirror 稳定 ~1.7s）。
+    /// 前置解析的同步调用链（.GetAwaiter().GetResult()）原走官方，网络抖动静默失败 → 「前置不起作用」。
+    /// 镜像失败回退官方。仅依赖解析用，不影响全局 ApiBase。</summary>
+    public async Task<List<ModrinthVersion>> GetVersionsFastAsync(
+        string projectId, string? gameVersion = null, string? loader = null, CancellationToken ct = default)
+    {
+        if (IsYearFormatVersion(gameVersion)) gameVersion = null; // 对齐 GetVersionsAsync：年份号全量一次
+        var query = new List<string>();
+        if (gameVersion is not null)
+            query.Add($"game_versions={Uri.EscapeDataString(JsonSerializer.Serialize(new[] { gameVersion }))}");
+        if (loader is not null)
+            query.Add($"loaders={Uri.EscapeDataString(JsonSerializer.Serialize(new[] { loader }))}");
+        var qs = query.Count > 0 ? "?" + string.Join("&", query) : "";
+        try
+        {
+            var mirror = await GetJsonAsyncCached<List<ModrinthVersion>>(
+                $"https://mod.mcimirror.top/modrinth/v2/project/{projectId}/version{qs}", VersionsCacheTtl, ct);
+            if (mirror is { Count: > 0 }) return mirror;
+        }
+        catch { /* 镜像失败回退官方 */ }
+        return await GetVersionsAsync(projectId, gameVersion, loader, ct);
     }
 
     /// <summary>
@@ -317,7 +398,8 @@ public sealed class EcosystemService
                 await gate.WaitAsync(ct);
                 try
                 {
-                    var detail = await GetProjectAsync(dep.ProjectId, ct);
+                    // 8-26 名字查询走镜像快路径（官方 2-7s 抖动，镜像稳定 1.7s）
+                    var detail = await GetProjectFastAsync(dep.ProjectId, ct);
                     string label;
                     if (detail is null) { label = dep.ProjectId; }
                     else
@@ -333,6 +415,10 @@ public sealed class EcosystemService
             }, ct));
         }
         await Task.WhenAll(tasks);
+        // 8-26 解析失败兜底：依赖网络查询全挂时 result.ToInstall 为空 → 确认框不弹 =「前置不起作用」假象。
+        // 用版本原始 required 依赖数兜底，让「要装 N 个前置」确认框至少弹出来（装不装得到由安装步决定）
+        if (names.Count == 0 && EcosystemDependencyAdapter.ToDependencyReferences(version).Count > 0)
+            names.Add($"{EcosystemDependencyAdapter.ToDependencyReferences(version).Count} 个前置（网络解析受限，仍将尝试安装）");
         return names;
     }
 
@@ -488,6 +574,7 @@ public sealed class EcosystemService
         ProjectType.Modpack => "modpack",
         ProjectType.Resourcepack => "resourcepack",
         ProjectType.Shader => "shader",
+        ProjectType.Datapack => "datapack", // 8-26 修：缺此分支曾落入 "mod" → 数据包页搜出模组
         _ => "mod",
     };
 
@@ -537,13 +624,24 @@ public sealed class EcosystemService
         return Path.Combine(baseDir, sub);
     }
 
-    /// <summary>从实例名解析游戏版本：1.21.1 → true/"1.21.1"；1.21.1-Fabric → true；自定义名 → false</summary>
+    /// <summary>从实例名解析游戏版本：1.21.1 → true/"1.21.1"；1.21.1-Fabric → true；自定义名 → false。
+    /// 注意：只匹配「版本号开头」的实例名——启动器 fabric 实例（fabric-loader-0.19.3-26.1.2）开头是 fabric，
+    /// 解析不出，须走 ResolveGameVersion（McVersion/inheritsFrom）。</summary>
     public static bool TryParseGameVersion(string instanceId, out string version)
     {
         var m = Regex.Match(instanceId, @"^\d+\.\d+(\.\d+)?");
         if (m.Success) { version = m.Value; return true; }
         version = "";
         return false;
+    }
+
+    /// <summary>实例游戏版本通用解析（8-26，修复 fabric 实例自动匹配裸奔）：优先 McVersion（由版本 json 的
+    /// inheritsFrom 解析，fabric-loader-… 实例名也是正确值）；空则回退从实例名开头解析（原生版 /「1.21.1-Fabric」式
+    /// 命名）。空串 = 解析不出（快照/自定义名），调用方跳过——不瞎猜。</summary>
+    public static string ResolveGameVersion(string? mcVersion, string instanceName)
+    {
+        if (!string.IsNullOrWhiteSpace(mcVersion)) return mcVersion!;
+        return TryParseGameVersion(instanceName, out var v) ? v : "";
     }
 
     /// <summary>8-19：PCL 年份号版本（26.2/26.10/99.1——`^\d{2}\.\d+`，非 1.x 传统格式）。
@@ -612,6 +710,29 @@ public sealed class EcosystemService
                    .ThenByDescending(v => v.Featured ?? false)
                    .ThenByDescending(v => v.DatePublished)
                    .FirstOrDefault();
+
+    /// <summary>客户端按游戏版本过滤版本列表（8-26）：Modrinth versions API 不认年份号（26.x），
+    /// 查询时剥掉 game_versions → 返回全量。这里补过滤，避免「自动匹配」选到声明旧 MC 系（[1.21.x]）的版本
+    /// 装进 26.1.2 游戏。保留声明支持目标游戏版本的项：d == gv、d 是 gv 前缀（"26.1" 覆盖 26.1.2）、
+    /// 或通配 "26.1.x"。过滤后为空 → 返回空（调用方明示「无适配版本」，不静默回落最新版）。</summary>
+    public static List<ModrinthVersion> FilterByGameVersion(IEnumerable<ModrinthVersion> versions, string gameVersion)
+    {
+        var gv = gameVersion.Trim();
+        if (gv.Length == 0) return versions.ToList();
+        return versions.Where(v => v.GameVersions is { Count: > 0 }
+            && v.GameVersions.Any(d => MatchesGameVersion(d, gv))).ToList();
+    }
+
+    private static bool MatchesGameVersion(string declared, string gv)
+    {
+        var d = declared.Trim();
+        if (d.Length == 0) return false;
+        if (string.Equals(d, gv, StringComparison.Ordinal)) return true;
+        if (gv.StartsWith(d + ".", StringComparison.Ordinal)) return true;        // "26.1" 覆盖 26.1.2
+        if (d.EndsWith(".x", StringComparison.OrdinalIgnoreCase)
+            && gv.StartsWith(d[..^1], StringComparison.Ordinal)) return true;      // "26.1.x" 覆盖 26.1.2
+        return false;
+    }
 
     /// <summary>Modrinth version_type 排名（release=0 beta=1 alpha=2 null=3——未知信任度最低）</summary>
     public static int ReleaseRank(string? type) => type switch

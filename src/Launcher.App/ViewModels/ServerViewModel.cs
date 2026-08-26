@@ -96,7 +96,7 @@ public partial class ServerViewModel : ViewModelBase
 
     private readonly ServerInstaller _installer = new();
     private readonly ServerProcess _process = new();
-    private const int MaxLogLines = 500;
+    private const int MaxLogLines = 300; // 8-26 内存瘦身：500→300
 
     public ObservableCollection<VersionInstanceVM> InstalledVersions { get; } = [];
     public ObservableCollection<PropRowVM> PropRows { get; } = [];

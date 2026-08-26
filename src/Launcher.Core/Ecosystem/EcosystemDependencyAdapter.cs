@@ -18,7 +18,9 @@ public static class EcosystemDependencyAdapter
         {
             try
             {
-                var versions = eco.GetVersionsAsync(projectId, gameVersion, loader)
+                // 8-26 改走镜像快路径：官方 project/version 端点 2-7s 抖动时这里静默返回 null →
+                // 「前置不起作用」。镜像稳定 ~1.7s，失败回退官方；仍抛则记真实原因（见 ModDependencyResolver）
+                var versions = eco.GetVersionsFastAsync(projectId, gameVersion, loader)
                     .GetAwaiter().GetResult();
                 if (versions.Count == 0) return null;
                 return new ModDependencyProject

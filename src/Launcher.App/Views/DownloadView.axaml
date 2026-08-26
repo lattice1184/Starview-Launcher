@@ -108,8 +108,8 @@
                                 <Border Classes="row taskRow" Classes.active="{Binding IsActive}"
                                         Classes.failed="{Binding IsFailed}" Padding="12,8" Margin="0,0,0,1">
                                     <Grid>
-                                        <!-- 组任务：展开显示文件级子任务 -->
-                                        <Expander IsVisible="{Binding HasChildren}" HorizontalAlignment="Stretch" Padding="0">
+                                        <!-- 组任务：展开显示文件级子任务。8-26 默认展开——旧默认折叠，用户装 mods 看不到每个文件的进度 -->
+                                        <Expander IsVisible="{Binding HasChildren}" IsExpanded="True" HorizontalAlignment="Stretch" Padding="0">
                                             <Expander.Header>
                                                 <Grid RowDefinitions="Auto,Auto,Auto" RowSpacing="4">
                                                     <ContentControl Content="{Binding}" ContentTemplate="{StaticResource TaskRow}"/>

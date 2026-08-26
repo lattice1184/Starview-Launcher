@@ -7,14 +7,12 @@
 
     <!-- 8-23 修复错位：原 DockPanel 按 Top-docked 内容宽保留空间，填充被挤右侧 → Grid 行布局保证全宽 -->
     <Grid RowDefinitions="Auto,Auto,*">
-        <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto" Margin="0,0,0,10">
+        <!-- 8-25 取消开服独立窗口（连根扒）：新窗口触发主窗合成降级实色，且 ServerWindow 已无用——开服只在页内展示 -->
+        <Grid Grid.Row="0" ColumnDefinitions="Auto,*" Margin="0,0,0,10">
             <TextBlock Text="开服" FontSize="18" FontWeight="Bold"/>
             <TextBlock Grid.Column="1" Text="{Binding Status}" Classes="sub" FontSize="12"
                        Classes.status-error="{Binding StatusIsError}"
                        VerticalAlignment="Center" TextAlignment="Right" TextTrimming="CharacterEllipsis"/>
-            <Button Grid.Column="2" Content="在新窗口打开" Classes="ghost" FontSize="12" Padding="10,4"
-                    Margin="10,0,0,0" Click="OnOpenWindow"
-                    ToolTip.Tip="你可以把开服页弹成独立窗口。日志和状态实时同步"/>
         </Grid>
 
         <!-- 操作条：版本选择 + 下载/启动 单行（不再堆叠卡片） -->

@@ -295,6 +295,19 @@
                 </Border>
             </Grid>
 
+            <!-- 8-26 日志中心覆盖层：窗口内渲染（主窗不失活 → 亚克力不降级），全尺寸面板（比小弹窗大） -->
+            <Grid x:Name="LogCenterHost" IsVisible="False" Background="#A6000000" ZIndex="300">
+                <Grid.Transitions>
+                    <Transitions>
+                        <DoubleTransition Property="Opacity" Duration="0:0:0.15"/>
+                    </Transitions>
+                </Grid.Transitions>
+                <Border Margin="64,56" Background="{DynamicResource BgSurface}" CornerRadius="12"
+                        BorderBrush="#4D2F3745" BorderThickness="1">
+                    <ContentControl x:Name="LogCenterContent"/>
+                </Border>
+            </Grid>
+
             </Grid>
         </ExperimentalAcrylicBorder>
     </Border>

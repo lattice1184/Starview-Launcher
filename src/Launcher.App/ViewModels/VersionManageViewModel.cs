@@ -26,28 +26,51 @@ public partial class VersionManageViewModel : ViewModelBase
     private readonly Action _onDeleted;
 
     public ObservableCollection<ModItemVM> Mods { get; } = [];
+    /// <summary>存档预览（前 10 条；展开后为全部——全量源见 _allSaves）</summary>
     public ObservableCollection<SaveItemVM> Saves { get; } = [];
 
     // 8-14 资源包 / 光影包（复用 ModItemVM：同为 zip/jar + .disabled 启停，启停/删除复用 ToggleMod/DeleteMod）
+    // 8-26 内存真减：资源包/光影/存档三列表改「预览前 10 + 展开全部」——重度用户几百条不再全量建视觉树
     public ObservableCollection<ModItemVM> PacksPreview { get; } = [];
     public ObservableCollection<ModItemVM> ShaderPreview { get; } = [];
-    public string PacksCountText => $"资源包（{PacksPreview.Count}）";
-    public string ShaderCountText => $"光影（{ShaderPreview.Count}）";
 
-    private const int ModsPreviewLimit = 10;
+    // 全量源（List 只作 Take/计数，不建 ObservableCollection —— 列表常驻的条目才是内存大头）
+    private List<ModItemVM> _allPacks = [];
+    private List<ModItemVM> _allShaders = [];
+    private List<SaveItemVM> _allSaves = [];
+
+    public string PacksCountText => $"资源包（{_allPacks.Count}）";
+    public string ShaderCountText => $"光影（{_allShaders.Count}）";
+
+    private const int PreviewLimit = 10;
 
     /// <summary>MOD 预览（前 10 条；展开后为全部）</summary>
     public ObservableCollection<ModItemVM> ModsPreview { get; } = [];
 
-    /// <summary>是否展开全部 MOD</summary>
+    /// <summary>是否展开全部（MOD / 资源包 / 光影 / 存档 各一）</summary>
     [ObservableProperty]
     public partial bool ShowAllMods { get; set; }
+    [ObservableProperty]
+    public partial bool ShowAllPacks { get; set; }
+    [ObservableProperty]
+    public partial bool ShowAllShaders { get; set; }
+    [ObservableProperty]
+    public partial bool ShowAllSaves { get; set; }
 
     /// <summary>"展开全部（N）"文字（无更多时不显示）</summary>
     [ObservableProperty]
     public partial string ModsExpandText { get; set; } = "";
+    [ObservableProperty]
+    public partial string PacksExpandText { get; set; } = "";
+    [ObservableProperty]
+    public partial string ShaderExpandText { get; set; } = "";
+    [ObservableProperty]
+    public partial string SavesExpandText { get; set; } = "";
 
-    public bool HasMoreMods => Mods.Count > ModsPreviewLimit;
+    public bool HasMoreMods => Mods.Count > PreviewLimit;
+    public bool HasMorePacks => _allPacks.Count > PreviewLimit;
+    public bool HasMoreShaders => _allShaders.Count > PreviewLimit;
+    public bool HasMoreSaves => _allSaves.Count > PreviewLimit;
 
     [RelayCommand]
     private void ToggleShowAllMods()
@@ -55,14 +78,55 @@ public partial class VersionManageViewModel : ViewModelBase
         ShowAllMods = !ShowAllMods;
         RefreshModsPreview();
     }
+    [RelayCommand]
+    private void ToggleShowAllPacks()
+    {
+        ShowAllPacks = !ShowAllPacks;
+        RefreshListPreviews();
+    }
+    [RelayCommand]
+    private void ToggleShowAllShaders()
+    {
+        ShowAllShaders = !ShowAllShaders;
+        RefreshListPreviews();
+    }
+    [RelayCommand]
+    private void ToggleShowAllSaves()
+    {
+        ShowAllSaves = !ShowAllSaves;
+        RefreshListPreviews();
+    }
 
     private void RefreshModsPreview()
     {
         ModsPreview.Clear();
-        var shown = ShowAllMods ? Mods : Mods.Take(ModsPreviewLimit);
+        var shown = ShowAllMods ? Mods : Mods.Take(PreviewLimit);
         foreach (var m in shown) ModsPreview.Add(m);
-        ModsExpandText = ShowAllMods ? "收起 ▴" : $"展开全部（{Mods.Count - ModsPreviewLimit}）▾";
+        ModsExpandText = ShowAllMods ? "收起 ▴" : $"展开全部（{Mods.Count - PreviewLimit}）▾";
         OnPropertyChanged(nameof(HasMoreMods));
+    }
+
+    /// <summary>8-26 资源包/光影/存档三列表统一预览刷新（复用 ModsPreview 模式）</summary>
+    private void RefreshListPreviews()
+    {
+        PacksPreview.Clear();
+        foreach (var p in ShowAllPacks ? _allPacks : _allPacks.Take(PreviewLimit)) PacksPreview.Add(p);
+        PacksExpandText = ShowAllPacks ? "收起 ▴" : $"展开全部（{_allPacks.Count - PreviewLimit}）▾";
+
+        ShaderPreview.Clear();
+        foreach (var s in ShowAllShaders ? _allShaders : _allShaders.Take(PreviewLimit)) ShaderPreview.Add(s);
+        ShaderExpandText = ShowAllShaders ? "收起 ▴" : $"展开全部（{_allShaders.Count - PreviewLimit}）▾";
+
+        Saves.Clear();
+        foreach (var sv in ShowAllSaves ? _allSaves : _allSaves.Take(PreviewLimit)) Saves.Add(sv);
+        SavesExpandText = ShowAllSaves ? "收起 ▴" : $"展开全部（{_allSaves.Count - PreviewLimit}）▾";
+
+        OnPropertyChanged(nameof(PacksCountText));
+        OnPropertyChanged(nameof(ShaderCountText));
+        OnPropertyChanged(nameof(SavesCountText));
+        OnPropertyChanged(nameof(HasMorePacks));
+        OnPropertyChanged(nameof(HasMoreShaders));
+        OnPropertyChanged(nameof(HasMoreSaves));
     }
 
     [ObservableProperty]
@@ -76,7 +140,7 @@ public partial class VersionManageViewModel : ViewModelBase
     public partial bool IsConfirmDelete { get; set; }
 
     public string ModsCountText => $"MOD（{Mods.Count}）";
-    public string SavesCountText => $"存档（{Saves.Count}）";
+    public string SavesCountText => $"存档（{_allSaves.Count}）";
 
     /// <summary>版本根目录（隔离 → versions/{id}；否则共享根）——每次读设置，改隔离开关即时生效（不再构造快照）</summary>
     private string RootDir => LauncherSettings.Current.VersionIsolation
@@ -103,18 +167,14 @@ public partial class VersionManageViewModel : ViewModelBase
                 CollectPacks("resourcepacks"), CollectPacks("shaderpacks")));
             Mods.Clear();
             foreach (var m in mods) Mods.Add(m);
-            Saves.Clear();
-            foreach (var sv in saves) Saves.Add(sv);
-            PacksPreview.Clear();
-            foreach (var p in packs) PacksPreview.Add(p);
-            ShaderPreview.Clear();
-            foreach (var s in shaders) ShaderPreview.Add(s);
+            _allSaves = saves;
+            _allPacks = packs;
+            _allShaders = shaders;
             OnPropertyChanged(nameof(ModsCountText));
-            OnPropertyChanged(nameof(SavesCountText));
-            OnPropertyChanged(nameof(PacksCountText));
-            OnPropertyChanged(nameof(ShaderCountText));
             ShowAllMods = false;
+            ShowAllPacks = ShowAllShaders = ShowAllSaves = false;
             RefreshModsPreview();
+            RefreshListPreviews();
             StatusText = "";
         }
         catch (Exception ex)
@@ -179,8 +239,9 @@ public partial class VersionManageViewModel : ViewModelBase
         ReloadMods();
     }
 
-    /// <summary>启停/删除后重扫 MOD（UI 线程收集+填充）</summary>
-    private void ReloadMods()
+    /// <summary>启停/删除/外部安装后重扫 MOD（UI 线程收集+填充）。8-26 改 public：磁盘 watcher →
+    /// SyncFromDisk 也调它，生态装完前置/主文件后版本页 mod 列表即时刷新。</summary>
+    public void ReloadMods()
     {
         Mods.Clear();
         foreach (var m in CollectMods()) Mods.Add(m);

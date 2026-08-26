@@ -1,158 +1,171 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:Launcher.App.ViewModels"
+             xmlns:behaviors="using:Launcher.App.Animations"
              x:Class="Launcher.App.Views.ProjectDetailView"
              x:DataType="vm:ProjectDetailViewModel">
 
-    <ScrollViewer>
-        <StackPanel Spacing="14" MaxWidth="760" HorizontalAlignment="Center">
-            <Button Content="← 返回" Command="{Binding CloseCommand}" Classes="ghost"
-                    HorizontalAlignment="Left"/>
+    <!-- 8-26 返回键固定行 + 两栏布局（左阅读/右操作）：返回键移出 ScrollViewer 不再滑走；两栏消左右空白 -->
+    <Grid RowDefinitions="Auto,*">
+        <!-- Row 0：固定返回行（滚动时始终可见） -->
+        <Button Content="← 返回" Command="{Binding CloseCommand}" Classes="ghost"
+                HorizontalAlignment="Left" Margin="0,0,0,10"
+                behaviors:SpringScaleBehavior.Enabled="False"/>
 
-            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="16">
-                <Border Width="72" Height="72" CornerRadius="{StaticResource RadiusLarge}" ClipToBounds="True"
-                        Background="{DynamicResource BgRaised}">
-                    <Image Source="{Binding Icon}" Width="72" Height="72" Stretch="Uniform"/>
-                </Border>
-                <StackPanel Grid.Column="1" Spacing="4" VerticalAlignment="Center">
-                    <TextBlock Text="{Binding Title}" FontSize="22" FontWeight="Bold" Foreground="White"/>
-                    <TextBlock Text="{Binding Author}" Foreground="#7E8BA0"/>
-                    <TextBlock Text="{Binding Stats}" Foreground="#5A6577" FontSize="12"/>
-                    <Button Content="打开主页 ↗" Classes="link"
-                            HorizontalAlignment="Left" IsVisible="{Binding ProjectPageUrl.Length}"
-                            Click="OnOpenPage"/>
-                </StackPanel>
-            </Grid>
-
-            <!-- 截图画廊（多图左右切换） -->
-            <Border Classes="card" Padding="12" IsVisible="{Binding Screenshot, Converter={x:Static ObjectConverters.IsNotNull}}">
-                <StackPanel Spacing="6">
-                    <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
-                        <Button Grid.Column="0" Content="◀" Classes="ghost" Padding="8,14" VerticalAlignment="Center"
-                                Command="{Binding PrevScreenshotCommand}" IsEnabled="{Binding HasPrevScreenshot}"
-                                IsVisible="{Binding HasGallery}"/>
-                        <Image Grid.Column="1" Source="{Binding Screenshot}" Stretch="Uniform" MaxHeight="220"/>
-                        <Button Grid.Column="2" Content="▶" Classes="ghost" Padding="8,14" VerticalAlignment="Center"
-                                Command="{Binding NextScreenshotCommand}" IsEnabled="{Binding HasNextScreenshot}"
-                                IsVisible="{Binding HasGallery}"/>
+        <!-- Row 1：可滚动内容，两栏 -->
+        <ScrollViewer Grid.Row="1">
+            <Grid ColumnDefinitions="*,340" ColumnSpacing="14">
+                <!-- 左栏：阅读（身份/截图/描述/更新日志） -->
+                <StackPanel Spacing="14">
+                    <Grid ColumnDefinitions="Auto,*" ColumnSpacing="16">
+                        <Border Width="72" Height="72" CornerRadius="{StaticResource RadiusLarge}" ClipToBounds="True"
+                                Background="{DynamicResource BgRaised}">
+                            <Image Source="{Binding Icon}" Width="72" Height="72" Stretch="Uniform"/>
+                        </Border>
+                        <StackPanel Grid.Column="1" Spacing="4" VerticalAlignment="Center">
+                            <TextBlock Text="{Binding Title}" FontSize="22" FontWeight="Bold" Foreground="White"/>
+                            <TextBlock Text="{Binding Author}" Foreground="#7E8BA0"/>
+                            <TextBlock Text="{Binding Stats}" Foreground="#5A6577" FontSize="12"/>
+                            <Button Content="打开主页 ↗" Classes="link"
+                                    HorizontalAlignment="Left" IsVisible="{Binding ProjectPageUrl.Length}"
+                                    Click="OnOpenPage"/>
+                        </StackPanel>
                     </Grid>
-                    <TextBlock Text="{Binding GalleryCountText}" Classes="dim" FontSize="10"
-                               HorizontalAlignment="Center"/>
-                </StackPanel>
-            </Border>
 
-            <Border Classes="card" Padding="12">
-                <StackPanel Spacing="10">
-                    <TextBlock Text="{Binding VersionHint}" Foreground="#C9D2E3"/>
-
-                    <!-- 匹配文件块（8-22：单独展示匹配文件，可直接下载 jar 到下载缓存，不经过安装流程） -->
-                    <Border CornerRadius="8" Padding="12,10" IsVisible="{Binding HasMatchedFile}"
-                            Background="{DynamicResource BgRaised}">
+                    <!-- 截图画廊（多图左右切换） -->
+                    <Border Classes="card" Padding="12" IsVisible="{Binding Screenshot, Converter={x:Static ObjectConverters.IsNotNull}}">
                         <StackPanel Spacing="6">
-                            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
-                                <StackPanel Spacing="2">
-                                    <TextBlock Text="匹配文件" Classes="sub" FontSize="11"/>
-                                    <TextBlock Text="{Binding MatchedFileText}" FontSize="12" Foreground="#B5F4E9"
-                                               TextWrapping="Wrap"/>
-                                    <!-- 8-22 前置依赖提示（下载时可见：该 mod 需要什么前置一目了然） -->
-                                    <TextBlock Text="{Binding DependencyHint}" FontSize="11" Foreground="#E8C97A"
-                                               TextWrapping="Wrap" IsVisible="{Binding DependencyHint.Length}"/>
-                                </StackPanel>
-                                <Button Grid.Column="1" Content="下载" Classes="primary" FontSize="12" Padding="18,7"
-                                        Command="{Binding DownloadMatchedFileCommand}"
-                                        IsEnabled="{Binding !IsDownloadingMatched}" VerticalAlignment="Center"/>
+                            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
+                                <Button Grid.Column="0" Content="◀" Classes="ghost" Padding="8,14" VerticalAlignment="Center"
+                                        Command="{Binding PrevScreenshotCommand}" IsEnabled="{Binding HasPrevScreenshot}"
+                                        IsVisible="{Binding HasGallery}"/>
+                                <Image Grid.Column="1" Source="{Binding Screenshot}" Stretch="Uniform" MaxHeight="220"/>
+                                <Button Grid.Column="2" Content="▶" Classes="ghost" Padding="8,14" VerticalAlignment="Center"
+                                        Command="{Binding NextScreenshotCommand}" IsEnabled="{Binding HasNextScreenshot}"
+                                        IsVisible="{Binding HasGallery}"/>
                             </Grid>
-                            <ProgressBar Value="{Binding MatchedDownloadProgress}" Maximum="100" Height="5"
-                                         IsVisible="{Binding IsDownloadingMatched}"/>
-                            <TextBlock Text="{Binding MatchedDownloadState}" FontSize="11" Foreground="#5AD07C"
-                                       TextWrapping="Wrap" IsVisible="{Binding MatchedDownloadState.Length}"/>
+                            <TextBlock Text="{Binding GalleryCountText}" Classes="dim" FontSize="10"
+                                       HorizontalAlignment="Center"/>
                         </StackPanel>
                     </Border>
 
-                    <!-- 版本列表（PCL 式：打开即直显最新 10 条，每行独立安装；命中自动匹配的行带推荐标记） -->
-                    <TextBlock Text="版本列表" Classes="sub" FontSize="12" IsVisible="{Binding HasVersions}"/>
-                    <ItemsControl ItemsSource="{Binding Versions}" IsVisible="{Binding HasVersions}" Margin="0,0,0,4">
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate x:DataType="vm:VersionOptionVM">
-                                <Border Classes="modcard" Padding="8,6" Margin="0,1" CornerRadius="6">
-                                    <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="12">
-                                        <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-                                            <TextBlock Text="{Binding Display}" FontSize="12" FontWeight="SemiBold"
-                                                       VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
-                                            <Border CornerRadius="3" Padding="5,1" Background="#12332F"
-                                                    VerticalAlignment="Center" IsVisible="{Binding IsRecommended}">
-                                                <TextBlock Text="推荐" FontSize="10" Foreground="#B5F4E9"/>
-                                            </Border>
-                                        </StackPanel>
-                                        <TextBlock Grid.Column="1" Text="{Binding PublishedText}" Classes="dim" FontSize="11"
-                                                   VerticalAlignment="Center"/>
-                                        <TextBlock Grid.Column="2" Text="{Binding SizeText}" Classes="dim" FontSize="11"
-                                                   VerticalAlignment="Center"/>
-                                        <Button Grid.Column="3" Content="安装" Classes="primary" FontSize="12" Padding="16,5"
-                                                Command="{Binding $parent[UserControl].((vm:ProjectDetailViewModel)DataContext).InstallVersionCommand}"
-                                                CommandParameter="{Binding}"/>
-                                    </Grid>
-                                </Border>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-
-                    <!-- 文件列表（当前所选版本的安装文件） -->
-                    <Expander Header="{Binding FilesHeaderText}" IsExpanded="True"
-                              IsVisible="{Binding HasFiles}">
-                        <ItemsControl ItemsSource="{Binding Files}" Margin="0,6,0,0">
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate x:DataType="vm:VersionFileVM">
-                                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8" Margin="0,2">
-                                        <TextBlock Text="{Binding Name}" FontSize="12" Foreground="{DynamicResource TextSecondary}"
-                                                   TextTrimming="CharacterEllipsis"/>
-                                        <TextBlock Grid.Column="1" Text="{Binding SizeText}" Classes="dim" FontSize="11"/>
-                                    </Grid>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                    </Expander>
-
-                    <!-- 更新日志 -->
+                    <!-- 更新日志（阅读内容放左栏） -->
                     <TextBlock Text="更新日志" Classes="sub" FontSize="12"
                                IsVisible="{Binding Changelog.Length}"/>
                     <TextBlock Text="{Binding Changelog}" Foreground="#9AA3B5" FontSize="12"
                                TextWrapping="Wrap" MaxLines="8" IsVisible="{Binding Changelog.Length}"/>
 
-                    <TextBlock Text="{Binding License}" Classes="dim" FontSize="11"
-                               IsVisible="{Binding License.Length}"/>
-
-                    <!-- 前置提示（依赖解析后显示） -->
-                    <TextBlock Text="{Binding DependencyHint}" Foreground="#7E8BA0" FontSize="12"
-                               TextWrapping="Wrap" IsVisible="{Binding DependencyHint.Length}"/>
-
-                    <!-- 安装按钮 -->
-                    <Grid ColumnDefinitions="Auto,Auto,*" ColumnSpacing="10">
-                        <Button Grid.Column="0" Content="{Binding InstallButtonText}" Classes="primary"
-                                Command="{Binding InstallCommand}" Padding="24,8"
-                                IsVisible="{Binding !IsInstalling}"/>
-                        <Button Grid.Column="0" Content="取消安装" Command="{Binding InstallCancelCommand}"
-                                Padding="24,8" IsVisible="{Binding IsInstalling}"/>
-                        <Button Grid.Column="1" Content="查看下载进度 →" Classes="ghost" FontSize="12"
-                                Command="{Binding GoToDownloadQueueCommand}" IsVisible="{Binding IsInstalling}"/>
-                        <TextBlock Grid.Column="2" Text="{Binding ProgressState}" Foreground="#8A93A6"
-                                   VerticalAlignment="Center" IsVisible="{Binding IsInstalling}"/>
-                    </Grid>
-
-                    <!-- 进度 -->
-                    <ProgressBar Value="{Binding Progress}" Maximum="100" Height="6" IsVisible="{Binding IsInstalling}"/>
-                    <TextBlock Text="{Binding Progress, StringFormat='{}{0:0}%'}" Foreground="#8A93A6"
-                               FontSize="12" IsVisible="{Binding IsInstalling}"/>
-
-                    <!-- 完成 / 错误 -->
-                    <TextBlock Text="{Binding InstalledPath}" Foreground="#5AD07C" FontSize="12"
-                               TextWrapping="Wrap" IsVisible="{Binding InstallDone}"/>
-                    <TextBlock Text="{Binding ErrorMessage}" Foreground="#E05A5A" TextWrapping="Wrap"
-                               IsVisible="{Binding ErrorMessage.Length}"/>
+                    <TextBlock Text="{Binding Description}" Foreground="#9AA3B5" TextWrapping="Wrap"/>
                 </StackPanel>
-            </Border>
 
-            <TextBlock Text="{Binding Description}" Foreground="#9AA3B5" TextWrapping="Wrap"/>
-        </StackPanel>
-    </ScrollViewer>
+                <!-- 右栏：操作侧栏（版本/匹配文件/安装） -->
+                <StackPanel Grid.Column="1" Spacing="10">
+                    <Border Classes="card" Padding="12">
+                        <StackPanel Spacing="10">
+                            <TextBlock Text="{Binding VersionHint}" Foreground="#C9D2E3"/>
+
+                            <!-- 匹配文件块（8-22：单独展示匹配文件，可直接下载 jar 到下载缓存，不经过安装流程） -->
+                            <Border CornerRadius="8" Padding="12,10" IsVisible="{Binding HasMatchedFile}"
+                                    Background="{DynamicResource BgRaised}">
+                                <StackPanel Spacing="6">
+                                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                                        <StackPanel Spacing="2">
+                                            <TextBlock Text="匹配文件" Classes="sub" FontSize="11"/>
+                                            <TextBlock Text="{Binding MatchedFileText}" FontSize="12" Foreground="#B5F4E9"
+                                                       TextWrapping="Wrap"/>
+                                            <!-- 8-22 前置依赖提示（下载时可见：该 mod 需要什么前置一目了然） -->
+                                            <TextBlock Text="{Binding DependencyHint}" FontSize="11" Foreground="#E8C97A"
+                                                       TextWrapping="Wrap" IsVisible="{Binding DependencyHint.Length}"/>
+                                        </StackPanel>
+                                        <Button Grid.Column="1" Content="下载" Classes="primary" FontSize="12" Padding="18,7"
+                                                Command="{Binding DownloadMatchedFileCommand}"
+                                                IsEnabled="{Binding !IsDownloadingMatched}" VerticalAlignment="Center"/>
+                                    </Grid>
+                                    <ProgressBar Value="{Binding MatchedDownloadProgress}" Maximum="100" Height="5"
+                                                 IsVisible="{Binding IsDownloadingMatched}"/>
+                                    <TextBlock Text="{Binding MatchedDownloadState}" FontSize="11" Foreground="#5AD07C"
+                                               TextWrapping="Wrap" IsVisible="{Binding MatchedDownloadState.Length}"/>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- 版本列表（PCL 式：打开即直显最新 10 条，每行独立安装；命中自动匹配的行带推荐标记） -->
+                            <TextBlock Text="版本列表" Classes="sub" FontSize="12" IsVisible="{Binding HasVersions}"/>
+                            <ItemsControl ItemsSource="{Binding Versions}" IsVisible="{Binding HasVersions}" Margin="0,0,0,4">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="vm:VersionOptionVM">
+                                        <Border Classes="modcard" Padding="8,6" Margin="0,1" CornerRadius="6">
+                                            <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="12">
+                                                <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                                    <TextBlock Text="{Binding Display}" FontSize="12" FontWeight="SemiBold"
+                                                               VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                                                    <Border CornerRadius="3" Padding="5,1" Background="#12332F"
+                                                            VerticalAlignment="Center" IsVisible="{Binding IsRecommended}">
+                                                        <TextBlock Text="推荐" FontSize="10" Foreground="#B5F4E9"/>
+                                                    </Border>
+                                                </StackPanel>
+                                                <TextBlock Grid.Column="1" Text="{Binding PublishedText}" Classes="dim" FontSize="11"
+                                                           VerticalAlignment="Center"/>
+                                                <TextBlock Grid.Column="2" Text="{Binding SizeText}" Classes="dim" FontSize="11"
+                                                           VerticalAlignment="Center"/>
+                                                <Button Grid.Column="3" Content="安装" Classes="primary" FontSize="12" Padding="16,5"
+                                                        Command="{Binding $parent[UserControl].((vm:ProjectDetailViewModel)DataContext).InstallVersionCommand}"
+                                                        CommandParameter="{Binding}"/>
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+
+                            <!-- 文件列表（当前所选版本的安装文件） -->
+                            <Expander Header="{Binding FilesHeaderText}" IsExpanded="True"
+                                      IsVisible="{Binding HasFiles}">
+                                <ItemsControl ItemsSource="{Binding Files}" Margin="0,6,0,0">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="vm:VersionFileVM">
+                                            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8" Margin="0,2">
+                                                <TextBlock Text="{Binding Name}" FontSize="12" Foreground="{DynamicResource TextSecondary}"
+                                                           TextTrimming="CharacterEllipsis"/>
+                                                <TextBlock Grid.Column="1" Text="{Binding SizeText}" Classes="dim" FontSize="11"/>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </Expander>
+
+                            <TextBlock Text="{Binding License}" Classes="dim" FontSize="11"
+                                       IsVisible="{Binding License.Length}"/>
+
+                            <!-- 前置提示（依赖解析后显示） -->
+                            <TextBlock Text="{Binding DependencyHint}" Foreground="#7E8BA0" FontSize="12"
+                                       TextWrapping="Wrap" IsVisible="{Binding DependencyHint.Length}"/>
+
+                            <!-- 安装按钮 -->
+                            <Grid ColumnDefinitions="Auto,Auto,*" ColumnSpacing="10">
+                                <Button Grid.Column="0" Content="{Binding InstallButtonText}" Classes="primary"
+                                        Command="{Binding InstallCommand}" Padding="24,8"
+                                        IsVisible="{Binding !IsInstalling}"/>
+                                <Button Grid.Column="0" Content="取消安装" Command="{Binding InstallCancelCommand}"
+                                        Padding="24,8" IsVisible="{Binding IsInstalling}"/>
+                                <Button Grid.Column="1" Content="查看下载进度 →" Classes="ghost" FontSize="12"
+                                        Command="{Binding GoToDownloadQueueCommand}" IsVisible="{Binding IsInstalling}"/>
+                                <TextBlock Grid.Column="2" Text="{Binding ProgressState}" Foreground="#8A93A6"
+                                           VerticalAlignment="Center" IsVisible="{Binding IsInstalling}"/>
+                            </Grid>
+
+                            <!-- 进度 -->
+                            <ProgressBar Value="{Binding Progress}" Maximum="100" Height="6" IsVisible="{Binding IsInstalling}"/>
+                            <TextBlock Text="{Binding Progress, StringFormat='{}{0:0}%'}" Foreground="#8A93A6"
+                                       FontSize="12" IsVisible="{Binding IsInstalling}"/>
+
+                            <!-- 完成 / 错误 -->
+                            <TextBlock Text="{Binding InstalledPath}" Foreground="#5AD07C" FontSize="12"
+                                       TextWrapping="Wrap" IsVisible="{Binding InstallDone}"/>
+                            <TextBlock Text="{Binding ErrorMessage}" Foreground="#E05A5A" TextWrapping="Wrap"
+                                       IsVisible="{Binding ErrorMessage.Length}"/>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </Grid>
+        </ScrollViewer>
+    </Grid>
 </UserControl>

@@ -237,6 +237,50 @@ public static class ModAliasTable
         ["创世神"] = ["worldedit"],
         ["宝可梦"] = ["cobblemon"],
         ["滚轮整理"] = ["inventory-profiles-next"],
+        // ---- 8-26 中文搜索对齐 Verse：批量扩充（slug 已逐个 Modrinth API 验证存在）----
+        // ---- 性能 / 渲染 ----
+        ["现代修复"] = ["modernfix"],
+        ["高清截图"] = ["fabrishot"],
+        ["区块缓存"] = ["c2me-fabric"],
+        ["声音物理"] = ["sound-physics-remastered"],
+        ["nvidia优化"] = ["nvidium"],
+        // ---- 存储 / 容器 ----
+        ["铁箱子"] = ["iron-chests"],
+        ["铁炉子"] = ["iron-furnaces"],
+        ["精妙背包"] = ["sophisticated-backpacks"],
+        ["精妙存储"] = ["sophisticated-storage"],
+        ["传送石碑"] = ["waystones"],
+        ["墓碑"] = ["gravestone-mod"],
+        ["搬运"] = ["carry-on"],
+        ["随身物品栏"] = ["curios"],
+        ["饰品栏"] = ["trinkets"],
+        // ---- 科技 / 魔法 ----
+        ["通用机械"] = ["mekanism"],
+        ["植物魔法"] = ["botania"],
+        ["血魔法"] = ["blood-magic"],
+        ["龙之研究"] = ["draconic-evolution"],
+        ["精致存储"] = ["refined-storage"],
+        ["应用能源"] = ["ae2"],
+        ["应用能源2"] = ["ae2"],
+        ["科技复兴"] = ["techreborn"],
+        ["沉浸工程"] = ["immersiveengineering"],
+        // 星辉魔法/神秘时代 Modrinth 无该项目（API 404）——不收录，走 mcmod 兜底
+        // ---- 世界 / 内容 ----
+        ["以太"] = ["aether"],
+        ["星系"] = ["galacticraft-legacy"],
+        ["冰与火之歌"] = ["ice-and-fire-dragons"],
+        ["拔刀剑"] = ["slashblade-resharped"],
+        ["维克的现代战争"] = ["modern-warfare-cubed"],
+        ["挖矿与砍杀"] = ["mine-and-slash"],
+        ["神化"] = ["apotheosis"],
+        // ---- 工具 / QoL ----
+        ["背包宠物"] = ["inventory-pets"],
+        ["经验之书"] = ["xp-book"],
+        ["商店告示牌"] = ["sign-shop"],
+        ["铁质工具"] = ["iron-tools"],
+        ["更多结构"] = ["more-structures"],
+        ["高级附魔"] = ["advanced-enchantments"],
+        ["更好的第一人称"] = ["better-than-first-person"],
     };
 
     /// <summary>全部别名条目（中文名, slug[]）——ChineseNameCache 种子用（8-24）</summary>

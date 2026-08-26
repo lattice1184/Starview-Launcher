@@ -21,6 +21,11 @@ public sealed class AnimationService : GeneralService
     private static LifecycleContext? _context;
     private static LifecycleContext Context => _context!;
 
+    /// <summary>8-26 内存/资源瘦身闸：启动器纯 Avalonia 从不用此动画引擎（用自研 UiAnim），
+    /// 关掉后不再启动 60Hz WinMMClock + N 个空转计算任务（省 CPU 唤醒 + 线程栈）。
+    /// 默认 false 保持其他宿主（需要动画的）行为不变。</summary>
+    public static bool DisableIdleEngine { get; set; }
+
     private AnimationService() : base("animation", "动画")
     {
         _context = ServiceContext;
@@ -125,15 +130,18 @@ public sealed class AnimationService : GeneralService
             }
         });
 
-        // 初始化 Clock 并注册 Tick 事件
-        _clock = new WinMMClock(Fps);
-        _clock.Tick += ClockOnTick;
-        _clock.Start();
-        
-        // 运行动画计算 Task
-        for (var i = 0; i < _taskCount; i++)
+        // 初始化 Clock 并注册 Tick 事件 + 运行动画计算 Task
+        // 8-26：DisableIdleEngine 时跳过——不跑 60Hz 定时器、不派发空转线程（见字段注释）
+        if (!DisableIdleEngine)
         {
-            _ = Task.Run(_AnimationComputeTaskAsync);
+            _clock = new WinMMClock(Fps);
+            _clock.Tick += ClockOnTick;
+            _clock.Start();
+
+            for (var i = 0; i < _taskCount; i++)
+            {
+                _ = Task.Run(_AnimationComputeTaskAsync);
+            }
         }
     }
 
@@ -143,9 +151,12 @@ public sealed class AnimationService : GeneralService
         _cts.Cancel();
         _cts.Dispose();
         
-        // 停止 Clock 并注销 Tick 事件
-        _clock.Tick -= ClockOnTick;
-        _clock.Stop();
+        // 停止 Clock 并注销 Tick 事件（DisableIdleEngine 时 _clock 未启动，判空防 NRE）
+        if (_clock is not null)
+        {
+            _clock.Tick -= ClockOnTick;
+            _clock.Stop();
+        }
         
         // 将 ResetEvent 释放
         _resetEvent.Dispose();

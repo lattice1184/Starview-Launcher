@@ -97,9 +97,11 @@ public partial class ProjectDetailViewModel : ViewModelBase
         OnPropertyChanged(nameof(HasNextScreenshot));
     }
 
-    /// <summary>载入第 index 张截图（去重防闪烁：先清再载）</summary>
+    /// <summary>载入第 index 张截图（去重防闪烁：先清再载；8-26 换图显式 Dispose 旧图——640px ≈1MB，
+    /// 靠 GC 延迟回收会瞬时叠加两张）</summary>
     private void LoadScreenshot(int index)
     {
+        if (Screenshot is IDisposable old) { try { old.Dispose(); } catch { } }
         Screenshot = null;
         if (index < 0 || index >= _galleryUrls.Count) return;
         _ = ImageLoader.LoadAsync(_galleryUrls[index], bmp => Screenshot = bmp, 640);
@@ -222,16 +224,23 @@ public partial class ProjectDetailViewModel : ViewModelBase
             string? loader = null;
             if (captured is not null)
             {
-                if (EcosystemService.TryParseGameVersion(captured.Name, out var gv)) gameVersion = gv;
+                if (captured.ResolvedGameVersion.Length > 0) gameVersion = captured.ResolvedGameVersion;
                 // 8-19：光影包/材质包无加载器概念——派生 loader 会把 Modrinth 版本列表滤没（同搜索页 IsModType gate）；
                 // 用户显式选加载器不受影响
                 loader = _card.Type == ProjectType.Mod ? EcosystemService.GuessLoader(captured.Name) : null;
             }
             // PCL 式：一次请求拿全量版本——匹配（SelectBestVersion）与直显列表（最新 10 条）共用
-            var all = await SlowQueryNotifier.WatchAsync(_eco.GetVersionsAsync(_card.Id, gameVersion, loader),
+            // 8-26 整合包自带游戏版本，不拿选中实例过滤——直接取最新 release
+            var effGameVersion = _card.Type == ProjectType.Modpack ? null : gameVersion;
+            var all = await SlowQueryNotifier.WatchAsync(_eco.GetVersionsAsync(_card.Id, effGameVersion, loader),
                 "仍在查询版本信息（网络较慢），请稍候…", TimeSpan.FromSeconds(3));
             if (!ReferenceEquals(_instance, captured)) return; // 实例已切换 → 放弃旧实例结果
-            var version = EcosystemService.SelectBestVersion(all);
+            // 8-26 自动匹配选兼容版本：26.x 年份号全量返回（API 不认年份号）→ 客户端按游戏版本过滤后再选；
+            // 手动版本列表（FillVersionRows）仍全量显示，用户可自行挑其他版本
+            var candidates = effGameVersion is not null && EcosystemService.IsYearFormatVersion(effGameVersion)
+                ? EcosystemService.FilterByGameVersion(all, effGameVersion)
+                : all;
+            var version = EcosystemService.SelectBestVersion(candidates);
             FillVersionRows(all, version?.Id);
             _matchedVersion = version;
             // 匹配文件块：匹配版本的主文件（直接下载用；安装仍走完整依赖流程）
@@ -257,7 +266,7 @@ public partial class ProjectDetailViewModel : ViewModelBase
                 {
                     License = detail.License?.Name is { } ln ? $"许可: {ln}" : "";
                     ProjectPageUrl = detail.SourceUrl ?? $"https://modrinth.com/project/{detail.Slug}";
-                    _galleryUrls = detail.Gallery ?? [];
+                    _galleryUrls = detail.Gallery?.Select(g => g.Url).ToList() ?? [];
                     HasGallery = _galleryUrls.Count > 1;
                     GalleryCountText = _galleryUrls.Count > 1 ? $"1/{_galleryUrls.Count}" : "";
                     GalleryIndex = 0;
@@ -287,7 +296,7 @@ public partial class ProjectDetailViewModel : ViewModelBase
             {
                 // 8-22：加载器一并解析——CF files 双加载器变体（JEI/cloth-config 等 neoforge+fabric）
                 // 不带 gameVersionTypeId 会混入敌对加载器版本
-                if (EcosystemService.TryParseGameVersion(capturedInstance.Name, out var gv)) gameVersion = gv;
+                if (capturedInstance.ResolvedGameVersion.Length > 0) gameVersion = capturedInstance.ResolvedGameVersion;
                 loader = EcosystemService.GuessLoader(capturedInstance.Name);
             }
             _cfGameVersion = gameVersion;
@@ -540,7 +549,7 @@ public partial class ProjectDetailViewModel : ViewModelBase
             // 此前留旧版本提示、安装装新版本（提示与实装不一致；安装内部会再解析，此处只为提示正确）
             DependencyHint = "正在查询前置依赖…";
             _ = ResolveDependencyHintAsync(mv,
-                _instance is not null && EcosystemService.TryParseGameVersion(_instance.Name, out var gv1) ? gv1 : null,
+                _instance is not null && _instance.ResolvedGameVersion.Length > 0 ? _instance.ResolvedGameVersion : null,
                 _instance is not null ? EcosystemService.GuessLoader(_instance.Name) : null);
         }
         else if (option.Source is CurseforgeFile cf)
@@ -554,7 +563,7 @@ public partial class ProjectDetailViewModel : ViewModelBase
             HasMatchedFile = true;
             MatchedDownloadState = "";
             _cfModId = cf.modId;
-            _cfGameVersion = _instance is not null && EcosystemService.TryParseGameVersion(_instance.Name, out var gv2) ? gv2 : null;
+            _cfGameVersion = _instance is not null && _instance.ResolvedGameVersion.Length > 0 ? _instance.ResolvedGameVersion : null;
             DependencyHint = "正在查询前置依赖…";
             _ = RefreshCfDependenciesAsync(cf.modId, cf.id, _cfGameVersion,
                 _instance is not null ? EcosystemService.GuessLoader(_instance.Name) : null);
@@ -633,8 +642,8 @@ public partial class ProjectDetailViewModel : ViewModelBase
             var version = _matchedVersion
                 ?? throw new InvalidOperationException("没有匹配的可用版本");
 
-            var gameVersion = EcosystemService.TryParseGameVersion(_instance?.Name ?? "", out var gv)
-                ? gv
+            var gameVersion = _instance is not null && _instance.ResolvedGameVersion.Length > 0
+                ? _instance.ResolvedGameVersion
                 : version.GameVersions?.FirstOrDefault() ?? "";
             var loader = EcosystemService.GuessLoader(_instance?.Name ?? "");
             var instanceName = _instance?.Name ?? "modpack";
@@ -840,8 +849,8 @@ public partial class ProjectDetailViewModel : ViewModelBase
                 if (detail is not null) file = detail;
             }
             catch { /* 详情拉取失败用列表数据（依赖未知则按无依赖处理） */ }
-            var gameVersion = _instance is not null && EcosystemService.TryParseGameVersion(_instance.Name, out var gv)
-                ? gv : null;
+            var gameVersion = _instance is not null && _instance.ResolvedGameVersion.Length > 0
+                ? _instance.ResolvedGameVersion : null;
             var loader = _instance is not null ? EcosystemService.GuessLoader(_instance.Name) : null;
             var instanceName = _instance?.Name ?? "modpack";
             // MOD 落点：版本来源目录（PCL 扫描版本 → PCL 目录；自建版本 → 自建目录）——AF2

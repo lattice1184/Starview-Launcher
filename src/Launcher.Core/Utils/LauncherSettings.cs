@@ -61,17 +61,6 @@ public sealed class LauncherSettings
     /// <summary>启动完成后随机弹一条小提示（彩蛋，可关）</summary>
     public bool StartupTipEnabled { get; set; } = true;
 
-    // ---------- 内存优化（8-19 第二批：PCL 式但低写盘——轻度 GC 零盘写；工作集修剪默认关） ----------
-
-    /// <summary>内存优化总开关（闲置/失焦时后台压缩 GC）</summary>
-    public bool MemoryOptimizeEnabled { get; set; } = true;
-
-    /// <summary>工作集修剪（PCL 式：把驻留页写入页面文件换回物理内存）——增加硬盘读写，默认关</summary>
-    public bool MemoryTrimEnabled { get; set; } = false;
-
-    /// <summary>闲置多久（分钟）触发修剪（1-60）</summary>
-    public int MemoryIdleMinutes { get; set; } = 5;
-
     // ---------- 下载 ----------
 
     /// <summary>下载源策略（官方优先 / 镜像优先 / 仅镜像）——8-18 默认改镜像优先：GitHub 下载先走加速镜像</summary>

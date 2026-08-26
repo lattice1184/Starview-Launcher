@@ -29,7 +29,9 @@ public static class ModRepairFlow
 
         var repair = new ModRepairService();
         ModRepairReport? rpt = null;
-        var gv = EcosystemService.TryParseGameVersion(instanceId, out var v) ? v : null;
+        // 8-26 通用化：fabric-loader-… 实例名 TryParseGameVersion 解析不出 → VersionScan.Inspect（inheritsFrom）拿真版本
+        string? gv = EcosystemService.ResolveGameVersion(VersionScan.Inspect(gameDir, instanceId).McVersion, instanceId);
+        if (gv.Length == 0) gv = null;
         var loader = EcosystemService.GuessLoader(instanceId);
         var task = DownloadManager.Instance.EnqueueGroup($"修复模组 {instanceId}", async (ctx, ct) =>
         {
@@ -45,4 +47,46 @@ public static class ModRepairFlow
             NotificationService.Error($"补全失败：{string.Join("、", rpt.Failed.Select(f => $"{f.ModId}（{f.Reason}）"))}");
         return true;
     }
+
+    /// <summary>替换不兼容模组为兼容版（8-26）：调用方已把不兼容 jar 改名 .disabled（先停用保证即使下载
+    /// 失败也能启动），这里复用 ModRepairService.RepairAsync 下载兼容版装进实例 mods。
+    /// gameVersion 必须是解析过的真游戏版本（McVersion/inheritsFrom 兜底链）——不能像 TryRepairAsync 用
+    /// TryParseGameVersion(instanceId)，对 fabric-loader-… 实例名解析不出会装错版本。
+    /// 有界等待 90s：下载超时不拖死启动（mod 已停用，下载留在下载中心后台继续）。
+    /// 永不抛异常（失败 → DisabledOnly 全量，调用方启动照常）。</summary>
+    public static async Task<ReplaceReport> TryReplaceModsAsync(
+        string gameDir, string instanceId, string gameVersion, string? loader, IReadOnlyList<string> modIds)
+    {
+        var report = new ReplaceReport([], []);
+        if (modIds.Count == 0) return report;
+        try
+        {
+            var repair = new ModRepairService();
+            ModRepairReport? rpt = null;
+            var task = DownloadManager.Instance.EnqueueGroup($"替换不兼容模组 {instanceId}", async (ctx, ct) =>
+            {
+                rpt = await repair.RepairAsync(modIds, gameDir, instanceId, gameVersion, loader, ctx, ct);
+            });
+            // rpt 只在 RepairAsync 全部处理完后赋值——90s 超时内没完成则 rpt 为 null
+            await Task.WhenAny(task.Completion, Task.Delay(TimeSpan.FromSeconds(90)));
+            if (rpt is not null)
+            {
+                report.Replaced.AddRange(rpt.Repaired);
+                report.DisabledOnly.AddRange(rpt.Failed.Select(f => $"{f.ModId}（{f.Reason}）"));
+            }
+            else
+            {
+                var reason = task.State == DownloadTaskState.Failed ? "下载失败" : "下载超时";
+                report.DisabledOnly.AddRange(modIds.Select(m => $"{m}（{reason}）"));
+            }
+        }
+        catch (Exception ex)
+        {
+            report.DisabledOnly.AddRange(modIds.Select(m => $"{m}（修复异常：{ex.Message}）"));
+        }
+        return report;
+    }
+
+    /// <summary>替换结果：Replaced=已下载兼容版；DisabledOnly=无适配版/下载失败，仅停用。</summary>
+    public sealed record ReplaceReport(List<string> Replaced, List<string> DisabledOnly);
 }
