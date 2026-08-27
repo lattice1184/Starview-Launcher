@@ -134,8 +134,38 @@ public partial class ProjectDetailViewModel : ViewModelBase
 
     public bool HasVersions => Versions.Count > 0;
 
-    /// <summary>直显版本行上限（PCL 风格：最新 10 个，不翻页）</summary>
-    private const int MaxVersionRows = 10;
+    /// <summary>直显版本行初始上限（「展开更多版本」逐批追加）</summary>
+    private const int InitialVersionRows = 10;
+    private const int ExpandStep = 20;
+
+    /// <summary>完整版本行缓存（展开更多用；FillVersionRows 全量排序后存入，Versions 只显示前 VisibleVersionCount）</summary>
+    private List<VersionOptionVM> _allVersionOptions = [];
+
+    /// <summary>当前显示行数（初始 10，点「展开更多版本」每次 +20）</summary>
+    [ObservableProperty]
+    public partial int VisibleVersionCount { get; set; } = InitialVersionRows;
+
+    public bool CanExpandMore => VisibleVersionCount < _allVersionOptions.Count;
+
+    public string ShowMoreText => $"展开更多版本（剩余 {_allVersionOptions.Count - VisibleVersionCount}）";
+
+    [RelayCommand]
+    private void ExpandVersions()
+    {
+        if (!CanExpandMore) return;
+        VisibleVersionCount = Math.Min(_allVersionOptions.Count, VisibleVersionCount + ExpandStep);
+        ReapplyVisibleVersions();
+    }
+
+    /// <summary>按 VisibleVersionCount 重填显示行 + 刷新展开按钮状态</summary>
+    private void ReapplyVisibleVersions()
+    {
+        Versions.Clear();
+        foreach (var v in _allVersionOptions.Take(VisibleVersionCount)) Versions.Add(v);
+        OnPropertyChanged(nameof(HasVersions));
+        OnPropertyChanged(nameof(CanExpandMore));
+        OnPropertyChanged(nameof(ShowMoreText));
+    }
 
     // 匹配文件块（8-22：单独展示 + 直接下载 jar 到下载缓存，不经过安装/依赖流程）
     [ObservableProperty]
@@ -243,6 +273,8 @@ public partial class ProjectDetailViewModel : ViewModelBase
             var version = EcosystemService.SelectBestVersion(candidates);
             FillVersionRows(all, version?.Id);
             _matchedVersion = version;
+            // 8-27 初始即填充选中版本的文件列表（否则文件区空着，用户得先点一次版本才见文件）
+            if (version is not null) RefreshFiles(version);
             // 匹配文件块：匹配版本的主文件（直接下载用；安装仍走完整依赖流程）
             var matchedFile = version is null ? null : EcosystemService.PickPrimaryFile(version.Files);
             MatchedFileText = matchedFile is null ? ""
@@ -517,27 +549,32 @@ public partial class ProjectDetailViewModel : ViewModelBase
     /// <summary>版本行填充（Modrinth：最新 10 条直显；命中自动匹配的版本带推荐标记——与匹配同源同请求）</summary>
     private void FillVersionRows(IEnumerable<ModrinthVersion> all, string? versionId)
     {
-        Versions.Clear();
-        foreach (var v in all.Where(v => v.Files is { Count: > 0 })
-                             .OrderByDescending(v => v.DatePublished).Take(MaxVersionRows))
-            Versions.Add(VersionOptionVM.FromModrinth(v) with { IsRecommended = v.Id == versionId });
-        OnPropertyChanged(nameof(HasVersions));
+        // 8-27 展开更多：全量排序缓存进 _allVersionOptions，Versions 只显示前 VisibleVersionCount（初始 10）；
+        // 自动匹配命中的行初始 IsSelected（默认高亮 + 文件列表跟随）
+        _allVersionOptions = all.Where(v => v.Files is { Count: > 0 })
+            .OrderByDescending(v => v.DatePublished)
+            .Select(v => VersionOptionVM.FromModrinth(v) with { IsRecommended = v.Id == versionId })
+            .ToList();
+        foreach (var o in _allVersionOptions) o.IsSelected = o.IsRecommended;
+        VisibleVersionCount = InitialVersionRows;
+        ReapplyVisibleVersions();
     }
 
     /// <summary>版本行填充（CurseForge：无发布时间字段，按 fileId 降序近似"最新"——沿用现有语义）</summary>
     private void FillVersionRowsCf(IEnumerable<CurseforgeFile> files, string? fileId)
     {
-        Versions.Clear();
-        foreach (var f in files.OrderByDescending(f => f.id).Take(MaxVersionRows))
-            Versions.Add(VersionOptionVM.FromCf(f) with { IsRecommended = f.id.ToString() == fileId });
-        OnPropertyChanged(nameof(HasVersions));
+        _allVersionOptions = files.OrderByDescending(f => f.id)
+            .Select(f => VersionOptionVM.FromCf(f) with { IsRecommended = f.id.ToString() == fileId })
+            .ToList();
+        foreach (var o in _allVersionOptions) o.IsSelected = o.IsRecommended;
+        VisibleVersionCount = InitialVersionRows;
+        ReapplyVisibleVersions();
     }
 
-    /// <summary>行内安装指定版本（PCL 式：点击即装；推荐高亮不阻断其他行；复用底部安装管线）</summary>
+    /// <summary>界面内查看指定版本（8-27：点击版本行「只选不装」——刷新文件列表/变更日志/匹配信息/依赖提示，高亮该行）</summary>
     [RelayCommand]
-    private Task InstallVersion(VersionOptionVM option)
+    private void SelectVersion(VersionOptionVM option)
     {
-        if (IsInstalling) return Task.CompletedTask; // 防连点双装
         if (option.Source is ModrinthVersion mv)
         {
             _matchedVersion = mv;
@@ -568,7 +605,19 @@ public partial class ProjectDetailViewModel : ViewModelBase
             _ = RefreshCfDependenciesAsync(cf.modId, cf.id, _cfGameVersion,
                 _instance is not null ? EcosystemService.GuessLoader(_instance.Name) : null);
         }
-        else return Task.CompletedTask;
+        else return;
+        // 行高亮：清其他行选中，仅当前行保持
+        foreach (var v in _allVersionOptions) v.IsSelected = false;
+        option.IsSelected = true;
+    }
+
+    /// <summary>行内安装指定版本（PCL 式：点击即装；推荐高亮不阻断其他行；复用底部安装管线）</summary>
+    [RelayCommand]
+    private Task InstallVersion(VersionOptionVM option)
+    {
+        if (IsInstalling) return Task.CompletedTask; // 防连点双装
+        if (option.Source is not (ModrinthVersion or CurseforgeFile)) return Task.CompletedTask;
+        SelectVersion(option); // 先选中+刷新查看（不装），再走安装管线
         return Install(default); // 依赖/冲突/路径确认/下载中心全走现有管线
     }
 
@@ -934,8 +983,23 @@ public partial class ProjectDetailViewModel : ViewModelBase
 
 /// <summary>版本选项（PCL 式版本行，8-12 起直显）；推荐 = 自动匹配命中（FillVersionRows 时置位）；Source 供安装分派</summary>
 public sealed record VersionOptionVM(string Id, string Display, bool IsRecommended, DateTime Published,
-    long SizeBytes, object? Source)
+    long SizeBytes, object? Source) : System.ComponentModel.INotifyPropertyChanged
 {
+    /// <summary>当前选中（8-27 界面内查看：点击版本行选中高亮；初始 = IsRecommended）</summary>
+    private bool _isSelected;
+    public bool IsSelected
+    {
+        get => _isSelected;
+        set
+        {
+            if (_isSelected == value) return;
+            _isSelected = value;
+            PropertyChanged?.Invoke(this, new System.ComponentModel.PropertyChangedEventArgs(nameof(IsSelected)));
+        }
+    }
+
+    public event System.ComponentModel.PropertyChangedEventHandler? PropertyChanged;
+
     public string PublishedText => Published.Year > 2000 ? Published.ToString("yyyy-MM-dd") : "";
 
     public string SizeText => SizeBytes >= 1024 * 1024
