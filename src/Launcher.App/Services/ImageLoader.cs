@@ -122,9 +122,23 @@ public static class ImageLoader
                 await using var fs = File.OpenRead(path);
                 return Bitmap.DecodeToWidth(fs, decodeWidth);
             }
-            using var resp = await Http.GetAsync(url);
-            resp.EnsureSuccessStatusCode();
-            var bytes = await resp.Content.ReadAsByteArrayAsync();
+            // 8-26 图标镜像回退：cdn.modrinth.com 国内 307 到 cdn-alt（间歇超时/新连接挂，SESSION 实测），
+            // 文件下载有 5 候选竞速镜像、图标此前直连单域名裸奔 → 成片空白。逐个候选限时重试，
+            // 全部失败才抛（此时 LoadAsync 才写 20s 失败锁——不再单主源失败就锁死整批）。
+            byte[]? bytes = null;
+            foreach (var candidate in CandidateUrls(url))
+            {
+                try
+                {
+                    using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5)); // 每候选限时，坏主源不拖满 12s
+                    using var resp = await Http.GetAsync(candidate, cts.Token);
+                    resp.EnsureSuccessStatusCode();
+                    bytes = await resp.Content.ReadAsByteArrayAsync();
+                    break;
+                }
+                catch { /* 该候选失败 → 换下一个镜像 */ }
+            }
+            if (bytes is null) throw new InvalidOperationException($"图标所有候选源均失败：{url}");
             try { Directory.CreateDirectory(CacheDir); await File.WriteAllBytesAsync(path, bytes); } catch { }
             using var ms = new MemoryStream(bytes);
             return Bitmap.DecodeToWidth(ms, decodeWidth);
@@ -132,6 +146,22 @@ public static class ImageLoader
         finally
         {
             Gate.Release();
+        }
+    }
+
+    /// <summary>图标候选源（8-26）：主域名优先；cdn.modrinth.com 失败时按 host 换三个镜像
+    /// （cdn-alt/cdn-raw/mcimirror 探针实测都能 200 服务图标缩略图）。非 Modrinth 域名只回主源。
+    /// 磁盘缓存键按原 URL，镜像成功也落原键——不重复缓存。</summary>
+    private static IEnumerable<string> CandidateUrls(string url)
+    {
+        const string primary = "https://cdn.modrinth.com/";
+        yield return url;
+        if (url.StartsWith(primary, StringComparison.OrdinalIgnoreCase))
+        {
+            var rest = url[primary.Length..];
+            yield return "https://cdn-alt.modrinth.com/" + rest;
+            yield return "https://cdn-raw.modrinth.com/" + rest;
+            yield return "https://mod.mcimirror.top/" + rest;
         }
     }
 
