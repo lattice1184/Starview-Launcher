@@ -14,7 +14,7 @@
 
         <!-- Row 1：可滚动内容，两栏 -->
         <ScrollViewer Grid.Row="1">
-            <Grid ColumnDefinitions="*,340" ColumnSpacing="14">
+            <Grid ColumnDefinitions="*,400" ColumnSpacing="14">
                 <!-- 左栏：阅读（身份/截图/描述/更新日志） -->
                 <StackPanel Spacing="14">
                     <Grid ColumnDefinitions="Auto,*" ColumnSpacing="16">
@@ -23,7 +23,8 @@
                             <Image Source="{Binding Icon}" Width="72" Height="72" Stretch="Uniform"/>
                         </Border>
                         <StackPanel Grid.Column="1" Spacing="4" VerticalAlignment="Center">
-                            <TextBlock Text="{Binding Title}" FontSize="22" FontWeight="Bold" Foreground="White"/>
+                            <TextBlock Text="{Binding Title}" FontSize="22" FontWeight="Bold" Foreground="White"
+                                       MaxLines="1" TextTrimming="CharacterEllipsis"/>
                             <TextBlock Text="{Binding Author}" Foreground="#7E8BA0"/>
                             <TextBlock Text="{Binding Stats}" Foreground="#5A6577" FontSize="12"/>
                             <Button Content="打开主页 ↗" Classes="link"
@@ -59,13 +60,13 @@
                 </StackPanel>
 
                 <!-- 右栏：操作侧栏（版本/匹配文件/安装） -->
-                <StackPanel Grid.Column="1" Spacing="10">
-                    <Border Classes="card" Padding="12">
+                <StackPanel Grid.Column="1" Spacing="12">
+                    <Border Classes="card" Padding="16">
                         <StackPanel Spacing="10">
                             <TextBlock Text="{Binding VersionHint}" Foreground="#C9D2E3"/>
 
                             <!-- 匹配文件块（8-22：单独展示匹配文件，可直接下载 jar 到下载缓存，不经过安装流程） -->
-                            <Border CornerRadius="8" Padding="12,10" IsVisible="{Binding HasMatchedFile}"
+                            <Border CornerRadius="8" Padding="14,12" IsVisible="{Binding HasMatchedFile}"
                                     Background="{DynamicResource BgRaised}">
                                 <StackPanel Spacing="6">
                                     <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
@@ -77,7 +78,7 @@
                                             <TextBlock Text="{Binding DependencyHint}" FontSize="11" Foreground="#E8C97A"
                                                        TextWrapping="Wrap" IsVisible="{Binding DependencyHint.Length}"/>
                                         </StackPanel>
-                                        <Button Grid.Column="1" Content="下载" Classes="primary" FontSize="12" Padding="18,7"
+                                        <Button Grid.Column="1" Content="下载" Classes="primary" FontSize="12" Padding="16,8"
                                                 Command="{Binding DownloadMatchedFileCommand}"
                                                 IsEnabled="{Binding !IsDownloadingMatched}" VerticalAlignment="Center"/>
                                     </Grid>
@@ -93,8 +94,8 @@
                             <ItemsControl ItemsSource="{Binding Versions}" IsVisible="{Binding HasVersions}" Margin="0,0,0,4">
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate x:DataType="vm:VersionOptionVM">
-                                        <Border Classes="modcard" Padding="8,6" Margin="0,1" CornerRadius="6">
-                                            <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="12">
+                                        <Border Classes="modcard" Padding="10,8" Margin="0,3" CornerRadius="6">
+                                            <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="14">
                                                 <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
                                                     <TextBlock Text="{Binding Display}" FontSize="12" FontWeight="SemiBold"
                                                                VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
@@ -107,7 +108,7 @@
                                                            VerticalAlignment="Center"/>
                                                 <TextBlock Grid.Column="2" Text="{Binding SizeText}" Classes="dim" FontSize="11"
                                                            VerticalAlignment="Center"/>
-                                                <Button Grid.Column="3" Content="安装" Classes="primary" FontSize="12" Padding="16,5"
+                                                <Button Grid.Column="3" Content="安装" Classes="primary" FontSize="12" Padding="14,6"
                                                         Command="{Binding $parent[UserControl].((vm:ProjectDetailViewModel)DataContext).InstallVersionCommand}"
                                                         CommandParameter="{Binding}"/>
                                             </Grid>

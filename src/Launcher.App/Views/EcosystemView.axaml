@@ -9,15 +9,18 @@
     <DockPanel>
         <!-- 顶部：搜索 + 实例 + 三级筛选 + 状态（类型 tab 由外层下载板块控制） -->
         <StackPanel DockPanel.Dock="Top" Spacing="10" Margin="0,0,0,12">
+            <!-- 8-27 布局修复：实例下拉内容溢出压 ▼ 箭头（Name 无 MaxWidth/Trimming）→ 改 DisplayName + 裁剪 + MaxWidth
+                 （对齐 HomeView 实例下拉）；搜索框 MinWidth 防被 Auto 实例下拉挤没 -->
             <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
-                <TextBox Text="{Binding Query}" Watermark="搜索…"/>
+                <TextBox Text="{Binding Query}" Watermark="搜索…" MinWidth="220"/>
                 <ComboBox Grid.Column="1" ItemsSource="{Binding Instances}" SelectedItem="{Binding SelectedInstance}"
-                          PlaceholderText="目标实例" MinWidth="190"
+                          PlaceholderText="目标实例" MinWidth="190" MaxWidth="240"
                           HorizontalContentAlignment="Stretch">
                     <ComboBox.ItemTemplate>
                         <DataTemplate x:DataType="vm:VersionInstanceVM">
                             <StackPanel Orientation="Horizontal" Spacing="6">
-                                <TextBlock Text="{Binding Name}"/>
+                                <TextBlock Text="{Binding DisplayName}" TextTrimming="CharacterEllipsis" MaxWidth="220"
+                                           ToolTip.Tip="{Binding DisplayName}"/>
                                 <Border CornerRadius="3" Padding="5,0" VerticalAlignment="Center"
                                         Background="{DynamicResource AccentDark}" IsVisible="{Binding LoaderBadge, Converter={x:Static ObjectConverters.IsNotNull}}">
                                     <TextBlock Text="{Binding LoaderBadge}" FontSize="9" Foreground="{DynamicResource AccentLight}"/>
@@ -28,8 +31,8 @@
                 </ComboBox>
             </Grid>
 
-            <!-- 筛选行 1：加载器 chips（仅 MOD） -->
-            <StackPanel Orientation="Horizontal" Spacing="4" IsVisible="{Binding IsModType}">
+            <!-- 筛选行 1：加载器 chips（仅 MOD）；8-27 改 WrapPanel——窄窗可换行不横向溢出 -->
+            <WrapPanel Orientation="Horizontal" ItemSpacing="4" IsVisible="{Binding IsModType}">
                 <Button Content="全部" Classes="ghost" FontSize="11" Padding="10,3"
                         Command="{Binding SelectLoaderCommand}" CommandParameter="全部"
                         Classes.active="{Binding SelectedLoader, Converter={x:Static app:ValueEqualsConverter.Instance}, ConverterParameter=ALL}"/>
@@ -45,7 +48,7 @@
                 <Button Content="Quilt" Classes="ghost" FontSize="11" Padding="10,3"
                         Command="{Binding SelectLoaderCommand}" CommandParameter="Quilt"
                         Classes.active="{Binding SelectedLoader, Converter={x:Static app:ValueEqualsConverter.Instance}, ConverterParameter=Quilt}"/>
-            </StackPanel>
+            </WrapPanel>
 
             <!-- 筛选行 2：版本/分类/排序/来源 Grid 均分（宽窗口无右侧空白）+ 收藏右对齐 -->
             <Grid ColumnDefinitions="*,*,*,*,Auto" ColumnSpacing="10">
