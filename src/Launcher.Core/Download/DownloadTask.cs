@@ -613,6 +613,9 @@ public partial class DownloadTask : ObservableObject
         OnPropertyChanged(nameof(SpeedText));
         OnPropertyChanged(nameof(EtaText));
         OnPropertyChanged(nameof(BytesText));
+        // 8-27 已用时间 0秒：组任务聚合发布漏发 ElapsedText——组不走叶子 Report 路径，
+        // ElapsedText 只靠 SetStage/SetState 刷新（开局一次后整场停摆「已用 0秒」）。补上随节流窗口刷新。
+        OnPropertyChanged(nameof(ElapsedText));
     }
 
     // ---------- 控制 ----------

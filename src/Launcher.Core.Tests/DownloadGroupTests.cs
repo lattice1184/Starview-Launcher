@@ -249,4 +249,45 @@ public class DownloadGroupTests
         Assert.Equal(DownloadTaskState.Completed, task.State);
         Assert.Equal(100, task.ProgressPercent);
     }
+
+    /// <summary>
+    /// 8-27 回归：下载页第四列「已用 0秒」——组任务聚合发布（PublishAggregate）漏发 ElapsedText 通知，
+    /// 组任务不走叶子 Report 路径，ElapsedText 只在 SetStage/SetState 刷新 → 开局四舍五入到 0秒后整场停摆。
+    /// 断言：子任务持续报告进度期间，组任务必须刷新 ElapsedText（UI 才能重读该列）。
+    /// </summary>
+    [Fact]
+    public async Task Group_ActiveDownload_ElapsedTextPropertyChangedFires()
+    {
+        var manager = CreateManager();
+        var hold = new TaskCompletionSource();
+        var task = manager.EnqueueGroup("下载 1.21.1", async (ctx, ct) =>
+        {
+            ctx.AddChild("a.jar", 100, async (p, c) =>
+            {
+                // 持续报告进度（~1.2s），覆盖多个聚合节流窗口（250ms）
+                for (var i = 0; i < 10; i++)
+                {
+                    p(new DownloadProgress("下载 a.jar", "a.jar", 30 + i, 100, 30 + i));
+                    await Task.Delay(120, c);
+                }
+            });
+            await hold.Task;
+        });
+
+        var elapsedChanged = 0;
+        task.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(task.ElapsedText)) Interlocked.Increment(ref elapsedChanged);
+        };
+
+        // 子任务报告 → 聚合发布应刷新组任务 ElapsedText（下载中时间不停摆）。
+        // 开局 SetState(Downloading) 已发 1 次——断言必须 ≥2：只有聚合发布也刷新才算合格
+        for (var i = 0; i < 100 && Volatile.Read(ref elapsedChanged) < 2; i++) await Task.Delay(50);
+
+        Assert.True(Volatile.Read(ref elapsedChanged) >= 2,
+            $"组任务下载中 ElapsedText 只刷新 {elapsedChanged} 次（开局 SetState 1 次，聚合从未刷新）——PublishAggregate 漏通知，UI 停在「已用 0秒」");
+
+        hold.SetResult();
+        await task.Completion;
+    }
 }
