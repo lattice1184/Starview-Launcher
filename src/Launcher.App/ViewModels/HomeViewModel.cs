@@ -159,10 +159,13 @@ public partial class HomeViewModel : ViewModelBase
         OnPropertyChanged(nameof(LogBodyVisible)); // 8-26 日志卡主体：启动中或看历史时展开
     }
 
-    /// <summary>8-26 日志卡主体可见性：启动中自动展开；平时折叠成一条（只看历史 tab 时展开）</summary>
-    public bool LogBodyVisible => IsLaunching || IsHistoryTabSelected;
+    /// <summary>8-27 日志卡主体可见性：控制台 tab 选中就常显（空时显示「控制台还没动静」占位，不再空壳）；
+    /// 启动中自动展开。8-26 曾改为「平时折叠成一条」，用户反馈主页控制台空白——改回常显。</summary>
+    public bool LogBodyVisible => IsConsoleTabSelected || IsHistoryTabSelected || IsLaunching;
 
     partial void OnIsHistoryTabSelectedChanged(bool value) => OnPropertyChanged(nameof(LogBodyVisible));
+
+    partial void OnIsConsoleTabSelectedChanged(bool value) => OnPropertyChanged(nameof(LogBodyVisible));
 
     [ObservableProperty]
     public partial double LaunchProgress { get; set; }
