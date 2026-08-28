@@ -52,8 +52,8 @@
                     </StackPanel>
                 </Grid>
 
-                <!-- 行2：阶段指示条 + 状态文字（仅启动时显示，平时保持卡矮小） -->
-                <Grid DockPanel.Dock="Top" ColumnDefinitions="Auto,*" ColumnSpacing="12" Margin="0,8,0,0"
+                <!-- 行2：阶段指示条 + 状态文字 + 跳过检查按钮（仅启动时显示，平时保持卡矮小） -->
+                <Grid DockPanel.Dock="Top" ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12" Margin="0,8,0,0"
                       IsVisible="{Binding IsLaunching}">
                     <ItemsControl ItemsSource="{Binding Stages}">
                         <ItemsControl.ItemsPanel>
@@ -74,6 +74,9 @@
                     </ItemsControl>
                     <TextBlock Grid.Column="1" Text="{Binding LaunchStatus}" Classes="sub" FontSize="11"
                                VerticalAlignment="Center" TextAlignment="Right" TextTrimming="CharacterEllipsis"/>
+                    <!-- 8-28 预检可跳过：大型整合包交给用户决定，随时取消扫描直接启动 -->
+                    <Button Grid.Column="2" Content="跳过模组检查" Classes="ghost" FontSize="11" Padding="10,4"
+                            Command="{Binding SkipPreCheckCommand}" IsVisible="{Binding IsPreCheckRunning}"/>
                 </Grid>
 
                 <!-- 8-26 删配置摘要小字（进设置页查看）；阶段条+状态已表达进度，删底部进度条 -->

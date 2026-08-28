@@ -1,6 +1,8 @@
+using System.IO.Compression;
 using Launcher.App.ViewModels;
 using Launcher.Core.Download;
 using Launcher.Core.Utils;
+using Microsoft.Extensions.Logging;
 
 namespace Launcher.App.Services;
 
@@ -15,15 +17,25 @@ public static class ModpackImportFlow
         var owner = DialogService.MainWindow();
         try
         {
+            // 8-28 日志埋点：导入全链路写启动日志（%AppData%\Launcher\logs\Launch-*.log），失败可查
+            AppLog.Instance?.LogInformation("[modpack] 导入开始 {Zip}", zipPath);
             var info = ModpackImporter.Parse(zipPath, out var reason);
             if (info is null)
             {
+                // 失败也记录 zip 内容前几项——诊断拖的到底是什么（模组包/普通 zip/损坏文件）
+                AppLog.Instance?.LogWarning("[modpack] 导入失败（不支持格式）{Zip} 原因:{Reason} 内容:[{Entries}]",
+                    zipPath, reason, DescribeZip(zipPath));
                 NotificationService.Error(reason ?? "不支持的整合包格式");
                 return;
             }
+            AppLog.Instance?.LogInformation("[modpack] 解析成功 {Zip} → {Id}（{Format}，{Count} 文件，MC {Mc}）",
+                zipPath, info.VersionId, info.Format, info.FileCount, info.McVersion);
             if (owner is not null && !await DialogService.Confirm(owner,
                     BuildConfirmText(info), "导入整合包", "导入", "取消"))
+            {
+                AppLog.Instance?.LogInformation("[modpack] 用户取消导入 {Zip}", zipPath);
                 return;
+            }
 
             ModpackImportReport? report = null;
             var task = DownloadManager.Instance.EnqueueGroup($"导入整合包 {info.VersionId}", async (ctx, ct) =>
@@ -36,6 +48,8 @@ public static class ModpackImportFlow
             await task.Completion;
             if (task.State == DownloadTaskState.Completed && report is not null)
             {
+                AppLog.Instance?.LogInformation("[modpack] 导入完成 {Zip} → {PackId}（跳过 {Skipped} 项）",
+                    zipPath, report.PackId, report.ModsSkipped);
                 var skip = report.ModsSkipped > 0
                     ? $"（跳过 {report.ModsSkipped} 项：{string.Join("、", report.Skipped.Take(3).Select(s => s.Name))}）"
                     : "";
@@ -48,13 +62,26 @@ public static class ModpackImportFlow
             }
             else
             {
+                AppLog.Instance?.LogWarning("[modpack] 导入任务失败 {Zip}:{Error}", zipPath, task.Error);
                 NotificationService.Error(task.Error ?? "导入失败");
             }
         }
         catch (Exception ex)
         {
+            AppLog.Instance?.LogError(null, "[modpack] 导入异常 {Zip}:{Error}", zipPath, ex.Message);
             NotificationService.Error($"导入失败: {ex.Message}");
         }
+    }
+
+    /// <summary>zip 内前 20 个条目（失败诊断用：看拖的到底是什么）</summary>
+    private static string DescribeZip(string zipPath)
+    {
+        try
+        {
+            using var zip = ZipFile.OpenRead(zipPath);
+            return string.Join(", ", zip.Entries.Take(20).Select(e => e.FullName));
+        }
+        catch (Exception ex) { return $"（无法读取：{ex.Message}）"; }
     }
 
     private static string BuildConfirmText(ModpackImportInfo info)

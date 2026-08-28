@@ -64,9 +64,14 @@ public sealed class ModpackImporter
         try
         {
             using var zip = ZipFile.OpenRead(zipPath);
-            if (zip.GetEntry("modrinth.index.json") is { } mrIndex)
+            // 8-28 大小写不敏感找索引（部分包用 Manifest.json 等大小写）
+            var mrIndex = zip.Entries.FirstOrDefault(e =>
+                e.FullName.Equals("modrinth.index.json", StringComparison.OrdinalIgnoreCase));
+            if (mrIndex is not null)
                 return ParseMrpack(mrIndex, out unsupportedReason);
-            if (zip.GetEntry("manifest.json") is { } manifest)
+            var manifest = zip.Entries.FirstOrDefault(e =>
+                e.FullName.Equals("manifest.json", StringComparison.OrdinalIgnoreCase));
+            if (manifest is not null)
             {
                 using var sr = new StreamReader(manifest.Open());
                 var json = sr.ReadToEnd();
@@ -75,7 +80,12 @@ public sealed class ModpackImporter
                 unsupportedReason = "manifest.json 解析失败（既非本启动器导出格式，也非 CurseForge 格式）";
                 return null;
             }
-            unsupportedReason = "未找到 manifest.json 或 modrinth.index.json（不支持该整合包格式）";
+            // 8-28 诊断：无索引 → 看是不是「模组压缩包」，给更清楚的理由（保留「不支持」字样）
+            var jarCount = zip.Entries.Count(e =>
+                e.FullName.EndsWith(".jar", StringComparison.OrdinalIgnoreCase));
+            unsupportedReason = jarCount > 0
+                ? $"不支持该整合包格式：像是模组压缩包（内含 {jarCount} 个 .jar），整合包根目录需 manifest.json 或 modrinth.index.json"
+                : "未找到 manifest.json 或 modrinth.index.json（不支持该整合包格式）";
             return null;
         }
         catch (Exception ex)

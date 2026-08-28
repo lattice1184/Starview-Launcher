@@ -55,7 +55,8 @@ public static class ModRepairFlow
     /// 有界等待 90s：下载超时不拖死启动（mod 已停用，下载留在下载中心后台继续）。
     /// 永不抛异常（失败 → DisabledOnly 全量，调用方启动照常）。</summary>
     public static async Task<ReplaceReport> TryReplaceModsAsync(
-        string gameDir, string instanceId, string gameVersion, string? loader, IReadOnlyList<string> modIds)
+        string gameDir, string instanceId, string gameVersion, string? loader, IReadOnlyList<string> modIds,
+        CancellationToken ct = default)
     {
         var report = new ReplaceReport([], []);
         if (modIds.Count == 0) return report;
@@ -63,12 +64,17 @@ public static class ModRepairFlow
         {
             var repair = new ModRepairService();
             ModRepairReport? rpt = null;
-            var task = DownloadManager.Instance.EnqueueGroup($"替换不兼容模组 {instanceId}", async (ctx, ct) =>
+            var task = DownloadManager.Instance.EnqueueGroup($"替换不兼容模组 {instanceId}", async (ctx, c) =>
             {
-                rpt = await repair.RepairAsync(modIds, gameDir, instanceId, gameVersion, loader, ctx, ct);
+                rpt = await repair.RepairAsync(modIds, gameDir, instanceId, gameVersion, loader, ctx, c);
             });
             // rpt 只在 RepairAsync 全部处理完后赋值——90s 超时内没完成则 rpt 为 null
-            await Task.WhenAny(task.Completion, Task.Delay(TimeSpan.FromSeconds(90)));
+            await Task.WhenAny(task.Completion, Task.Delay(TimeSpan.FromSeconds(90), ct));
+            if (ct.IsCancellationRequested) // 用户跳过 → 不等修复完成，启动照常（mod 已停用可后处理）
+            {
+                report.DisabledOnly.AddRange(modIds.Select(m => $"{m}（用户跳过修复）"));
+                return report;
+            }
             if (rpt is not null)
             {
                 report.Replaced.AddRange(rpt.Repaired);

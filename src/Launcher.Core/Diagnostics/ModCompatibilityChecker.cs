@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.IO.Compression;
 using System.Text;
 using System.Text.Json;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace Launcher.Core.Diagnostics;
@@ -28,7 +29,8 @@ public static class ModCompatibilityChecker
     /// 扫 mods 目录（排除 .disabled），返回与游戏版本明显不兼容的 mod（只读，不禁用）。
     /// 8-27 加速：jar 间并行读取（zip 独立）+ 指纹缓存 + 可选进度回调（done/total，worker 线程调用，节流由调用方做）。
     /// </summary>
-    public static List<IncompatibleMod> FindIncompatible(string modsDir, string gameVersion, Action<int, int>? onProgress = null)
+    public static List<IncompatibleMod> FindIncompatible(string modsDir, string gameVersion,
+        Action<int, int>? onProgress = null, CancellationToken ct = default)
     {
         var game = ParseGameVersion(gameVersion);
         if (game is null || !Directory.Exists(modsDir)) return [];
@@ -47,8 +49,10 @@ public static class ModCompatibilityChecker
         var total = jars.Count;
         var done = 0;
         var sync = new object();
-        Parallel.ForEach(jars, jar =>
+        var options = new ParallelOptions { CancellationToken = ct };
+        Parallel.ForEach(jars, options, jar =>
         {
+            ct.ThrowIfCancellationRequested(); // 用户跳过 → 提前中止扫描
             if (TryReadFabricMetadata(jar, out var id, out var depends)
                 && !string.IsNullOrWhiteSpace(id) && !string.IsNullOrWhiteSpace(depends)
                 && !RangeAllows(depends, game))
@@ -85,11 +89,12 @@ public static class ModCompatibilityChecker
     /// <summary>扫 mods 目录并禁用不兼容 mod（.jar→.jar.disabled），返回实际禁用的列表。
     /// preScanned：已有 FindIncompatible 结果时传入，避免内部再扫一遍（8-27 去重扫）。</summary>
     public static List<IncompatibleMod> DisableIncompatible(string modsDir, string gameVersion,
-        IReadOnlyList<IncompatibleMod>? preScanned = null)
+        IReadOnlyList<IncompatibleMod>? preScanned = null, CancellationToken ct = default)
     {
         var disabled = new List<IncompatibleMod>();
-        foreach (var m in preScanned ?? FindIncompatible(modsDir, gameVersion))
+        foreach (var m in preScanned ?? FindIncompatible(modsDir, gameVersion, ct: ct))
         {
+            ct.ThrowIfCancellationRequested(); // 用户跳过 → 中止禁用
             try { File.Move(Path.Combine(modsDir, m.FileName), Path.Combine(modsDir, m.FileName + ".disabled")); disabled.Add(m); }
             catch { /* 单个文件禁用失败不阻断其他 */ }
         }

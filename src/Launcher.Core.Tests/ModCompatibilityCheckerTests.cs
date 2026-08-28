@@ -1,4 +1,5 @@
 using System.IO.Compression;
+using System.Threading;
 using Launcher.Core.Diagnostics;
 
 namespace Launcher.Core.Tests;
@@ -174,5 +175,18 @@ public class ModCompatibilityCheckerTests
         // 同路径重写为兼容版（内容长度变化 → 指纹变化 → 缓存失效重扫）
         WriteFabricModJar(jar, "m", ">=26.1 <26.2");
         Assert.Empty(ModCompatibilityChecker.FindIncompatible(dir, "26.1.2"));
+    }
+
+    [Fact]
+    public void FindIncompatible_Canceled_ThrowsOperationCanceled()
+    {
+        var dir = NewModsDir();
+        WriteFabricModJar(Path.Combine(dir, "a.jar"), "a", "[1.21.x]");
+        WriteFabricModJar(Path.Combine(dir, "b.jar"), "b", "[1.21.x]");
+
+        using var cts = new CancellationTokenSource();
+        cts.Cancel(); // 预取消 → Parallel.ForEach / 循环内 ThrowIfCancellationRequested 抛 OCE
+        Assert.Throws<OperationCanceledException>(() =>
+            ModCompatibilityChecker.FindIncompatible(dir, "26.1.2", ct: cts.Token));
     }
 }

@@ -225,6 +225,15 @@ public partial class HomeViewModel : ViewModelBase
 
     private System.Diagnostics.Stopwatch? _launchWatch;
 
+    // 8-28 启动前模组检查可跳过（大型整合包交给用户决定）：IsPreCheckRunning 显示「跳过模组检查」按钮
+    private CancellationTokenSource? _preCheckCts;
+
+    [ObservableProperty]
+    public partial bool IsPreCheckRunning { get; set; }
+
+    [RelayCommand]
+    private void SkipPreCheck() => _preCheckCts?.Cancel();
+
     public HomeViewModel()
     {
         foreach (var name in StageNames) Stages.Add(new LaunchStageVM(name));
@@ -696,48 +705,83 @@ public partial class HomeViewModel : ViewModelBase
             var checkModsDir = Path.Combine(ModRepairService.InstanceRoot(gameDir, version.Name), "mods");
             if (Directory.Exists(checkModsDir))
             {
-                var checkGameVersion = ResolveCheckGameVersion(version, gameDir);
-                var modCount = ModCompatibilityChecker.CountMods(checkModsDir);
-                // 8-27 可视化：扫描开始即切阶段 + 控制台先亮一句——此前扫描全程零输出像卡死
-                SetStage("检查模组兼容性");
-                AppendLog($"§ 正在检查 {modCount} 个模组的兼容性…");
-                var incompatible = await Task.Run(() => ModCompatibilityChecker.FindIncompatible(checkModsDir, checkGameVersion,
-                    (done, total) =>
+                // 8-28 可跳过：大型整合包交给用户决定——随时取消扫描直接启动（不误停调好的包）
+                using var preCts = new CancellationTokenSource();
+                _preCheckCts = preCts;
+                IsPreCheckRunning = true;
+                try
+                {
+                    var checkGameVersion = ResolveCheckGameVersion(version, gameDir);
+                    var modCount = ModCompatibilityChecker.CountMods(checkModsDir);
+                    // 8-27 可视化：扫描开始即切阶段 + 控制台先亮一句——此前扫描全程零输出像卡死
+                    SetStage("检查模组兼容性");
+                    AppendLog($"§ 正在检查 {modCount} 个模组的兼容性…");
+                    List<ModCompatibilityChecker.IncompatibleMod> incompatible = [];
+                    try
                     {
-                        // 节流：每 5 个 / 最后一个才刷状态（几十个 mods 不刷屏）
-                        if (total > 0 && (done % 5 == 0 || done == total))
+                        incompatible = await Task.Run(() => ModCompatibilityChecker.FindIncompatible(checkModsDir, checkGameVersion,
+                            (done, total) =>
+                            {
+                                // 节流：每 5 个 / 最后一个才刷状态（几十个 mods 不刷屏）
+                                if (total > 0 && (done % 5 == 0 || done == total))
+                                {
+                                    var d = done;
+                                    Dispatcher.UIThread.Post(() => LaunchStatus = $"正在检查模组（{d}/{total}）…");
+                                }
+                            }, preCts.Token), preCts.Token);
+                    }
+                    catch (OperationCanceledException) { /* 用户跳过 → 当无结果 */ }
+
+                    if (!preCts.IsCancellationRequested && incompatible.Count == 0)
+                    {
+                        // 可见证据：无冲突也报告检查结果（回应「没看出来检查跑没跑」）
+                        AppendLog($"§ 模组兼容检查：游戏版本 {checkGameVersion}，共 {modCount} 个模组，无冲突");
+                    }
+                    else if (!preCts.IsCancellationRequested)
+                    {
+                        // 8-26 自动修复升级：不止停用——先停用旧 jar 保证即使下载失败也能启动，再下载兼容版替换
+                        // （找不到适配版/下载失败才维持停用）。gameVersion 用解析过的真值（loader 名解析不出会装错版）。
+                        AppendLog($"§ 模组兼容检查：游戏版本 {checkGameVersion}，发现 {incompatible.Count} 个不兼容模组，自动修复中…");
+                        // 8-27 复用已扫结果禁用（DisableIncompatible 不再内部重扫一遍）
+                        List<ModCompatibilityChecker.IncompatibleMod> disabled = [];
+                        try
                         {
-                            var d = done;
-                            Dispatcher.UIThread.Post(() => LaunchStatus = $"正在检查模组（{d}/{total}）…");
+                            disabled = await Task.Run(() => ModCompatibilityChecker.DisableIncompatible(checkModsDir, checkGameVersion, incompatible, preCts.Token), preCts.Token);
                         }
-                    }));
-                if (incompatible.Count == 0)
-                {
-                    // 可见证据：无冲突也报告检查结果（回应「没看出来检查跑没跑」）
-                    AppendLog($"§ 模组兼容检查：游戏版本 {checkGameVersion}，共 {modCount} 个模组，无冲突");
+                        catch (OperationCanceledException) { /* 取消中途禁用 → 跳过 */ }
+                        if (!preCts.IsCancellationRequested)
+                        {
+                            foreach (var m in disabled)
+                                AppendLog($"§ 已停用不兼容模组 {m.Id}（需要 {m.DeclaredRange}，游戏 {m.GameVersion}）");
+                            var loader = version.LoaderBadge.Length > 0 ? version.LoaderBadge : EcosystemService.GuessLoader(version.Name);
+                            AppendLog("§ 正在下载兼容版本替换（下载中心可见进度）…");
+                            var replace = await ModRepairFlow.TryReplaceModsAsync(
+                                gameDir, version.Name, checkGameVersion, loader, disabled.Select(m => m.Id).ToList(), preCts.Token);
+                            if (!preCts.IsCancellationRequested)
+                            {
+                                foreach (var r in replace.Replaced)
+                                    AppendLog($"§ 已自动替换 {r}，正在启动…");
+                                foreach (var d in replace.DisabledOnly)
+                                    AppendLog($"§ {d}，已停用");
+                                if (replace.Replaced.Count > 0)
+                                    NotificationService.Success($"已自动修复：{string.Join("、", replace.Replaced)}", 5000);
+                                if (replace.DisabledOnly.Count > 0)
+                                    NotificationService.Error($"已停用无适配版：{string.Join("、", replace.DisabledOnly)}");
+                                LaunchStatus = "不兼容模组已处理，正在启动…";
+                            }
+                        }
+                    }
+
+                    if (preCts.IsCancellationRequested)
+                    {
+                        AppendLog("§ 已跳过模组检查，直接启动（用户选择）");
+                        LaunchStatus = "已跳过模组检查，正在启动…";
+                    }
                 }
-                else
+                finally
                 {
-                    // 8-26 自动修复升级：不止停用——先停用旧 jar 保证即使下载失败也能启动，再下载兼容版替换
-                    // （找不到适配版/下载失败才维持停用）。gameVersion 用解析过的真值（loader 名解析不出会装错版）。
-                    AppendLog($"§ 模组兼容检查：游戏版本 {checkGameVersion}，发现 {incompatible.Count} 个不兼容模组，自动修复中…");
-                    // 8-27 复用已扫结果禁用（DisableIncompatible 不再内部重扫一遍）
-                    var disabled = await Task.Run(() => ModCompatibilityChecker.DisableIncompatible(checkModsDir, checkGameVersion, incompatible));
-                    foreach (var m in disabled)
-                        AppendLog($"§ 已停用不兼容模组 {m.Id}（需要 {m.DeclaredRange}，游戏 {m.GameVersion}）");
-                    var loader = version.LoaderBadge.Length > 0 ? version.LoaderBadge : EcosystemService.GuessLoader(version.Name);
-                    AppendLog("§ 正在下载兼容版本替换（下载中心可见进度）…");
-                    var replace = await ModRepairFlow.TryReplaceModsAsync(
-                        gameDir, version.Name, checkGameVersion, loader, disabled.Select(m => m.Id).ToList());
-                    foreach (var r in replace.Replaced)
-                        AppendLog($"§ 已自动替换 {r}，正在启动…");
-                    foreach (var d in replace.DisabledOnly)
-                        AppendLog($"§ {d}，已停用");
-                    if (replace.Replaced.Count > 0)
-                        NotificationService.Success($"已自动修复：{string.Join("、", replace.Replaced)}", 5000);
-                    if (replace.DisabledOnly.Count > 0)
-                        NotificationService.Error($"已停用无适配版：{string.Join("、", replace.DisabledOnly)}");
-                    LaunchStatus = "不兼容模组已处理，正在启动…";
+                    IsPreCheckRunning = false;
+                    _preCheckCts = null;
                 }
             }
             _running = await Task.Run(() => _launcher.LaunchAsync(
