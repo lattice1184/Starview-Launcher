@@ -1,6 +1,8 @@
+using System.Collections.Concurrent;
 using System.IO.Compression;
 using System.Text;
 using System.Text.Json;
+using System.Threading.Tasks;
 
 namespace Launcher.Core.Diagnostics;
 
@@ -17,28 +19,76 @@ public static class ModCompatibilityChecker
     /// <summary>不兼容 mod 信息</summary>
     public sealed record IncompatibleMod(string Id, string FileName, string DeclaredRange, string GameVersion);
 
-    /// <summary>扫 mods 目录（排除 .disabled），返回与游戏版本明显不兼容的 mod（只读，不禁用）。</summary>
-    public static List<IncompatibleMod> FindIncompatible(string modsDir, string gameVersion)
+    /// <summary>会话级扫描缓存（8-27 加速）：键 = modsDir|gameVersion|jar 指纹。mods 未变则复用上次结果，
+    /// 跳过 zip 读取（反复启动/调试秒过预检）。静态 = 本次运行内存；超过 32 条整体清空防累积。</summary>
+    private static readonly ConcurrentDictionary<string, List<IncompatibleMod>> ScanCache = new();
+    private const int CacheCap = 32;
+
+    /// <summary>
+    /// 扫 mods 目录（排除 .disabled），返回与游戏版本明显不兼容的 mod（只读，不禁用）。
+    /// 8-27 加速：jar 间并行读取（zip 独立）+ 指纹缓存 + 可选进度回调（done/total，worker 线程调用，节流由调用方做）。
+    /// </summary>
+    public static List<IncompatibleMod> FindIncompatible(string modsDir, string gameVersion, Action<int, int>? onProgress = null)
     {
         var game = ParseGameVersion(gameVersion);
         if (game is null || !Directory.Exists(modsDir)) return [];
+        var jars = Directory.EnumerateFiles(modsDir, "*.jar")
+            .Where(f => !f.EndsWith(".disabled", StringComparison.OrdinalIgnoreCase))
+            .OrderBy(f => f, StringComparer.Ordinal)
+            .ToList();
+        if (jars.Count == 0) return [];
+
+        // 指纹缓存：目录未变 → 直接复用上次结果（跳过全部 zip 读取）
+        var fingerprint = BuildFingerprint(jars);
+        var key = $"{modsDir}{gameVersion}{fingerprint}";
+        if (ScanCache.TryGetValue(key, out var cached)) return cached;
+
         var result = new List<IncompatibleMod>();
-        foreach (var jar in Directory.EnumerateFiles(modsDir, "*.jar"))
+        var total = jars.Count;
+        var done = 0;
+        var sync = new object();
+        Parallel.ForEach(jars, jar =>
         {
-            if (jar.EndsWith(".disabled", StringComparison.OrdinalIgnoreCase)) continue;
-            if (!TryReadFabricMetadata(jar, out var id, out var depends)) continue;
-            if (string.IsNullOrWhiteSpace(id) || string.IsNullOrWhiteSpace(depends)) continue;
-            if (RangeAllows(depends, game)) continue;
-            result.Add(new IncompatibleMod(id!, Path.GetFileName(jar), depends, gameVersion));
-        }
+            if (TryReadFabricMetadata(jar, out var id, out var depends)
+                && !string.IsNullOrWhiteSpace(id) && !string.IsNullOrWhiteSpace(depends)
+                && !RangeAllows(depends, game))
+            {
+                lock (sync) result.Add(new IncompatibleMod(id!, Path.GetFileName(jar), depends, gameVersion));
+            }
+            int d;
+            lock (sync) { done++; d = done; }
+            onProgress?.Invoke(d, total);
+        });
+
+        if (ScanCache.Count >= CacheCap) ScanCache.Clear();
+        ScanCache[key] = result;
         return result;
     }
 
-    /// <summary>扫 mods 目录并禁用不兼容 mod（.jar→.jar.disabled），返回实际禁用的列表。</summary>
-    public static List<IncompatibleMod> DisableIncompatible(string modsDir, string gameVersion)
+    /// <summary>jar 指纹（名称|长度|LastWriteTime，枚举时毫秒级）——目录未变即缓存命中</summary>
+    private static string BuildFingerprint(List<string> jars)
+    {
+        var sb = new StringBuilder();
+        foreach (var jar in jars)
+        {
+            try
+            {
+                var fi = new FileInfo(jar);
+                sb.Append(Path.GetFileName(jar)).Append(':').Append(fi.Length).Append(':')
+                  .Append(fi.LastWriteTimeUtc.Ticks).Append(';');
+            }
+            catch { sb.Append(Path.GetFileName(jar)).Append(';'); }
+        }
+        return sb.ToString();
+    }
+
+    /// <summary>扫 mods 目录并禁用不兼容 mod（.jar→.jar.disabled），返回实际禁用的列表。
+    /// preScanned：已有 FindIncompatible 结果时传入，避免内部再扫一遍（8-27 去重扫）。</summary>
+    public static List<IncompatibleMod> DisableIncompatible(string modsDir, string gameVersion,
+        IReadOnlyList<IncompatibleMod>? preScanned = null)
     {
         var disabled = new List<IncompatibleMod>();
-        foreach (var m in FindIncompatible(modsDir, gameVersion))
+        foreach (var m in preScanned ?? FindIncompatible(modsDir, gameVersion))
         {
             try { File.Move(Path.Combine(modsDir, m.FileName), Path.Combine(modsDir, m.FileName + ".disabled")); disabled.Add(m); }
             catch { /* 单个文件禁用失败不阻断其他 */ }

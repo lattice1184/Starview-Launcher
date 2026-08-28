@@ -697,18 +697,32 @@ public partial class HomeViewModel : ViewModelBase
             if (Directory.Exists(checkModsDir))
             {
                 var checkGameVersion = ResolveCheckGameVersion(version, gameDir);
-                var incompatible = await Task.Run(() => ModCompatibilityChecker.FindIncompatible(checkModsDir, checkGameVersion));
+                var modCount = ModCompatibilityChecker.CountMods(checkModsDir);
+                // 8-27 可视化：扫描开始即切阶段 + 控制台先亮一句——此前扫描全程零输出像卡死
+                SetStage("检查模组兼容性");
+                AppendLog($"§ 正在检查 {modCount} 个模组的兼容性…");
+                var incompatible = await Task.Run(() => ModCompatibilityChecker.FindIncompatible(checkModsDir, checkGameVersion,
+                    (done, total) =>
+                    {
+                        // 节流：每 5 个 / 最后一个才刷状态（几十个 mods 不刷屏）
+                        if (total > 0 && (done % 5 == 0 || done == total))
+                        {
+                            var d = done;
+                            Dispatcher.UIThread.Post(() => LaunchStatus = $"正在检查模组（{d}/{total}）…");
+                        }
+                    }));
                 if (incompatible.Count == 0)
                 {
                     // 可见证据：无冲突也报告检查结果（回应「没看出来检查跑没跑」）
-                    AppendLog($"§ 模组兼容检查：游戏版本 {checkGameVersion}，共 {ModCompatibilityChecker.CountMods(checkModsDir)} 个模组，无冲突");
+                    AppendLog($"§ 模组兼容检查：游戏版本 {checkGameVersion}，共 {modCount} 个模组，无冲突");
                 }
                 else
                 {
                     // 8-26 自动修复升级：不止停用——先停用旧 jar 保证即使下载失败也能启动，再下载兼容版替换
                     // （找不到适配版/下载失败才维持停用）。gameVersion 用解析过的真值（loader 名解析不出会装错版）。
                     AppendLog($"§ 模组兼容检查：游戏版本 {checkGameVersion}，发现 {incompatible.Count} 个不兼容模组，自动修复中…");
-                    var disabled = await Task.Run(() => ModCompatibilityChecker.DisableIncompatible(checkModsDir, checkGameVersion));
+                    // 8-27 复用已扫结果禁用（DisableIncompatible 不再内部重扫一遍）
+                    var disabled = await Task.Run(() => ModCompatibilityChecker.DisableIncompatible(checkModsDir, checkGameVersion, incompatible));
                     foreach (var m in disabled)
                         AppendLog($"§ 已停用不兼容模组 {m.Id}（需要 {m.DeclaredRange}，游戏 {m.GameVersion}）");
                     var loader = version.LoaderBadge.Length > 0 ? version.LoaderBadge : EcosystemService.GuessLoader(version.Name);

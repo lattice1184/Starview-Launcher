@@ -63,6 +63,8 @@ public class ModCompatibilityCheckerTests
 
     private static void WriteFabricModJar(string jarPath, string id, string depends)
     {
+        // ZipArchiveMode.Create 用 FileMode.CreateNew——重写已存在文件会抛 IOException，先删再写
+        if (File.Exists(jarPath)) File.Delete(jarPath);
         using var zip = ZipFile.Open(jarPath, ZipArchiveMode.Create);
         var entry = zip.CreateEntry("fabric.mod.json");
         using var w = new StreamWriter(entry.Open());
@@ -125,5 +127,52 @@ public class ModCompatibilityCheckerTests
         // 游戏版本是快照号 → 解析不出 → 跳过检查，不误报
         WriteFabricModJar(Path.Combine(dir, "entityculling.jar"), "entityculling", "[1.21.x]");
         Assert.Empty(ModCompatibilityChecker.FindIncompatible(dir, "25w06a"));
+    }
+
+    // ---- 8-27 并行扫描 + 进度回调 + 会话缓存（启动预检加速） ----
+
+    [Fact]
+    public void FindIncompatible_ProgressCallback_ReportsEveryJar_EndsWithTotal()
+    {
+        var dir = NewModsDir();
+        WriteFabricModJar(Path.Combine(dir, "a.jar"), "a", "[1.21.x]");
+        WriteFabricModJar(Path.Combine(dir, "b.jar"), "b", ">=26.1 <26.2");
+
+        var sync = new object();
+        var calls = new List<(int Done, int Total)>();
+        ModCompatibilityChecker.FindIncompatible(dir, "26.1.2", (d, t) => { lock (sync) calls.Add((d, t)); });
+
+        Assert.Equal(2, calls.Count);
+        Assert.Contains(calls, c => c.Done == 2 && c.Total == 2); // 最后一个 = (总数, 总数)
+        Assert.All(calls, c => Assert.Equal(2, c.Total));
+    }
+
+    [Fact]
+    public void FindIncompatible_CacheHit_SkipsRescan()
+    {
+        var dir = NewModsDir();
+        WriteFabricModJar(Path.Combine(dir, "entityculling.jar"), "entityculling", "[1.21.x]");
+
+        Assert.Single(ModCompatibilityChecker.FindIncompatible(dir, "26.1.2")); // 首次扫描入缓存
+
+        // 目录未变 → 命中缓存，进度回调不被调用（不重扫 zip）
+        var sync = new object();
+        var progressCalls = 0;
+        var second = ModCompatibilityChecker.FindIncompatible(dir, "26.1.2", (_, _) => { lock (sync) progressCalls++; });
+        Assert.Single(second);
+        Assert.Equal(0, progressCalls);
+    }
+
+    [Fact]
+    public void FindIncompatible_ModsChanged_RevalidatesCache()
+    {
+        var dir = NewModsDir();
+        var jar = Path.Combine(dir, "m.jar");
+        WriteFabricModJar(jar, "m", "[1.21.x]");
+        Assert.Single(ModCompatibilityChecker.FindIncompatible(dir, "26.1.2"));
+
+        // 同路径重写为兼容版（内容长度变化 → 指纹变化 → 缓存失效重扫）
+        WriteFabricModJar(jar, "m", ">=26.1 <26.2");
+        Assert.Empty(ModCompatibilityChecker.FindIncompatible(dir, "26.1.2"));
     }
 }
