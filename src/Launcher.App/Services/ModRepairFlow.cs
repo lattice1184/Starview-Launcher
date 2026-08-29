@@ -9,6 +9,8 @@ namespace Launcher.App.Services;
 /// <summary>
 /// 模组缺失自愈统一入口（AL57）：扫描实例日志 → 有缺失则确认框 → 下载中心补全 → 结果 Toast。
 /// CrashReportWindow 一键修复 / 启动失败自动修复 / 版本页手动修复 三处共用。
+/// 8-29 溯源约定：修复必带复检——任何修复路径结束前重扫确认病灶消失（替换后重扫 FindIncompatible、
+/// 缺失前置装后重扫 FindMissingDependencies），不假称已处理（"自动修复说修好没实行"的根）。
 /// </summary>
 public static class ModRepairFlow
 {

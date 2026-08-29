@@ -782,7 +782,21 @@ public partial class HomeViewModel : ViewModelBase
                                         NotificationService.Success($"已自动修复：{string.Join("、", replace.Replaced)}", 5000);
                                     if (replace.DisabledOnly.Count > 0)
                                         NotificationService.Error($"已停用无适配版：{string.Join("、", replace.DisabledOnly)}");
-                                    LaunchStatus = "不兼容模组已处理，正在启动…";
+                                    // 8-29 复检（溯源约定：修复必带复检）：替换后重扫，仍不兼容 → 再禁用 + 如实报，不假称已处理
+                                    var stillBad = await Task.Run(
+                                        () => ModCompatibilityChecker.FindIncompatible(checkModsDir, checkGameVersion, ct: preCts.Token), preCts.Token);
+                                    if (!preCts.IsCancellationRequested && stillBad.Count > 0)
+                                    {
+                                        var stillDisabled = ModCompatibilityChecker.DisableIncompatible(checkModsDir, checkGameVersion, stillBad);
+                                        foreach (var sb in stillDisabled)
+                                            AppendLog($"§ 复检仍发现 {sb.Id} 不兼容（需要 {sb.DeclaredRange}，游戏 {sb.GameVersion}），已停用");
+                                        NotificationService.Error($"复检发现 {stillBad.Count} 个模组替换后仍不兼容，已停用：{string.Join("、", stillBad.Select(m => m.Id))}");
+                                        LaunchStatus = $"仍有 {stillBad.Count} 个不兼容模组，已停用";
+                                    }
+                                    else if (!preCts.IsCancellationRequested)
+                                    {
+                                        LaunchStatus = "不兼容模组已处理，正在启动…";
+                                    }
                                 }
                             }
                         }
@@ -1081,8 +1095,19 @@ public partial class HomeViewModel : ViewModelBase
             foreach (var r in replace.Replaced) AppendLog($"§ 已自动替换 {r}");
             foreach (var d in replace.DisabledOnly) AppendLog($"§ {d}，已停用");
         }
-        // 8-29 缺失前置兜底：日志没说出明细，但 jar 直读有实锤 → 装前置 / 禁用依赖方，别空手宣称修复
+        // 8-29 复检（溯源约定：修复必带复检）：替换后重扫 minecraft 兼容，仍不兼容 → 再禁用，别让下次启动又崩
         var modsDir = Path.Combine(ModRepairService.InstanceRoot(gameDir, version.Name), "mods");
+        if (Directory.Exists(modsDir) && ModCompatibilityChecker.FindIncompatible(modsDir, gv) is { Count: > 0 } stillBad)
+        {
+            var stillDisabled = ModCompatibilityChecker.DisableIncompatible(modsDir, gv, stillBad);
+            foreach (var sb in stillDisabled)
+            {
+                AppendLog($"§ 复检仍发现 {sb.Id} 不兼容（需要 {sb.DeclaredRange}），已停用");
+                result += $"；已停用 {sb.Id}";
+                didSomething = true;
+            }
+        }
+        // 8-29 缺失前置兜底：日志没说出明细，但 jar 直读有实锤 → 装前置 / 禁用依赖方，别空手宣称修复
         var missing = Directory.Exists(modsDir) ? ModCompatibilityChecker.FindMissingDependencies(modsDir) : [];
         if (missing.Count > 0)
         {

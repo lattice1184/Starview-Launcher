@@ -124,4 +124,46 @@ public class AutoRepairServiceTests
         var bad = await AutoRepairService.VerifyFilesAsync(withBadSha1, gameDir, verifyHashes: true);
         Assert.Equal(0, bad.VerifiedByHash); // 哈希不符 → 0 通过（存在性仍完整）
     }
+
+    // ---- 8-29 溯源锁死：Fabric 26.x 冲突明细只在报错屏幕、不落盘 → 日志提取必空 ----
+    // 这是已知限制的断言（不是 bug）：若未来有人以为日志提取可靠而删掉 jar 直读兜底，此测试会先红。
+    // 真实案例：launch-20260829-085357.log 里只有 FormattedException 标题 + 堆栈（latest.log 同构），
+    // 提取空 → 修复必须走 FindMissingDependencies（jar 直读 fabric.mod.json）兜底。
+
+    [Fact]
+    public void ExtractConflictingModIdsFromText_Fabric26StackOnly_ReturnsEmpty()
+    {
+        // 085357 实锤：Fabric 26.x 崩溃只在报错屏幕展示明细，日志里仅标题 + 堆栈
+        var text = """
+            net.fabricmc.loader.impl.FormattedException: Some of your mods are incompatible with the game or each other!
+            	at net.fabricmc.loader.impl.FormattedException.ofLocalized(FormattedException.java:51)
+            	at net.fabricmc.loader.impl.FabricLoaderImpl.load(FabricLoaderImpl.java:202)
+            """;
+        // 已知限制：提不出任何 id → 绝不能据此宣称「修复完成」；必须走 jar 直读兜底
+        Assert.Empty(AutoRepairService.ExtractConflictingModIdsFromText(text));
+    }
+
+    [Fact]
+    public void ExtractConflictingModIdsFromText_DetailTuple_ExtractsId()
+    {
+        // 明细行存在时（旧格式 / 有 '名' (id) 元组）能提出 id——证明提取只在「明细缺失」时不可靠
+        var text = """
+            Some of your mods are incompatible with the game or each other!
+            A possible solution was found:
+            - Install malilib 0.28.10-0.29.0
+            More info:
+            - Mod 'MiniHUD' (minihud) 0.39.9 requires malilib 0.28.10-0.29.0, which is not installed!
+            """;
+        var ids = AutoRepairService.ExtractConflictingModIdsFromText(text);
+        Assert.Contains("minihud", ids);
+    }
+
+    [Fact]
+    public void ExtractConflictingModIdsFromText_KeywordDiagnosticLine_ExtractsId()
+    {
+        // 8-26 补的新版 loader 诊断行（无引号括号）：关键字后第一个 token 即 mod id
+        var text = "HARD_DEP_INCOMPATIBLE_PRESELECTED entityculling 1.7.3 {depends minecraft @ [1.21.x]}";
+        var ids = AutoRepairService.ExtractConflictingModIdsFromText(text);
+        Assert.Contains("entityculling", ids);
+    }
 }
