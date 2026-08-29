@@ -38,6 +38,9 @@ public static class ModCompatibilityChecker
     /// <summary>会话级扫描缓存（8-27 加速）：键 = modsDir|gameVersion|jar 指纹。mods 未变则复用上次结果，
     /// 跳过 zip 读取（反复启动/调试秒过预检）。静态 = 本次运行内存；超过 32 条整体清空防累积。</summary>
     private static readonly ConcurrentDictionary<string, List<IncompatibleMod>> ScanCache = new();
+    /// <summary>缺失前置缓存（8-29）：键 = modsDir|jar 指纹（与版本无关）。目录未变复用，启动预检不全量重扫——
+    /// 8-29 牵连修复：FindMissingDependencies 初版无缓存，每次启动全量重读所有 jar，大 mods 目录拖慢加载。</summary>
+    private static readonly ConcurrentDictionary<string, List<MissingDependency>> MissingCache = new();
     private const int CacheCap = 32;
 
     /// <summary>
@@ -139,6 +142,11 @@ public static class ModCompatibilityChecker
             .ToList();
         if (jars.Count == 0) return [];
 
+        // 指纹缓存：目录未变 → 复用上次结果，跳过全部 zip 读取（启动预检不全量重扫）
+        var fingerprint = BuildFingerprint(jars);
+        var cacheKey = $"{modsDir}{fingerprint}";
+        if (MissingCache.TryGetValue(cacheKey, out var cached)) return cached;
+
         // 第一遍：收集已提供的 id + 是否装了 fabric-api 捆绑包
         var provided = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var fabricApiBundled = false;
@@ -172,6 +180,8 @@ public static class ModCompatibilityChecker
                     id!, Path.GetFileName(jar), depId, string.IsNullOrWhiteSpace(range) ? "任意版本" : range));
             }
         }
+        if (MissingCache.Count >= CacheCap) MissingCache.Clear();
+        MissingCache[cacheKey] = missing;
         return missing;
     }
 

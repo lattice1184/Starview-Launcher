@@ -292,4 +292,18 @@ public class ModCompatibilityCheckerTests
         Assert.Empty(ModCompatibilityChecker.FindMissingDependencies(dir));
         Assert.Empty(ModCompatibilityChecker.FindMissingDependencies(Path.Combine(dir, "nope")));
     }
+
+    [Fact]
+    public void FindMissingDependencies_ModsChanged_RevalidatesCache()
+    {
+        // 8-29 缓存正确性：目录变化（指纹变）→ 缓存失效重扫，绝不返回 stale 缺失清单
+        var dir = NewModsDir();
+        WriteFabricModJarDepends(Path.Combine(dir, "minihud.jar"), "minihud",
+            "{\"minecraft\":\"[26.1.x]\",\"malilib\":\"0.28.10-0.29.0\"}");
+        Assert.Single(ModCompatibilityChecker.FindMissingDependencies(dir)); // 首次扫描入缓存
+
+        // 装上 malilib → 指纹变 → 重扫 → 不再报缺失（缓存没毒化后续启动）
+        WriteFabricModJar(Path.Combine(dir, "malilib.jar"), "malilib", ">=26.1 <26.2");
+        Assert.Empty(ModCompatibilityChecker.FindMissingDependencies(dir));
+    }
 }
