@@ -1584,6 +1584,38 @@ public sealed class DownloadService
         catch (Exception) { return false; }
     }
 
+    // ---------- meta 查询竞速（8-29：72s 空档根因是版本 json/loader profile 裸单源拉取） ----------
+
+    /// <summary>
+    /// 多源竞速拉取文本（JSON 类小响应）：所有候选同时发起，先成功者返回；单候选走原裸路径（零开销）。
+    /// 版本 json（piston-meta）、loader profile json（meta.fabricmc.net）此前用 _http.GetStringAsync 单源裸拉，
+    /// 国内到官方 10-70s——现在给这些 meta 查询加 bmclapi2 等镜像竞速，砍掉下载/加载版本的前置卡顿。
+    /// </summary>
+    public async Task<string> RaceTextAsync(IReadOnlyList<string> candidates, CancellationToken ct)
+    {
+        if (candidates.Count <= 1)
+            return await _http.GetStringAsync(candidates[0], ct);
+
+        var pending = new List<Task<string>>(candidates.Count);
+        foreach (var url in candidates)
+            pending.Add(FetchTextOneAsync(url, ct));
+        Exception? last = null;
+        while (pending.Count > 0)
+        {
+            var done = await Task.WhenAny(pending);
+            pending.Remove(done);
+            try { return await done; }
+            catch (Exception ex) { last = ex; } // 该源失败 → 等下一个候选
+        }
+        throw last ?? new InvalidOperationException("无可用 meta 下载源");
+    }
+
+    private async Task<string> FetchTextOneAsync(string url, CancellationToken ct)
+    {
+        try { return await _http.GetStringAsync(url, ct); }
+        catch (Exception ex) { LogWrapper.Warn($"[下载] meta 候选失败 {ShortUrl(url)}: {ex.Message}"); throw; }
+    }
+
     // ---------- 版本编排 ----------
 
     /// <summary>

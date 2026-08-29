@@ -54,7 +54,7 @@ public sealed class VersionInstaller
         if (string.IsNullOrEmpty(manifestUrl))
             throw new InvalidOperationException($"版本 {id} 缺少清单下载地址");
 
-        var json = await _http.GetStringAsync(manifestUrl, ct);
+        var json = await _downloads.RaceTextAsync(VersionJsonCandidates(manifestUrl, safeId), ct);
         Directory.CreateDirectory(Path.GetDirectoryName(jsonPath)!);
         await File.WriteAllTextAsync(jsonPath, json, ct);
         // AL42：预取 json 打标记——仅供加载器继承用，版本页不显示该条目
@@ -88,7 +88,7 @@ public sealed class VersionInstaller
         if (string.IsNullOrEmpty(manifestUrl))
             throw new InvalidOperationException($"版本 {id} 缺少清单下载地址");
 
-        var json = await _http.GetStringAsync(manifestUrl, ct);
+        var json = await _downloads.RaceTextAsync(VersionJsonCandidates(manifestUrl, safeId), ct);
         return JsonSerializer.Deserialize<VersionJson>(json)
             ?? throw new InvalidDataException($"版本 JSON 解析失败: {id}");
     }
@@ -158,6 +158,10 @@ public sealed class VersionInstaller
 
     /// <summary>路径安全化：拒绝 .. 与分隔符（与启动管道一致）</summary>
     public static string SafeId(string id) => id.Replace("..", "").Replace('/', '_').Replace('\\', '_');
+
+    /// <summary>版本 json 竞速候选（8-29）：官方 piston-meta + bmclapi2 镜像。裸单源拉官方 72s 空档根因。</summary>
+    private static string[] VersionJsonCandidates(string manifestUrl, string safeId)
+        => [manifestUrl, $"https://bmclapi2.bangbang93.com/version/{safeId}/json"];
 
     /// <summary>
     /// AL41/AL42 删除完整性：沿 inheritsFrom 链清理「预取残留」的父版本目录。

@@ -109,4 +109,48 @@ public class MirrorRaceTests
         }
         finally { if (File.Exists(dest)) File.Delete(dest); }
     }
+
+    // ---- 8-29 RaceTextAsync：meta 查询（版本 json / loader profile）多源竞速 ----
+
+    [Fact]
+    public async Task RaceText_FastCandidateWins()
+    {
+        // 官方 600ms、镜像 20ms → 取镜像内容（72s 空档根因：此前裸单源拉官方）
+        var handler = new DelayedStubHandler();
+        handler.Route("piston-meta.mojang.com/v1/packages/abc/26.1.2.json", 600, 200, "OFFICIAL"u8.ToArray());
+        handler.Route("bmclapi2.bangbang93.com/version/26.1.2/json", 20, 200, "MIRROR"u8.ToArray());
+        var svc = CreateService(handler);
+
+        var text = await svc.RaceTextAsync(
+            ["https://piston-meta.mojang.com/v1/packages/abc/26.1.2.json",
+             "https://bmclapi2.bangbang93.com/version/26.1.2/json"], CancellationToken.None);
+
+        Assert.Equal("MIRROR", text); // 快源赢，不被慢官方拖住
+    }
+
+    [Fact]
+    public async Task RaceText_FirstFails_FallsToNext()
+    {
+        var handler = new DelayedStubHandler();
+        handler.Route("meta.fabricmc.net/v2/versions/loader/26.1.2/0.19.5/profile/json", 10, 500, []);
+        handler.Route("bmclapi2.bangbang93.com/fabric-meta/v2/versions/loader/26.1.2/0.19.5/profile/json", 10, 200, "PROFILE"u8.ToArray());
+        var svc = CreateService(handler);
+
+        var text = await svc.RaceTextAsync(
+            ["https://meta.fabricmc.net/v2/versions/loader/26.1.2/0.19.5/profile/json",
+             "https://bmclapi2.bangbang93.com/fabric-meta/v2/versions/loader/26.1.2/0.19.5/profile/json"], CancellationToken.None);
+
+        Assert.Equal("PROFILE", text); // 首个 500 → 等下一个候选
+    }
+
+    [Fact]
+    public async Task RaceText_SingleCandidate_DirectPassThrough()
+    {
+        var handler = new DelayedStubHandler();
+        handler.Route("only.example.com/a.json", 10, 200, "ONLY"u8.ToArray());
+        var svc = CreateService(handler);
+
+        var text = await svc.RaceTextAsync(["https://only.example.com/a.json"], CancellationToken.None);
+        Assert.Equal("ONLY", text); // 单候选直通，零竞速开销
+    }
 }

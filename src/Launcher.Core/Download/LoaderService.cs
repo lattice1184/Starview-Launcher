@@ -548,7 +548,7 @@ public sealed class LoaderService
             try { return await File.ReadAllTextAsync(cachePath, ct); }
             catch { /* 损坏则重拉 */ }
         }
-        var json = await _http.GetStringAsync(plan.ProfileJsonUrl!, ct);
+        var json = await _downloads.RaceTextAsync(ProfileJsonCandidates(plan.ProfileJsonUrl!), ct);
         try
         {
             Directory.CreateDirectory(cacheDir);
@@ -557,6 +557,13 @@ public sealed class LoaderService
         catch { /* 缓存失败不影响安装 */ }
         return json;
     }
+
+    /// <summary>profile json 竞速候选（8-29）：fabric 加 bmclapi2 fabric-meta 镜像——meta 裸单源 2-26s 卡顿根因
+    /// （与 8-22 加载器下拉镜像同源）。quilt/其它保持单候选（无镜像不强行加）。</summary>
+    private static string[] ProfileJsonCandidates(string url)
+        => url.StartsWith("https://meta.fabricmc.net/", StringComparison.Ordinal)
+            ? [url, url.Replace("https://meta.fabricmc.net/", "https://bmclapi2.bangbang93.com/fabric-meta/")]
+            : [url];
 
     /// <summary>AL29 H3/H6 补位：安装完成 != 文件完整——安装器内部下载（Forge/NeoForge）与
     /// 下载阶段静默跳过（Fabric/Quilt）都沿版本 json 全量校验，缺失如实报错（与 VersionInstaller 同口径）。</summary>
