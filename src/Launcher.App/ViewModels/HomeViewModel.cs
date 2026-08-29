@@ -732,42 +732,88 @@ public partial class HomeViewModel : ViewModelBase
                     }
                     catch (OperationCanceledException) { /* 用户跳过 → 当无结果 */ }
 
-                    if (!preCts.IsCancellationRequested && incompatible.Count == 0)
+                    // 8-29 缺失前置检测（minihud 缺 malilib 实锤）：minecraft 版本匹配 ≠ 能启动——
+                    // 模组间硬前置缺失照样崩 Fabric 报错页。jar 直读元数据，不靠日志（Fabric 26.x 明细只在屏幕）。
+                    List<ModCompatibilityChecker.MissingDependency> missingDeps = [];
+                    if (!preCts.IsCancellationRequested)
+                    {
+                        try
+                        {
+                            missingDeps = await Task.Run(
+                                () => ModCompatibilityChecker.FindMissingDependencies(checkModsDir, preCts.Token), preCts.Token);
+                        }
+                        catch (OperationCanceledException) { /* 用户跳过 → 当无结果 */ }
+                    }
+
+                    if (!preCts.IsCancellationRequested && incompatible.Count == 0 && missingDeps.Count == 0)
                     {
                         // 可见证据：无冲突也报告检查结果（回应「没看出来检查跑没跑」）
-                        AppendLog($"§ 模组兼容检查：游戏版本 {checkGameVersion}，共 {modCount} 个模组，无冲突");
+                        AppendLog($"§ 模组兼容检查：游戏版本 {checkGameVersion}，共 {modCount} 个模组，未发现冲突或缺失前置");
                     }
                     else if (!preCts.IsCancellationRequested)
                     {
-                        // 8-26 自动修复升级：不止停用——先停用旧 jar 保证即使下载失败也能启动，再下载兼容版替换
-                        // （找不到适配版/下载失败才维持停用）。gameVersion 用解析过的真值（loader 名解析不出会装错版）。
-                        AppendLog($"§ 模组兼容检查：游戏版本 {checkGameVersion}，发现 {incompatible.Count} 个不兼容模组，自动修复中…");
-                        // 8-27 复用已扫结果禁用（DisableIncompatible 不再内部重扫一遍）
-                        List<ModCompatibilityChecker.IncompatibleMod> disabled = [];
-                        try
+                        var loader = version.LoaderBadge.Length > 0 ? version.LoaderBadge : EcosystemService.GuessLoader(version.Name);
+                        // 1) 与游戏版本不兼容 → 先停用旧 jar（保证即使下载失败也能启动），再下载兼容版替换
+                        if (incompatible.Count > 0)
                         {
-                            disabled = await Task.Run(() => ModCompatibilityChecker.DisableIncompatible(checkModsDir, checkGameVersion, incompatible, preCts.Token), preCts.Token);
-                        }
-                        catch (OperationCanceledException) { /* 取消中途禁用 → 跳过 */ }
-                        if (!preCts.IsCancellationRequested)
-                        {
-                            foreach (var m in disabled)
-                                AppendLog($"§ 已停用不兼容模组 {m.Id}（需要 {m.DeclaredRange}，游戏 {m.GameVersion}）");
-                            var loader = version.LoaderBadge.Length > 0 ? version.LoaderBadge : EcosystemService.GuessLoader(version.Name);
-                            AppendLog("§ 正在下载兼容版本替换（下载中心可见进度）…");
-                            var replace = await ModRepairFlow.TryReplaceModsAsync(
-                                gameDir, version.Name, checkGameVersion, loader, disabled.Select(m => m.Id).ToList(), preCts.Token);
+                            // 8-26 自动修复升级：不止停用——下载兼容版（找不到适配版/下载失败才维持停用）
+                            AppendLog($"§ 模组兼容检查：游戏版本 {checkGameVersion}，发现 {incompatible.Count} 个不兼容模组，自动修复中…");
+                            // 8-27 复用已扫结果禁用（DisableIncompatible 不再内部重扫一遍）
+                            List<ModCompatibilityChecker.IncompatibleMod> disabled = [];
+                            try
+                            {
+                                disabled = await Task.Run(() => ModCompatibilityChecker.DisableIncompatible(checkModsDir, checkGameVersion, incompatible, preCts.Token), preCts.Token);
+                            }
+                            catch (OperationCanceledException) { /* 取消中途禁用 → 跳过 */ }
                             if (!preCts.IsCancellationRequested)
                             {
-                                foreach (var r in replace.Replaced)
-                                    AppendLog($"§ 已自动替换 {r}，正在启动…");
-                                foreach (var d in replace.DisabledOnly)
-                                    AppendLog($"§ {d}，已停用");
-                                if (replace.Replaced.Count > 0)
-                                    NotificationService.Success($"已自动修复：{string.Join("、", replace.Replaced)}", 5000);
-                                if (replace.DisabledOnly.Count > 0)
-                                    NotificationService.Error($"已停用无适配版：{string.Join("、", replace.DisabledOnly)}");
-                                LaunchStatus = "不兼容模组已处理，正在启动…";
+                                foreach (var m in disabled)
+                                    AppendLog($"§ 已停用不兼容模组 {m.Id}（需要 {m.DeclaredRange}，游戏 {m.GameVersion}）");
+                                AppendLog("§ 正在下载兼容版本替换（下载中心可见进度）…");
+                                var replace = await ModRepairFlow.TryReplaceModsAsync(
+                                    gameDir, version.Name, checkGameVersion, loader, disabled.Select(m => m.Id).ToList(), preCts.Token);
+                                if (!preCts.IsCancellationRequested)
+                                {
+                                    foreach (var r in replace.Replaced)
+                                        AppendLog($"§ 已自动替换 {r}，正在启动…");
+                                    foreach (var d in replace.DisabledOnly)
+                                        AppendLog($"§ {d}，已停用");
+                                    if (replace.Replaced.Count > 0)
+                                        NotificationService.Success($"已自动修复：{string.Join("、", replace.Replaced)}", 5000);
+                                    if (replace.DisabledOnly.Count > 0)
+                                        NotificationService.Error($"已停用无适配版：{string.Join("、", replace.DisabledOnly)}");
+                                    LaunchStatus = "不兼容模组已处理，正在启动…";
+                                }
+                            }
+                        }
+                        // 2) 缺失前置 → 自动安装缺失的前置；装失败的禁用其依赖方（否则启动仍崩报错页）
+                        if (missingDeps.Count > 0)
+                        {
+                            var depIds = missingDeps.Select(m => m.DepId).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+                            foreach (var m in missingDeps)
+                                AppendLog($"§ 检测到 {m.DependentModId} 缺少前置 {m.DepId}（需要 {m.RequiredRange}），自动安装…");
+                            AppendLog("§ 正在下载缺失前置（下载中心可见进度）…");
+                            var depReplace = await ModRepairFlow.TryReplaceModsAsync(
+                                gameDir, version.Name, checkGameVersion, loader, depIds, preCts.Token);
+                            if (!preCts.IsCancellationRequested)
+                            {
+                                foreach (var r in depReplace.Replaced)
+                                    AppendLog($"§ 已自动安装前置 {r}");
+                                foreach (var d in depReplace.DisabledOnly)
+                                    AppendLog($"§ 前置安装失败：{d}");
+                                // 重扫仍缺失的 = 装失败的前置 → 禁用其依赖方（保证能启动，不崩 Fabric）
+                                var stillMissing = ModCompatibilityChecker.FindMissingDependencies(checkModsDir);
+                                foreach (var sm in stillMissing)
+                                {
+                                    var depJar = Path.Combine(checkModsDir, sm.DependentFileName);
+                                    if (!File.Exists(depJar)) continue;
+                                    try
+                                    {
+                                        File.Move(depJar, depJar + ".disabled");
+                                        AppendLog($"§ 前置 {sm.DepId} 安装失败，已禁用依赖方 {sm.DependentModId}，避免启动报错");
+                                    }
+                                    catch { /* 单个禁用失败不阻断 */ }
+                                }
                             }
                         }
                     }
@@ -971,7 +1017,8 @@ public partial class HomeViewModel : ViewModelBase
     }
 
     /// <summary>AL9 自修复：诊断日志 → 命中可自动修复项（Redownload/ReExtractNatives/DisableConflictingMods）→ 执行修复。
-    /// 返回 true 表示修复成功（调用方负责自动重新启动一次）；AdviceOnly 或修复失败返回 false。</summary>
+    /// 返回 true 表示修复成功（调用方负责自动重新启动一次）；AdviceOnly / 修复失败 / 空手而归返回 false。
+    /// 8-29 诚实化：没实际处理任何东西就不返回 true——否则调用方自动重启一次又崩，正是「自动修复说修好没实行」。</summary>
     private async Task<bool> TryAutoFixAsync(VersionInstanceVM version, string gameDir, string diagText)
     {
         var hit = LogDiagnostics.DiagnoseDetailed(diagText)
@@ -980,17 +1027,28 @@ public partial class HomeViewModel : ViewModelBase
         AppendLog($"§ 检测到问题：{hit.Explanation}，正在自动修复…");
         try
         {
-            var result = hit.Fix switch
+            if (hit.Fix == FixKind.DisableConflictingMods)
             {
-                FixKind.ReExtractNatives => AutoRepairService.FixNatives(version.Name, gameDir),
-                // 8-23 模组版本不匹配：禁用冲突模组（纯本地改名，秒级）——无需下载队列。
                 // 8-26 修：不传 diagText（null → 走 ExtractConflictingModIds 读游戏自身 latest.log）——
                 // 启动器控制台/launch-*.log 被 IsKeyLine 过滤掉 INFO 级冲突明细，传过滤后文本恒提取不到 id
-                // 8-26 升级：停用后再下载兼容版替换（自动修复=换成正确版本，不止停用）
-                FixKind.DisableConflictingMods => await FixConflictsWithReplaceAsync(version, gameDir),
-                _ => await AutoRepairService.FixRedownloadAsync(version.Name, gameDir),
-            };
-            AppendLog($"§ 自动修复完成：{result}");
+                var (text, didSomething) = await FixConflictsWithReplaceAsync(version, gameDir);
+                if (didSomething)
+                    AppendLog($"§ 自动修复完成：{text}");
+                else
+                {
+                    AppendLog($"§ 未发现可自动修复项（{text}）");
+                    return false;
+                }
+            }
+            else
+            {
+                var result = hit.Fix switch
+                {
+                    FixKind.ReExtractNatives => AutoRepairService.FixNatives(version.Name, gameDir),
+                    _ => await AutoRepairService.FixRedownloadAsync(version.Name, gameDir),
+                };
+                AppendLog($"§ 自动修复完成：{result}");
+            }
             // AL57.1 模组缺失自愈（自动路径）：无人值守直接补全，不弹确认框（弹框与崩溃窗模态冲突 + 破坏全自动语义）
             var hadMissing = await ModRepairFlow.TryRepairAsync(gameDir, version.Name, null, requireConfirm: false);
             if (hadMissing) AppendLog("§ 已检查缺失前置模组并自动补全（详见下载中心）");
@@ -1004,15 +1062,18 @@ public partial class HomeViewModel : ViewModelBase
     }
 
     /// <summary>8-26 崩溃冲突修复升级：停用冲突模组（FixConflictingMods，读游戏自身 latest.log 提取 id）后，
-    /// 再下载兼容版替换（自动修复 = 换成正确版本，不是只停用）。返回组合描述。</summary>
-    private async Task<string> FixConflictsWithReplaceAsync(VersionInstanceVM version, string gameDir)
+    /// 再下载兼容版替换（自动修复 = 换成正确版本，不是只停用）。
+    /// 8-29 兜底（同类问题）：Fabric 26.x 冲突明细只在报错屏幕（latest.log 只有堆栈标题），日志提取常为空 →
+    /// 回退 jar 直读缺失前置（minihud 缺 malilib 场景），装前置 / 禁用依赖方。返回（描述, 是否实际处理了东西）。</summary>
+    private async Task<(string Text, bool DidSomething)> FixConflictsWithReplaceAsync(VersionInstanceVM version, string gameDir)
     {
+        var gv = ResolveCheckGameVersion(version, gameDir);
+        var loader = version.LoaderBadge.Length > 0 ? version.LoaderBadge : EcosystemService.GuessLoader(version.Name);
         var result = AutoRepairService.FixConflictingMods(gameDir, version.Name, null);
+        var didSomething = !result.StartsWith("日志中未识别到明确的冲突模组", StringComparison.Ordinal);
         var conflictIds = AutoRepairService.ExtractConflictingModIds(gameDir, version.Name);
         if (conflictIds.Count > 0)
         {
-            var gv = ResolveCheckGameVersion(version, gameDir);
-            var loader = version.LoaderBadge.Length > 0 ? version.LoaderBadge : EcosystemService.GuessLoader(version.Name);
             AppendLog($"§ 正在下载兼容版本替换（下载中心可见进度）…");
             var replace = await ModRepairFlow.TryReplaceModsAsync(gameDir, version.Name, gv, loader, conflictIds);
             if (replace.Replaced.Count > 0)
@@ -1020,7 +1081,41 @@ public partial class HomeViewModel : ViewModelBase
             foreach (var r in replace.Replaced) AppendLog($"§ 已自动替换 {r}");
             foreach (var d in replace.DisabledOnly) AppendLog($"§ {d}，已停用");
         }
-        return result;
+        // 8-29 缺失前置兜底：日志没说出明细，但 jar 直读有实锤 → 装前置 / 禁用依赖方，别空手宣称修复
+        var modsDir = Path.Combine(ModRepairService.InstanceRoot(gameDir, version.Name), "mods");
+        var missing = Directory.Exists(modsDir) ? ModCompatibilityChecker.FindMissingDependencies(modsDir) : [];
+        if (missing.Count > 0)
+        {
+            if (!didSomething) result = "检测到缺失模组前置"; // 日志没说出来，jar 直读有实锤
+            var depIds = missing.Select(m => m.DepId).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            foreach (var m in missing)
+                AppendLog($"§ 检测到 {m.DependentModId} 缺少前置 {m.DepId}（需要 {m.RequiredRange}），自动安装…");
+            AppendLog("§ 正在下载缺失前置（下载中心可见进度）…");
+            var depReplace = await ModRepairFlow.TryReplaceModsAsync(gameDir, version.Name, gv, loader, depIds);
+            foreach (var r in depReplace.Replaced)
+            {
+                AppendLog($"§ 已自动安装前置 {r}");
+                result += $"；已补装前置 {r}";
+                didSomething = true;
+            }
+            foreach (var d in depReplace.DisabledOnly) AppendLog($"§ 前置安装失败：{d}");
+            // 装失败的前置 → 禁用其依赖方（否则自动重启还是崩报错页）
+            var stillMissing = ModCompatibilityChecker.FindMissingDependencies(modsDir);
+            foreach (var sm in stillMissing)
+            {
+                var depJar = Path.Combine(modsDir, sm.DependentFileName);
+                if (!File.Exists(depJar)) continue;
+                try
+                {
+                    File.Move(depJar, depJar + ".disabled");
+                    AppendLog($"§ 前置 {sm.DepId} 安装失败，已禁用依赖方 {sm.DependentModId}，避免启动报错");
+                    result += $"；已禁用 {sm.DependentModId}";
+                    didSomething = true;
+                }
+                catch { /* 单个禁用失败不阻断 */ }
+            }
+        }
+        return (result, didSomething);
     }
 
     [RelayCommand]

@@ -20,6 +20,21 @@ public static class ModCompatibilityChecker
     /// <summary>不兼容 mod 信息</summary>
     public sealed record IncompatibleMod(string Id, string FileName, string DeclaredRange, string GameVersion);
 
+    /// <summary>缺失前置信息（8-29）：DependentModId 依赖方（缺前置的那个 mod），DepId 缺失的前置，RequiredRange 需要区间。</summary>
+    public sealed record MissingDependency(string DependentModId, string DependentFileName, string DepId, string RequiredRange);
+
+    /// <summary>加载器 / 游戏环境内置、不需要 mod jar 提供的 depends 键——永不报缺失。</summary>
+    private static readonly HashSet<string> LoaderProvided = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "minecraft", "fabricloader", "quilt_loader", "java", "fml", "forge", "neoforge", "loader", "quilted_fabric_api",
+    };
+
+    /// <summary>独立安装的 Fabric 语言前置（fabric-api 捆绑不覆盖，单独 jar）——允许报缺失。</summary>
+    private static readonly HashSet<string> FabricStandaloneDeps = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "fabric-language-kotlin", "fabric-language-scala",
+    };
+
     /// <summary>会话级扫描缓存（8-27 加速）：键 = modsDir|gameVersion|jar 指纹。mods 未变则复用上次结果，
     /// 跳过 zip 读取（反复启动/调试秒过预检）。静态 = 本次运行内存；超过 32 条整体清空防累积。</summary>
     private static readonly ConcurrentDictionary<string, List<IncompatibleMod>> ScanCache = new();
@@ -108,10 +123,75 @@ public static class ModCompatibilityChecker
         return Directory.EnumerateFiles(modsDir, "*.jar").Count(f => !f.EndsWith(".disabled", StringComparison.OrdinalIgnoreCase));
     }
 
-    /// <summary>读 jar（zip）内 fabric.mod.json 的 id + depends.minecraft；非 Fabric 模组 / 无 id / 读失败返回 false。</summary>
+    /// <summary>
+    /// 扫 mods 目录（排除 .disabled），找出「装了但缺模组前置」的组合（8-29：minihud 缺 malilib 实锤——
+    /// 预检只查 depends.minecraft 版本不匹配，模组间硬前置缺失完全看不见，游戏直接崩到 Fabric 报错页）。
+    /// provider = 所有启用 jar 的 id + 加载器内置键；装了 fabric-api/quilted_fabric_api/qsl 时其捆绑的
+    /// fabric-* 模块视为已提供（fabric-language-kotlin/scala 独立 jar 除外）。.disabled 的 jar 不算已提供
+    /// （禁用即未加载，缺它就必须报）。保守：读不出 / 无 depends 不误报。单 jar 只读元数据，毫秒级。
+    /// </summary>
+    public static List<MissingDependency> FindMissingDependencies(string modsDir, CancellationToken ct = default)
+    {
+        if (!Directory.Exists(modsDir)) return [];
+        var jars = Directory.EnumerateFiles(modsDir, "*.jar")
+            .Where(f => !f.EndsWith(".disabled", StringComparison.OrdinalIgnoreCase))
+            .OrderBy(f => f, StringComparer.Ordinal)
+            .ToList();
+        if (jars.Count == 0) return [];
+
+        // 第一遍：收集已提供的 id + 是否装了 fabric-api 捆绑包
+        var provided = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var fabricApiBundled = false;
+        foreach (var jar in jars)
+        {
+            ct.ThrowIfCancellationRequested();
+            if (TryReadFabricDeps(jar, out var id, out _) && !string.IsNullOrWhiteSpace(id))
+            {
+                provided.Add(id);
+                if (id.Equals("fabric-api", StringComparison.OrdinalIgnoreCase)
+                    || id.Equals("quilted_fabric_api", StringComparison.OrdinalIgnoreCase)
+                    || id.Equals("qsl", StringComparison.OrdinalIgnoreCase))
+                    fabricApiBundled = true;
+            }
+        }
+        provided.UnionWith(LoaderProvided);
+
+        // 第二遍：每 jar 的 mod 前置里挑缺失的
+        var missing = new List<MissingDependency>();
+        foreach (var jar in jars)
+        {
+            ct.ThrowIfCancellationRequested();
+            if (!TryReadFabricDeps(jar, out var id, out var depends) || string.IsNullOrWhiteSpace(id)) continue;
+            foreach (var (depId, range) in depends)
+            {
+                if (provided.Contains(depId)) continue;
+                // fabric-api 捆绑模块（fabric-api-base 等）在装有 fabric-api 时视为已提供；独立语言前置除外
+                if (fabricApiBundled && depId.StartsWith("fabric-", StringComparison.OrdinalIgnoreCase)
+                    && !FabricStandaloneDeps.Contains(depId)) continue;
+                missing.Add(new MissingDependency(
+                    id!, Path.GetFileName(jar), depId, string.IsNullOrWhiteSpace(range) ? "任意版本" : range));
+            }
+        }
+        return missing;
+    }
+
+    /// <summary>读 jar（zip）内 fabric.mod.json 的 id + depends.minecraft；非 Fabric 模组 / 无 id / 读失败返回 false。
+    /// 内部复用 TryReadFabricDeps（读整个 depends 对象），minecraft 值只取 String/Array（原语义），
+    /// 其它键为 ""（RangeAllows 空串 → 允许，不误报）——与旧实现行为一致。</summary>
     public static bool TryReadFabricMetadata(string jarPath, out string? id, out string? dependsMinecraft)
     {
         id = null; dependsMinecraft = null;
+        if (!TryReadFabricDeps(jarPath, out id, out var depends)) return false;
+        if (depends.TryGetValue("minecraft", out var v)) dependsMinecraft = v;
+        return id is not null; // 有 id 才算 Fabric 模组
+    }
+
+    /// <summary>读 jar（zip）内 fabric.mod.json 的 id + 整个 depends 对象（含 minecraft 与 mod 前置，大小写不敏感）。
+    /// 数组值逗号合并为 OR 列表；其它类型为 ""。非 Fabric 模组 / 无 id / 读失败返回 false。</summary>
+    public static bool TryReadFabricDeps(string jarPath, out string? id, out Dictionary<string, string> depends)
+    {
+        id = null;
+        depends = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         try
         {
             using var zip = ZipFile.OpenRead(jarPath);
@@ -121,18 +201,19 @@ public static class ModCompatibilityChecker
             using var doc = JsonDocument.Parse(reader.ReadToEnd());
             var root = doc.RootElement;
             if (root.TryGetProperty("id", out var idEl)) id = idEl.GetString();
-            if (root.TryGetProperty("depends", out var depEl)
-                && depEl.ValueKind == JsonValueKind.Object
-                && depEl.TryGetProperty("minecraft", out var mcEl))
+            if (root.TryGetProperty("depends", out var depEl) && depEl.ValueKind == JsonValueKind.Object)
             {
-                dependsMinecraft = mcEl.ValueKind switch
+                foreach (var p in depEl.EnumerateObject())
                 {
-                    JsonValueKind.String => mcEl.GetString(),
-                    // 数组 = 备选列表（任一允许即兼容），逗号合并后走 RangeAllows 的 OR 语义
-                    JsonValueKind.Array => string.Join(",", mcEl.EnumerateArray()
-                        .Where(e => e.ValueKind == JsonValueKind.String).Select(e => e.GetString())),
-                    _ => null,
-                };
+                    depends[p.Name] = p.Value.ValueKind switch
+                    {
+                        JsonValueKind.String => p.Value.GetString() ?? "",
+                        // 数组 = 备选列表（任一满足即可），逗号合并供调用方 OR 语义
+                        JsonValueKind.Array => string.Join(",", p.Value.EnumerateArray()
+                            .Where(e => e.ValueKind == JsonValueKind.String).Select(e => e.GetString())),
+                        _ => "",
+                    };
+                }
             }
             return id is not null; // 有 id 才算 Fabric 模组
         }

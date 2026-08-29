@@ -18,6 +18,17 @@ public static class ModRepairFlow
     public static async Task<bool> TryRepairAsync(string gameDir, string instanceId, Window? owner, bool requireConfirm = true)
     {
         var missing = ModRepairService.ScanInstanceLogs(gameDir, instanceId);
+        // 8-29 兜底（同类问题）：Fabric 26.x 冲突明细只在报错屏幕，latest.log 只有堆栈标题常扫不出缺失 →
+        // 并集 jar 直读缺失前置（minihud 缺 malilib 场景）。ScanInstanceLogs 管「整个 mod 缺失」，
+        // jar 直读管「装了但缺前置」。去重防重复安装。
+        var modsDir = Path.Combine(ModRepairService.InstanceRoot(gameDir, instanceId), "mods");
+        if (Directory.Exists(modsDir))
+        {
+            // 大 mods 目录扫 jar 元数据放后台线程，别卡 UI（人工修复/崩溃窗入口在 UI 线程）
+            var jarMissing = await Task.Run(() =>
+                ModCompatibilityChecker.FindMissingDependencies(modsDir).Select(m => m.DepId).ToList());
+            missing = missing.Union(jarMissing, StringComparer.OrdinalIgnoreCase).ToList();
+        }
         if (missing.Count == 0) return false;
         var list = string.Join("、", missing.Take(5)) + (missing.Count > 5 ? "…" : "");
         if (requireConfirm)

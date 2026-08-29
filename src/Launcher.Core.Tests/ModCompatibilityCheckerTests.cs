@@ -63,13 +63,17 @@ public class ModCompatibilityCheckerTests
     }
 
     private static void WriteFabricModJar(string jarPath, string id, string depends)
+        => WriteFabricModJarDepends(jarPath, id, $"{{\"minecraft\":\"{depends}\"}}");
+
+    /// <summary>写带任意 depends 对象的 fabric mod jar（8-29 缺失前置检测用）：dependsJson 是整个 depends 的 JSON 对象文本。</summary>
+    private static void WriteFabricModJarDepends(string jarPath, string id, string dependsJson)
     {
         // ZipArchiveMode.Create 用 FileMode.CreateNew——重写已存在文件会抛 IOException，先删再写
         if (File.Exists(jarPath)) File.Delete(jarPath);
         using var zip = ZipFile.Open(jarPath, ZipArchiveMode.Create);
         var entry = zip.CreateEntry("fabric.mod.json");
         using var w = new StreamWriter(entry.Open());
-        w.Write(string.Format("{{\"schemaVersion\":1,\"id\":\"{0}\",\"version\":\"1.0.0\",\"depends\":{{\"minecraft\":\"{1}\"}}}}", id, depends));
+        w.Write($"{{\"schemaVersion\":1,\"id\":\"{id}\",\"version\":\"1.0.0\",\"depends\":{dependsJson}}}");
     }
 
     [Fact]
@@ -188,5 +192,104 @@ public class ModCompatibilityCheckerTests
         cts.Cancel(); // 预取消 → Parallel.ForEach / 循环内 ThrowIfCancellationRequested 抛 OCE
         Assert.Throws<OperationCanceledException>(() =>
             ModCompatibilityChecker.FindIncompatible(dir, "26.1.2", ct: cts.Token));
+    }
+
+    // ---- 8-29 缺失前置检测（minihud 缺 malilib 实锤场景）：依赖方缺 mod 前置 → 报缺失 ----
+
+    [Fact]
+    public void FindMissingDependencies_MiniHudWithoutMalilib_ReportsMissing()
+    {
+        // 8-29 实锤场景：MiniHUD 0.39.9 需要 malilib 0.28.10-0.29.0，目录没有 malilib →
+        // 预检此前只查 depends.minecraft（minihud 声明 26.x 匹配）→「无冲突」却崩到 Fabric 报错页
+        var dir = NewModsDir();
+        WriteFabricModJarDepends(Path.Combine(dir, "minihud.jar"), "minihud",
+            "{\"minecraft\":\"[26.1.x]\",\"malilib\":\"0.28.10-0.29.0\"}");
+
+        var missing = ModCompatibilityChecker.FindMissingDependencies(dir);
+
+        var item = Assert.Single(missing);
+        Assert.Equal("minihud", item.DependentModId);
+        Assert.Equal("minihud.jar", item.DependentFileName);
+        Assert.Equal("malilib", item.DepId);
+        Assert.Equal("0.28.10-0.29.0", item.RequiredRange);
+    }
+
+    [Fact]
+    public void FindMissingDependencies_DepInstalled_NoReport()
+    {
+        var dir = NewModsDir();
+        WriteFabricModJarDepends(Path.Combine(dir, "minihud.jar"), "minihud",
+            "{\"minecraft\":\"[26.1.x]\",\"malilib\":\"0.28.10-0.29.0\"}");
+        WriteFabricModJar(Path.Combine(dir, "malilib.jar"), "malilib", ">=26.1 <26.2");
+
+        Assert.Empty(ModCompatibilityChecker.FindMissingDependencies(dir));
+    }
+
+    [Fact]
+    public void FindMissingDependencies_FabricApiBundled_NoFalsePositive()
+    {
+        // 装了 fabric-api 时，它捆绑的 fabric-api-base 等模块不算缺失（fabric-api 单独 jar 提供全部模块）
+        var dir = NewModsDir();
+        WriteFabricModJar(Path.Combine(dir, "fabric-api.jar"), "fabric-api", ">=26.1 <26.2");
+        WriteFabricModJarDepends(Path.Combine(dir, "some-mod.jar"), "some-mod",
+            "{\"minecraft\":\"[26.1.x]\",\"fabric-api-base\":\"*\"}");
+
+        Assert.Empty(ModCompatibilityChecker.FindMissingDependencies(dir));
+    }
+
+    [Fact]
+    public void FindMissingDependencies_StandaloneLanguageDep_StillReports()
+    {
+        // fabric-language-kotlin 是独立 jar，fabric-api 捆绑不覆盖——缺它必须报
+        var dir = NewModsDir();
+        WriteFabricModJar(Path.Combine(dir, "fabric-api.jar"), "fabric-api", ">=26.1 <26.2");
+        WriteFabricModJarDepends(Path.Combine(dir, "kotlin-mod.jar"), "kotlin-mod",
+            "{\"minecraft\":\"[26.1.x]\",\"fabric-language-kotlin\":\">=1.10\"}");
+
+        var item = Assert.Single(ModCompatibilityChecker.FindMissingDependencies(dir));
+        Assert.Equal("fabric-language-kotlin", item.DepId);
+    }
+
+    [Fact]
+    public void FindMissingDependencies_DisabledDep_CountsMissing()
+    {
+        // .disabled 的前置没被加载 → 依赖它的启用 mod 仍然缺前置，必须报（否则又是「无冲突」崩掉）
+        var dir = NewModsDir();
+        WriteFabricModJarDepends(Path.Combine(dir, "minihud.jar"), "minihud",
+            "{\"minecraft\":\"[26.1.x]\",\"malilib\":\"0.28.10-0.29.0\"}");
+        WriteFabricModJar(Path.Combine(dir, "malilib.jar.disabled"), "malilib", ">=26.1 <26.2");
+
+        var item = Assert.Single(ModCompatibilityChecker.FindMissingDependencies(dir));
+        Assert.Equal("malilib", item.DepId);
+    }
+
+    [Fact]
+    public void FindMissingDependencies_DisabledDependent_NotScanned()
+    {
+        // 依赖方自己被禁用 → 不参与（它的前置缺不缺无所谓，没加载就不崩）
+        var dir = NewModsDir();
+        WriteFabricModJarDepends(Path.Combine(dir, "minihud.jar.disabled"), "minihud",
+            "{\"minecraft\":\"[26.1.x]\",\"malilib\":\"0.28.10-0.29.0\"}");
+
+        Assert.Empty(ModCompatibilityChecker.FindMissingDependencies(dir));
+    }
+
+    [Fact]
+    public void FindMissingDependencies_LoaderKeys_NeverReported()
+    {
+        // minecraft / fabricloader / java 是加载器内置，永不报缺失
+        var dir = NewModsDir();
+        WriteFabricModJarDepends(Path.Combine(dir, "m.jar"), "m",
+            "{\"minecraft\":\"[26.1.x]\",\"fabricloader\":\">=0.19\",\"java\":\">=21\"}");
+
+        Assert.Empty(ModCompatibilityChecker.FindMissingDependencies(dir));
+    }
+
+    [Fact]
+    public void FindMissingDependencies_EmptyOrMissingDir_ReturnsEmpty()
+    {
+        var dir = NewModsDir();
+        Assert.Empty(ModCompatibilityChecker.FindMissingDependencies(dir));
+        Assert.Empty(ModCompatibilityChecker.FindMissingDependencies(Path.Combine(dir, "nope")));
     }
 }
