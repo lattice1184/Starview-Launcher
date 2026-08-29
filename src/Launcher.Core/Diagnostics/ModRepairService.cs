@@ -132,25 +132,20 @@ public sealed class ModRepairService
                 // 2. 匹配当前实例可用的版本
                 var version = await _eco.FindBestVersionAsync(projectId, gameVersion, loader, ct);
                 if (version is null) { report.Failed.Add((id, "没有适配当前实例的版本")); continue; }
-                // 3. 下载补全到实例 mods 目录（gameDirOverride 保证落版本真实目录，ResolveInstallPath 内部处理）
-                if (ctx is null)
+                // 3. 安装主文件 + 递归解析并安装全部必需依赖（8-29 治本：此前只装主文件不带前置——
+                //    修复/替换链与正常生态安装（InstallWithDependenciesAsync）不一致，装任何 mod 都缺依赖树，
+                //    minihud 缺 malilib 正是这条链断掉的结果。现在统一递归安装，装一个带全）。
+                var install = await _eco.InstallWithDependenciesAsync(
+                    projectId, version, instanceId, ProjectType.Mod, gameVersion, loader, null, ct, gameDir, ctx);
+                if (install.Installed.All(x => x.ProjectId != projectId))
                 {
-                    await _eco.InstallAsync(projectId, version, instanceId, ProjectType.Mod, null, ct, gameDir);
+                    // 主文件没装上（失败记录在 install.Failed）→ 记失败，不误报「已补全」（REVIEW-A2 同源）
+                    report.Failed.Add((id, install.Failed.FirstOrDefault(f => f.ProjectId == projectId)?.Reason ?? "安装失败"));
+                    continue;
                 }
-                else
-                {
-                    var child = ctx.AddChild($"补全 {version.Name}", 0,
-                        (p, c) => _eco.InstallAsync(projectId, version, instanceId, ProjectType.Mod, p, c, gameDir));
-                    await child.Completion.WaitAsync(ct);
-                    // REVIEW-A2：Completion 只保证「任务已终态」——失败也完成。必须检查终态结果，
-                    // 否则下载失败（网络/404）被记入 Repaired → 误报「已补全」成功
-                    // （子任务是 IsGroupChild 无自动重试，失败即最终结果，错误完全静默）
-                    if (child.TerminalState != DownloadTaskState.Completed)
-                    {
-                        report.Failed.Add((id, child.Error ?? "补全下载失败"));
-                        continue;
-                    }
-                }
+                // 依赖没装全也如实报（前置缺失照样崩，别混进 Repaired 假成功）
+                foreach (var f in install.Failed)
+                    report.Failed.Add((f.ProjectId, $"{f.Reason}（依赖未装全）"));
                 report.Repaired.Add($"{version.Name} ({version.VersionNumber})");
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
