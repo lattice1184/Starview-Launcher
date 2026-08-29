@@ -25,6 +25,9 @@ public static class ImageLoader
     /// 8-26 内存真减：128→64（≈2.3MB 上限→1.1MB；磁盘兜底秒级重解，翻页体验无感）。</summary>
     private const int CacheMaxEntries = 64;
 
+    /// <summary>内存位图缓存张数（--mem-profile 诊断用，只读）</summary>
+    internal static int CacheCount => Cache.Count;
+
     public static Task LoadAsync(string? url, Action<Bitmap?> onLoaded, CancellationToken ct = default)
         => LoadAsync(url, onLoaded, 96, ct);
 

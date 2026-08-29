@@ -14,6 +14,8 @@ sealed class Program
     {
         if (Launcher.Core.Utils.AntiDebugGuard.ShouldExit()) return;
         Launcher.Core.Utils.AntiDebugGuard.ScheduleLateCheck(TimeSpan.FromSeconds(4));
+        // 8-29 内存诊断钩子：--mem-profile 开启定时/切页内存采样（默认关，dev 专用）
+        if (args.Contains("--mem-profile")) Services.MemProfile.Enabled = true;
         BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
     }
 

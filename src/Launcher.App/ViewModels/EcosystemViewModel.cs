@@ -31,8 +31,12 @@ public partial class EcosystemViewModel : ViewModelBase
     /// <summary>8-19 第二批：初始化赋值 SelectedInstance 时抑制一次实例搜索（Activate 统一首搜）</summary>
     private bool _suppressInstanceSearch;
 
+    /// <summary>已构造的 EcoVM 数（--mem-profile 诊断用：每个下载 tab = 一个实例）</summary>
+    internal static int BuiltCount;
+
     public EcosystemViewModel(ProjectType type = ProjectType.Mod)
     {
+        Interlocked.Increment(ref BuiltCount);
         _cf = new CurseForgeService();
         _eco = new EcosystemService(curseforge: _cf);
         _type = type;

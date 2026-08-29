@@ -129,6 +129,7 @@ public partial class MainViewModel : ViewModelBase
         IsMultiplayerActive = page == "multiplayer";
         IsEcosystemActive = page == "ecosystem";
         ReleaseOtherPages(); // 8-18 内存让渡：非激活页的大列表延迟释放（切回时各自懒重建）
+        Launcher.App.Services.MemProfile.Sample(page); // 8-29 内存诊断钩子：切页采样（--mem-profile 才打）
         if (page == "download") Downloads.ActivateDefault();
         if (page == "home") { Home.RefreshConfigText(); _ = Home.RefreshVersionsAsync(); } // 切回主页刷新配置摘要+已装版本
         if (page == "version") _ = Versions.LoadAsync(); // 每次进入强制重扫（下载补全后 JarMissing 红字同步消失——AG2）
