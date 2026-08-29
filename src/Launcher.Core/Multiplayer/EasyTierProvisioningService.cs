@@ -16,13 +16,23 @@ public sealed class EasyTierProvisioningService
     /// <summary>锁定的 EasyTier 版本</summary>
     public const string LockedVersion = "2.6.4";
 
-    /// <summary>已知 SHA256（{version}/x86_64）——资产校验用（8-14 实测下载 32.6MB 后计算写入）</summary>
+    /// <summary>已知 SHA256（{version}/x86_64/{os}）——资产校验用（8-29 Linux 实测下载后计算写入）</summary>
     public static readonly IReadOnlyDictionary<string, string> KnownDigests = new Dictionary<string, string>
     {
-        ["2.6.4/x86_64"] = "27af91e270e554709b048bd32327fefd2dfce5062ae1e8701af7550c6f525f84",
+        ["2.6.4/x86_64/windows"] = "27af91e270e554709b048bd32327fefd2dfce5062ae1e8701af7550c6f525f84",
+        ["2.6.4/x86_64/linux"] = "pending",
     };
 
-    public static string AssetName(string version) => $"easytier-windows-x86_64-v{version}.zip";
+    /// <summary>平台键：windows / linux（EasyTier 上游无 macOS 包）</summary>
+    public static string OsKey => OperatingSystem.IsWindows() ? "windows" : "linux";
+
+    public static string AssetName(string version) => OperatingSystem.IsWindows()
+        ? $"easytier-windows-x86_64-v{version}.zip"
+        : $"easytier-linux-x86_64-v{version}.zip";
+
+    /// <summary>包内可执行名（Windows 带 .exe，Linux 无扩展名）</summary>
+    public static string CoreExeName => OperatingSystem.IsWindows() ? "easytier-core.exe" : "easytier-core";
+    public static string CliExeName => OperatingSystem.IsWindows() ? "easytier-cli.exe" : "easytier-cli";
 
     /// <summary>GitHub 资产 URL（官方源）</summary>
     public static string GitHubAssetUrl(string version)
@@ -35,9 +45,9 @@ public sealed class EasyTierProvisioningService
         $"https://ghproxy.net/https://github.com/EasyTier/EasyTier/releases/download/v{version}/{AssetName(version)}",
     ];
 
-    /// <summary>安装根：%AppData%\Launcher\tools\easytier</summary>
+    /// <summary>安装根：应用数据目录 tools\easytier（Linux: ~/.local/share/starview/tools/easytier）</summary>
     public static string ModuleRoot => Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Launcher", "tools", "easytier");
+        Launcher.Core.Utils.AppPaths.ToolsDir, "easytier");
 
     private const long MaxArchiveBytes = 128 * 1024 * 1024;
     private const int BufferSize = 81920;
@@ -52,12 +62,12 @@ public sealed class EasyTierProvisioningService
         _http.DefaultRequestHeaders.UserAgent.ParseAdd("YanKa-Launcher/1.0");
     }
 
-    /// <summary>已装模块（easytier-core.exe + easytier-cli.exe 都在则可用），无则 null</summary>
+    /// <summary>已装模块（easytier-core + easytier-cli 都在则可用），无则 null</summary>
     public bool TryGetAvailable(out string moduleDir)
     {
         moduleDir = Path.Combine(ModuleRoot, LockedVersion);
-        return File.Exists(Path.Combine(moduleDir, "easytier-core.exe"))
-            && File.Exists(Path.Combine(moduleDir, "easytier-cli.exe"));
+        return File.Exists(Path.Combine(moduleDir, CoreExeName))
+            && File.Exists(Path.Combine(moduleDir, CliExeName));
     }
 
     /// <summary>重装（一键修复）：清版本目录 → 重新下载安装</summary>
@@ -80,7 +90,7 @@ public sealed class EasyTierProvisioningService
             if (TryGetAvailable(out var installed)) return installed;
 
             var version = LockedVersion;
-            var expectedSha = KnownDigests.TryGetValue($"{version}/x86_64", out var s) && s != "pending" ? s : null;
+            var expectedSha = KnownDigests.TryGetValue($"{version}/x86_64/{OsKey}", out var s) && s != "pending" ? s : null;
 
             var candidates = new List<string> { GitHubAssetUrl(version) };
             candidates.AddRange(MirrorUrls(version));
@@ -144,12 +154,12 @@ public sealed class EasyTierProvisioningService
                 MultiplayerLog.Log($"EasyTier 下载完成：{read / 1024 / 1024}MB（sha {expectedSha[..8]}）");
             }
 
-            // 解压到版本目录（zip 内两个 exe：core + cli）
+            // 解压到版本目录（zip 内两个可执行：core + cli）
             var moduleDir = Path.Combine(ModuleRoot, version);
             Directory.CreateDirectory(moduleDir);
             ZipFile.ExtractToDirectory(temp, moduleDir, overwriteFiles: true);
             if (!TryGetAvailable(out _))
-                throw new InvalidDataException("EasyTier 包内容不完整（缺 easytier-core.exe / easytier-cli.exe）");
+                throw new InvalidDataException($"EasyTier 包内容不完整（缺 {CoreExeName} / {CliExeName}）");
             return moduleDir;
         }
         finally

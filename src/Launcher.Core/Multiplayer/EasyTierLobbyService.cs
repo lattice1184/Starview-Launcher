@@ -183,14 +183,14 @@ public sealed class EasyTierLobbyService : IMultiplayerLobbyService
     {
         var psi = new ProcessStartInfo
         {
-            FileName = Path.Combine(_moduleDir, "easytier-core.exe"),
+            FileName = Path.Combine(_moduleDir, OperatingSystem.IsWindows() ? "easytier-core.exe" : "easytier-core"),
             WorkingDirectory = _moduleDir,
             UseShellExecute = true, // 提权（runas）需要 UseShellExecute
             CreateNoWindow = true,
         };
         foreach (var a in args) psi.ArgumentList.Add(a);
-        if (!IsAdministrator())
-            psi.Verb = "runas"; // TUN 虚拟网卡创建需管理员（wintun 驱动）——UAC 弹窗一次
+        if (OperatingSystem.IsWindows() && !IsAdministrator())
+            psi.Verb = "runas"; // Windows：TUN 虚拟网卡创建需管理员（wintun 驱动）——UAC 弹窗一次；Linux 用 tun 权限组/sudo
 
         try
         {
@@ -213,7 +213,7 @@ public sealed class EasyTierLobbyService : IMultiplayerLobbyService
             ct.ThrowIfCancellationRequested();
             try
             {
-                var outText = _runCli([Path.Combine(_moduleDir, "easytier-cli.exe"), "--rpc-portal", $"127.0.0.1:{_rpcPort}", "peer"]);
+                var outText = _runCli([Path.Combine(_moduleDir, OperatingSystem.IsWindows() ? "easytier-cli.exe" : "easytier-cli"), "--rpc-portal", $"127.0.0.1:{_rpcPort}", "peer"]);
                 if (outText.Contains(_networkName!, StringComparison.OrdinalIgnoreCase)
                     || outText.Contains(_playerName, StringComparison.OrdinalIgnoreCase))
                     return;
@@ -266,7 +266,7 @@ public sealed class EasyTierLobbyService : IMultiplayerLobbyService
     {
         try
         {
-            var outText = _runCli([Path.Combine(_moduleDir, "easytier-cli.exe"),
+            var outText = _runCli([Path.Combine(_moduleDir, OperatingSystem.IsWindows() ? "easytier-cli.exe" : "easytier-cli"),
                 "--rpc-portal", $"127.0.0.1:{_rpcPort}", "peer"]);
             return outText.Split('\n', StringSplitOptions.RemoveEmptyEntries);
         }
@@ -309,13 +309,32 @@ public sealed class EasyTierLobbyService : IMultiplayerLobbyService
         return $"{VnetPrefix}{x}";
     }
 
-    /// <summary>是否管理员（TUN 创建前提——wintun 驱动需要管理员）</summary>
+    /// <summary>是否管理员/root（TUN 创建前提——Windows wintun 需管理员，Linux 需 root 或 tun 权限组）</summary>
     public static bool IsAdministrator()
     {
+        if (!OperatingSystem.IsWindows()) return IsRootLinux();
         try
         {
             using var identity = WindowsIdentity.GetCurrent();
             return new WindowsPrincipal(identity).IsInRole(WindowsBuiltInRole.Administrator);
+        }
+        catch { return false; }
+    }
+
+    /// <summary>Linux：euid==0 视为 root（EasyTier TUN 需 root 或 tun 组权限）</summary>
+    private static bool IsRootLinux()
+    {
+        try
+        {
+            using var p = Process.Start(new ProcessStartInfo("id", "-u")
+            {
+                RedirectStandardOutput = true,
+                UseShellExecute = false,
+            });
+            if (p is null) return false;
+            var uid = p.StandardOutput.ReadToEnd().Trim();
+            p.WaitForExit(1000);
+            return uid == "0";
         }
         catch { return false; }
     }

@@ -78,7 +78,6 @@ public partial class MainWindow : Window
         _navButtons["home"] = NavHome;
         _navButtons["version"] = NavVersions;
         _navButtons["download"] = NavDownloads;
-        _navButtons["server"] = NavServer;
         _navButtons["multiplayer"] = NavMultiplayer;
         _navButtons["ecosystem"] = NavEcosystem;
         _navButtons["settings"] = NavSettings;
@@ -308,7 +307,7 @@ public partial class MainWindow : Window
 
     private void OnVmPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
-        if (e.PropertyName is "IsHomeActive" or "IsVersionsActive" or "IsDownloadsActive" or "IsServerActive" or "IsMultiplayerActive" or "IsEcosystemActive" or "IsSettingsActive")
+        if (e.PropertyName is "IsHomeActive" or "IsVersionsActive" or "IsDownloadsActive" or "IsMultiplayerActive" or "IsEcosystemActive" or "IsSettingsActive")
             ApplyNavVisuals();
     }
 
@@ -385,7 +384,6 @@ public partial class MainWindow : Window
         _navIcons["home"] = (NavHomeIconR, NavHomeIconF);
         _navIcons["version"] = (NavVersionIconR, NavVersionIconF);
         _navIcons["download"] = (NavDownloadIconR, NavDownloadIconF);
-        _navIcons["server"] = (NavServerIconR, NavServerIconF);
         _navIcons["multiplayer"] = (NavMultiIconR, NavMultiIconF);
         _navIcons["ecosystem"] = (NavEcoIconR, NavEcoIconF);
         _navIcons["settings"] = (NavSettingsIconR, NavSettingsIconF);
@@ -438,17 +436,6 @@ public partial class MainWindow : Window
                 target.RenderTransformOrigin = new RelativePoint(0.5, 0.5, RelativeUnit.Relative);
                 UiAnim.Animate(220, UiAnim.Curves.Standard, e => rt.Angle = Math.Sin(e * Math.PI) * 15,
                     () => target.RenderTransform = null, target, slot: "navact");
-                break;
-            case "server": // 服务器顶灯亮起：scale 脉冲加强
-                var st = new ScaleTransform(1, 1);
-                target.RenderTransform = st;
-                target.RenderTransformOrigin = new RelativePoint(0.5, 0.5, RelativeUnit.Relative);
-                UiAnim.Animate(240, UiAnim.Curves.Standard, e =>
-                {
-                    var s = 1 + Math.Sin(e * Math.PI) * 0.2;
-                    st.ScaleX = s;
-                    st.ScaleY = s;
-                }, () => target.RenderTransform = null, target, slot: "navact");
                 break;
             case "ecosystem": // 生态转动：转一整圈（360°）
                 var rt2 = new RotateTransform(0);
@@ -557,7 +544,6 @@ public partial class MainWindow : Window
         "home" => main.IsHomeActive,
         "version" => main.IsVersionsActive,
         "download" => main.IsDownloadsActive,
-        "server" => main.IsServerActive,
         "multiplayer" => main.IsMultiplayerActive,
         "ecosystem" => main.IsEcosystemActive,
         "settings" => main.IsSettingsActive,

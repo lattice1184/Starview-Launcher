@@ -39,7 +39,7 @@ public sealed class CurseForgeService
     {
         try
         {
-            var dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Launcher", "logs");
+            var dir = Path.Combine(Launcher.Core.Utils.AppPaths.DataRoot, "logs");
             Directory.CreateDirectory(dir);
             File.AppendAllText(Path.Combine(dir, "cf-check.log"),
                 $"[{DateTime.Now:HH:mm:ss}] {message}{Environment.NewLine}");

@@ -134,7 +134,7 @@ public partial class ThirdPartyDownloadViewModel : ViewModelBase
     {
         var saved = LauncherSettings.Current.ThirdPartyDownloadDir;
         if (!string.IsNullOrEmpty(saved) && Directory.Exists(saved)) return saved;
-        return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads");
+        return Path.Combine(Launcher.Core.Utils.AppPaths.Downloads);
     }
 
     /// <summary>FolderPicker 选择结果（视图 code-behind 调用）</summary>

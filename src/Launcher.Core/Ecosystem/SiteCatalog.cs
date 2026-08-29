@@ -79,7 +79,6 @@ public static class SiteCatalog
         new("Modrinth", "现代模组平台（API 友好）", "https://modrinth.com", "资源"),
         new("CurseForge", "老牌模组/整合包平台", "https://www.curseforge.com", "资源"),
         new("Planet Minecraft", "全球玩家作品分享（皮肤/地图/建筑）", "https://www.planetminecraft.com", "资源"),
-        new("9minecraft", "整合包与资源站（国内可访问）", "https://9minecraft.cn", "资源"),
 
         // ---------- 面板 ----------
         new("MCSManager 面板", "免费开源的服务器面板（源码仓库）", "https://github.com/MCSManager/MCSManager", "面板"),

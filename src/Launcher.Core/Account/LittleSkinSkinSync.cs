@@ -11,8 +11,7 @@ public static class LittleSkinSkinSync
 {
     /// <summary>本地皮肤路径（与 HomeViewModel.LocalSkinPath 同规则）</summary>
     public static string LocalSkinPath(string playerName) => Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-        "Launcher", "skins", $"{playerName}.png");
+        Launcher.Core.Utils.AppPaths.DataRoot, "skins", $"{playerName}.png");
 
     /// <summary>下载皮肤写本地；返回是否成功（下载失败/尺寸不合规 → false，调用方决定兜底）。
     /// 8-19 修死 URL：/skin/{name}.png 实测 404（非 LittleSkin 纹理路径）——

@@ -21,9 +21,11 @@ public sealed partial class JavaService
         Context.Info("Initializing Java Manager...");
 
         _javaManager = new JavaManager(
-            new PeHeaderParser(), 
+            new PeHeaderParser(),
             [
+#if WINDOWS
             new RegistryJavaScanner(),
+#endif
             new DefaultPathsScanner(),
             new PathEnvironmentScanner(),
             new MicrosoftStoreJavaScanner(),

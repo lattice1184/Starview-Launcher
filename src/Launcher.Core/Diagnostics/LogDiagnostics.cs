@@ -16,7 +16,7 @@ public sealed record DiagnosticHit(string Snippet, string Explanation, FixKind F
 /// <summary>
 /// 日志动态诊断：按实际日志内容正则匹配已知错误模式，逐条补中文说明与建议。
 /// AL9：规则升级为带 FixKind 修复分类，供自动修复（AutoRepairService）与崩溃窗诊断区使用。
-/// 共用方：导出报告（LogExportHelper 生成 诊断说明.txt）+ 服务端异常退出弹窗（ServerViewModel）+ HomeViewModel 自修复。
+/// 共用方：导出报告（LogExportHelper 生成 诊断说明.txt）+ HomeViewModel 自修复。
 /// 扩展方式：往 Patterns 追加 (正则, 中文说明, FixKind) 即可。
 /// </summary>
 public static class LogDiagnostics
@@ -62,7 +62,7 @@ public static class LogDiagnostics
             "模组版本与游戏版本不匹配（如模组是 1.21 版、游戏是 26.1；或模组要求 26.2 而装了 26.1）。将自动禁用这些冲突模组，游戏即可启动（可在版本页重新启用或换适配版本）。",
             FixKind.DisableConflictingMods),
         (new Regex(@"BindException|Address already in use|Port \d+ was already in use", RegexOptions.IgnoreCase),
-            "端口被占用：服务端口已被其他程序（或另一个服务端）占用。修改 server.properties 的 server-port 后重试。",
+            "端口被占用：启动端口已被其他程序占用。关闭占用程序后重试。",
             FixKind.AdviceOnly),
         (new Regex(@"Segmentation fault|SIGSEGV", RegexOptions.IgnoreCase),
             "程序段错误崩溃：底层崩溃，多为驱动或内存问题。尝试更新驱动或降低渲染设置。",
@@ -77,15 +77,15 @@ public static class LogDiagnostics
             "模组加载失败：模组文件损坏或与当前版本不兼容。请检查最近安装的模组。",
             FixKind.AdviceOnly),
         (new Regex(@"Invalid session|Failed to verify username", RegexOptions.IgnoreCase),
-            "会话校验失败：服务端仍按正版模式运行。若已在 server.properties 关闭正版验证（online-mode=false），必须重启服务端才生效（配置只在启动时读取一次）；若玩家用的是离线客户端，请确认服务端是离线模式。",
+            "会话校验失败：登录态无效或已过期，重新登录后重试。",
             FixKind.AdviceOnly),
         (new Regex(@"Unable to delete file|FileSystemException|Being used by another process|另一个程序已锁定|The process cannot access the file", RegexOptions.IgnoreCase),
-            "日志文件被占用：服务端启动时要删除旧的 latest.log，但文件被其他程序锁定——最常见是上一个服务端进程未完全退出（任务管理器结束残留的 java.exe），或你正用编辑器打开着日志。关闭占用后重试。",
+            "文件被占用：日志等文件被其他程序锁定——最常见是上一个进程未完全退出，或正用编辑器打开着。关闭占用后重试。",
             FixKind.AdviceOnly),
         (new Regex(@"java\.lang\.ClassNotFoundException", RegexOptions.IgnoreCase),
             "类加载失败：版本所需库文件未进入启动类路径（常见于 PCL/第三方安装器生成的版本，加载器 jar 缺失）。将自动重新下载补全该版本。",
             FixKind.Redownload),
-        // AL9 新增：加载器主类/服务端 jar 缺失/损坏（此前仅靠"Could not find main class"近似兜底）
+        // AL9 新增：加载器主类缺失/损坏（此前仅靠"Could not find main class"近似兜底）
         (new Regex(@"net\.fabricmc\.loader\.impl\.launch\.knot\.KnotClient|cpw\.mods\.bootstraplauncher\.BootstrapLauncher", RegexOptions.IgnoreCase),
             "加载器主类未找到：加载器库文件缺失。将自动重新下载补全该版本。",
             FixKind.Redownload),

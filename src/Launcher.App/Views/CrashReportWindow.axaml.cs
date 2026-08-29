@@ -2,6 +2,8 @@ using System.IO.Compression;
 using System.Text;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input;
+using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
 using Avalonia.Media;
 using Avalonia.Platform.Storage;
@@ -87,7 +89,7 @@ public partial class CrashReportWindow : Window
     {
         try
         {
-            var logDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Launcher", "logs");
+            var logDir = Path.Combine(AppPaths.DataRoot, "logs");
             if (!Directory.Exists(logDir)) return "（无日志）";
             var files = Directory.EnumerateFiles(logDir, "crash-*.log")
                 .OrderByDescending(f => new FileInfo(f).LastWriteTimeUtc).Take(3).ToList();
@@ -125,7 +127,7 @@ public partial class CrashReportWindow : Window
                 using (var sw = new StreamWriter(err.Open(), new UTF8Encoding(false)))
                     sw.Write(_error + Environment.NewLine + LogExportHelper.SystemInfo());
                 // 2. 最近崩溃日志 + 游戏日志
-                var logDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Launcher", "logs");
+                var logDir = Path.Combine(AppPaths.DataRoot, "logs");
                 if (Directory.Exists(logDir))
                 {
                     foreach (var f in Directory.EnumerateFiles(logDir, "crash-*.log")
@@ -141,7 +143,7 @@ public partial class CrashReportWindow : Window
                 }
                 // 3. 设置（不含账号 token）
                 var settingsPath = Path.Combine(
-                    Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Launcher", "settings.json");
+                    AppPaths.DataRoot, "settings.json");
                 if (File.Exists(settingsPath))
                     zip.CreateEntryFromFile(settingsPath, "settings.json");
             });
@@ -167,19 +169,29 @@ public partial class CrashReportWindow : Window
     {
         try
         {
-            // Avalonia 12 剪贴板 API 大改（SetDataAsync）——用 Windows 自带 clip.exe 写剪贴板（可靠简单）
-            await Task.Run(() =>
+            var text = _error + Environment.NewLine + SystemInfo();
+            if (OperatingSystem.IsWindows())
             {
-                var psi = new System.Diagnostics.ProcessStartInfo("clip.exe")
+                // Windows：clip.exe 写剪贴板（Avalonia 12 API 大改的可靠兜底）
+                await Task.Run(() =>
                 {
-                    UseShellExecute = false,
-                    RedirectStandardInput = true,
-                };
-                using var p = System.Diagnostics.Process.Start(psi)!;
-                p.StandardInput.Write(_error + Environment.NewLine + SystemInfo());
-                p.StandardInput.Close();
-                p.WaitForExit(3000);
-            });
+                    var psi = new System.Diagnostics.ProcessStartInfo("clip.exe")
+                    {
+                        UseShellExecute = false,
+                        RedirectStandardInput = true,
+                    };
+                    using var p = System.Diagnostics.Process.Start(psi)!;
+                    p.StandardInput.Write(text);
+                    p.StandardInput.Close();
+                    p.WaitForExit(3000);
+                });
+            }
+            else
+            {
+                // Linux/macOS：Avalonia 剪贴板 API（无外部依赖）
+                var top = Avalonia.Controls.TopLevel.GetTopLevel(this);
+                if (top?.Clipboard is { } cb) await cb.SetTextAsync(text);
+            }
             CopyBtn.Content = "已复制 ✓";
         }
         catch { }

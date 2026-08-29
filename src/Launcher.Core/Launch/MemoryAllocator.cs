@@ -31,10 +31,36 @@ public static class MemoryAllocator
 
     private static bool TryGetAvailPhysMb(out long availMb)
     {
-        var status = new MemoryStatusEx { dwLength = (uint)Marshal.SizeOf<MemoryStatusEx>() };
-        if (!GlobalMemoryStatusEx(ref status)) { availMb = 0; return false; }
-        availMb = (long)(status.ullAvailPhys / 1024 / 1024);
-        return true;
+        if (OperatingSystem.IsWindows())
+        {
+            var status = new MemoryStatusEx { dwLength = (uint)Marshal.SizeOf<MemoryStatusEx>() };
+            if (!GlobalMemoryStatusEx(ref status)) { availMb = 0; return false; }
+            availMb = (long)(status.ullAvailPhys / 1024 / 1024);
+            return true;
+        }
+        return TryReadMemAvailableLinux(out availMb);
+    }
+
+    /// <summary>Linux：/proc/meminfo MemAvailable（kB）；拿不到返回 false 退化总内存 60%</summary>
+    private static bool TryReadMemAvailableLinux(out long availMb)
+    {
+        try
+        {
+            foreach (var line in File.ReadLines("/proc/meminfo"))
+            {
+                if (!line.StartsWith("MemAvailable:", StringComparison.Ordinal)) continue;
+                var parts = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                if (parts.Length >= 2 && long.TryParse(parts[1], out var kB))
+                {
+                    availMb = kB / 1024;
+                    return true;
+                }
+                break;
+            }
+        }
+        catch { /* 读不到走退化 */ }
+        availMb = 0;
+        return false;
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -51,6 +77,7 @@ public static class MemoryAllocator
         public ulong ullAvailExtendedVirtual;
     }
 
+    [System.Runtime.Versioning.SupportedOSPlatform("windows")]
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern bool GlobalMemoryStatusEx(ref MemoryStatusEx lpBuffer);
 }

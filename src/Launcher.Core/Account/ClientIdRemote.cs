@@ -13,8 +13,7 @@ public static class ClientIdRemote
     internal const string RemoteUrl = "";
 
     private static string CachePath => Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-        "Launcher", "client-id.cache");
+        Launcher.Core.Utils.AppPaths.DataRoot, "client-id.cache");
 
     /// <summary>解析并写入当前进程的生效值：设置手动值 > 远程/缓存 > 内置兜底。登录/刷新前调用。</summary>
     public static async Task ResolveAsync(HttpClient http, CancellationToken ct)

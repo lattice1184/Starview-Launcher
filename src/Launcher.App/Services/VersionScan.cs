@@ -5,7 +5,7 @@ using Launcher.Core.Services;
 namespace Launcher.App.Services;
 
 /// <summary>
-/// 已装版本扫描共享工具（主页 / 版本页 / 开服页三处统一）：
+/// 已装版本扫描共享工具（主页 / 版本页统一）：
 /// 读版本 json 返回加载器徽章 + 继承的原版版本；被加载器继承的原版条目从列表隐藏（依赖不单独显示）。
 /// </summary>
 public static class VersionScan
@@ -37,7 +37,7 @@ public static class VersionScan
     }
 
     /// <summary>PCL 式显示名：加载器版本 → "1.21.11 (Fabric)"，原版 → "1.21.11 (原版)"
-    /// （8-18 批次 73：原版加后缀，与主页/开服页口径统一——用户无法区分原版与带加载器版本）</summary>
+    /// （8-18 批次 73：原版加后缀，与主页/版本页口径统一——用户无法区分原版与带加载器版本）</summary>
     public static string FriendlyName(string id, string loader, string mcVersion)
         => loader.Length > 0 && mcVersion.Length > 0
             ? $"{mcVersion} ({Cap(loader)})"

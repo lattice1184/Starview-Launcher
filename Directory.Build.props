@@ -4,7 +4,9 @@
        UseWPF=true 会把 WindowsDesktop 运行时拖进自包含发布（~35MB）。ICommand 走 System.ObjectModel 不依赖 WPF。 -->
   <PropertyGroup Condition="'$(MSBuildProjectName)' != 'PCL.Core' And !$(MSBuildProjectName.StartsWith('PCL.Core'))">
     <UseWPF>false</UseWPF>
-    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <EnableWindowsTargeting Condition="$([MSBuild]::IsOSPlatform('Windows'))">true</EnableWindowsTargeting>
+    <!-- 8-29 Linux 移植：#if WINDOWS 条件编译符号（仅 Windows 构建定义，Linux 构建排除 Windows 专属代码） -->
+    <DefineConstants Condition="$([MSBuild]::IsOSPlatform('Windows'))">$(DefineConstants);WINDOWS</DefineConstants>
     <LangVersion>14.0</LangVersion>
   </PropertyGroup>
 </Project>

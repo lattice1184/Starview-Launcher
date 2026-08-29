@@ -18,7 +18,7 @@ public static class ImageLoader
     private static readonly ConcurrentDictionary<string, Task<Bitmap?>> Cache = new();
     private static readonly SemaphoreSlim Gate = new(4);
     private static readonly string CacheDir = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Launcher", "imgcache");
+        Launcher.Core.Utils.AppPaths.CacheRoot, "imgcache");
     /// <summary>内存位图缓存上限（8-22 内存瘦身：旧实现只增不减——翻页/切 tab 攒几十上百张
     /// 位图常驻（每张 96px 解码 ≈36KB，300 张 = 10MB+）。超限整体清空：磁盘缓存（imgcache）
     /// 兜底重新解码（毫秒级），无泄漏无失效。按「近似 LRU」——字典无序，整体清最简。

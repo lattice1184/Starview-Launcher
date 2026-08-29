@@ -26,7 +26,9 @@ public class DnsQuery : IDisposable
     {
         var proxyHandler = new HttpClientHandler()
         {
+#if WINDOWS
             Proxy = HttpProxyManager.Instance
+#endif
         };
         // 使用Ae.Dns创建DoH客户端，支持多个DoH服务器
         _httpClients =

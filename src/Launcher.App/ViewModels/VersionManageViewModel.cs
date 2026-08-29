@@ -579,7 +579,10 @@ public partial class VersionManageViewModel : ViewModelBase
         {
             var dir = Path.Combine(_gameDir, "versions", _versionId);
             if (!Directory.Exists(dir)) dir = _gameDir;
-            Process.Start(new ProcessStartInfo("explorer.exe", $"\"{dir}\"") { UseShellExecute = true });
+            if (OperatingSystem.IsWindows())
+                Process.Start(new ProcessStartInfo("explorer.exe", $"\"{dir}\"") { UseShellExecute = true });
+            else
+                Process.Start(new ProcessStartInfo("xdg-open", $"\"{dir}\"") { UseShellExecute = true });
         }
         catch (Exception ex)
         {
@@ -594,7 +597,10 @@ public partial class VersionManageViewModel : ViewModelBase
         try
         {
             if (Directory.Exists(path))
-                Process.Start(new ProcessStartInfo("explorer.exe", $"\"{path}\"") { UseShellExecute = true });
+                if (OperatingSystem.IsWindows())
+                    Process.Start(new ProcessStartInfo("explorer.exe", $"\"{path}\"") { UseShellExecute = true });
+                else
+                    Process.Start(new ProcessStartInfo("xdg-open", $"\"{path}\"") { UseShellExecute = true });
         }
         catch { }
     }

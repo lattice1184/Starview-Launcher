@@ -107,7 +107,7 @@ public sealed class LaunchProcess
         return fileCode > 0 ? fileCode : 0; // 缺失/解析失败/为 0 → 正常退出
     }
 
-    /// <summary>GamePriority → Windows 进程优先级类（服务端进程复用同一映射）</summary>
+    /// <summary>GamePriority → Windows 进程优先级类</summary>
     public static ProcessPriorityClass ToPriorityClass(GamePriority p) => p switch
     {
         GamePriority.BelowNormal => ProcessPriorityClass.BelowNormal,

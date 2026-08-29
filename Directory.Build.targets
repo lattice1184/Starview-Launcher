@@ -1,6 +1,6 @@
 <Project>
-  <!-- 构建后自动签名输出 DLL（解决 Defender 行为监视拦截未签名 R2R 模块） -->
-  <Target Name="SignOutputs" AfterTargets="Build">
+  <!-- 构建后自动签名输出 DLL（解决 Defender 行为监视拦截未签名 R2R 模块）——仅 Windows（Linux 无 powershell） -->
+  <Target Name="SignOutputs" AfterTargets="Build" Condition="$([MSBuild]::IsOSPlatform('Windows'))">
     <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildThisFileDirectory)scripts\sign-output.ps1&quot; -TargetDir &quot;$(TargetDir)&quot;" />
   </Target>
   <!-- 8-24 瘦身：发布后清理 native PDB（libSkiaSharp/HarfBuzzSharp 自带 ~100MB 符号，不进单文件 EXE，

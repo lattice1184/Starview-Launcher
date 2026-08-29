@@ -41,7 +41,7 @@ public static class EncryptHelper
     {
         if (data.IsNullOrEmpty()) return string.Empty;
         var rawData = Convert.FromBase64String(data);
-        Exception? decryptError;
+        Exception? decryptError = null;
         if (EncryptionData.IsValid(rawData))
         {
             try
@@ -61,6 +61,7 @@ public static class EncryptHelper
         }
         else
         {
+#if WINDOWS
             try
             {
 #pragma warning disable CS0612,CS0618 // Type or member is obsolete
@@ -69,6 +70,7 @@ public static class EncryptHelper
                 return Encoding.UTF8.GetString(decryptedData);
             }
             catch (Exception ex) { decryptError = ex; }
+#endif
         }
 
         throw new Exception($"Unknown Encryption data, the data may broken", decryptError);

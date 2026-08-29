@@ -34,7 +34,8 @@ public static class Directories {
                 return false;
             }
 
-            // 检查目录访问权限
+            // 检查目录访问权限（ACL 为 Windows 专属，Linux 退化为下方的朴素枚举检查）
+#if WINDOWS
             var directoryInfo = new DirectoryInfo(path);
             var security = await Task.Run(() => directoryInfo.GetAccessControl(), cancellationToken);
             var rules = security.GetAccessRules(true, true, typeof(System.Security.Principal.NTAccount));
@@ -65,6 +66,7 @@ public static class Directories {
             if (isDenied || !isAllowed) {
                 return false;
             }
+#endif
 
             // 尝试枚举目录内容以确认实际访问能力
             await Task.Run(() => Directory.EnumerateFiles(path, "*", SearchOption.TopDirectoryOnly).Any(), cancellationToken);
@@ -102,6 +104,8 @@ public static class Directories {
         }
 
         try {
+            // ACL 为 Windows 专属，Linux 退化为下方的朴素枚举检查
+#if WINDOWS
             var directoryInfo = new DirectoryInfo(path);
             var security = await Task.Run(() => directoryInfo.GetAccessControl(), cancellationToken);
             var rules = security.GetAccessRules(true, true, typeof(System.Security.Principal.NTAccount));
@@ -113,6 +117,7 @@ public static class Directories {
             if (!hasAccess) {
                 throw new UnauthorizedAccessException($"没有对文件夹 {path} 的写权限");
             }
+#endif
 
             // 确认实际访问能力
             await Task.Run(() => Directory.EnumerateFiles(path, "*", SearchOption.TopDirectoryOnly).Any(), cancellationToken);
@@ -129,8 +134,13 @@ public static class Directories {
     /// 检查是否为受保护的系统文件夹。
     /// </summary>
     private static bool IsSystemProtectedFolder(string path) {
+#if WINDOWS
         return path.EndsWith(":\\System Volume Information", StringComparison.OrdinalIgnoreCase) ||
                path.EndsWith(":\\$RECYCLE.BIN", StringComparison.OrdinalIgnoreCase);
+#else
+        // Linux 无此类 Windows 受保护系统文件夹
+        return false;
+#endif
     }
 
     /// <summary>

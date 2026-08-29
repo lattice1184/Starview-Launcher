@@ -25,7 +25,7 @@ public sealed record DownloadSourceOption(string Name, DownloadSourcePreference 
 /// <summary>性能档位选项（设置页 ComboBox）</summary>
 public sealed record JvmProfileOption(string Name, PerformanceProfile Value);
 
-/// <summary>进程优先级选项（游戏/服务端 JVM 进程；独立设置不随性能档位）</summary>
+/// <summary>进程优先级选项（游戏 JVM 进程；独立设置不随性能档位）</summary>
 public sealed record GamePriorityOption(string Name, GamePriority Value);
 
 /// <summary>
@@ -104,7 +104,7 @@ public partial class SettingsViewModel : ViewModelBase
     [ObservableProperty]
     public partial JvmProfileOption? SelectedJvmProfile { get; set; }
 
-    /// <summary>当前进程优先级（游戏/服务端）</summary>
+    /// <summary>当前进程优先级（游戏）</summary>
     [ObservableProperty]
     public partial GamePriorityOption? SelectedGamePriority { get; set; }
 
@@ -291,7 +291,7 @@ public partial class SettingsViewModel : ViewModelBase
         "整合包导入导出修复：内容落盘、mrpack 反查、路径安全",
         "模组中文搜索（MC百科链）",
         "微软正版登录修复（refresh_token 持久化）",
-        "开服/联机修复：超时、进程死亡检测、一键开服",
+        "联机修复：超时、进程死亡检测",
         "网络诊断条 + 下载队列调度",
     ];
 

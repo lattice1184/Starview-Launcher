@@ -1,3 +1,4 @@
+#if WINDOWS
 using System;
 using System.Drawing;
 using System.IO;
@@ -26,3 +27,4 @@ public static class IconHelper
         bitmap.Save(Path.Combine(Paths.Temp, "icon.png"));
     }
 }
+#endif

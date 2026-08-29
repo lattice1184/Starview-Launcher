@@ -71,13 +71,15 @@ public static class IdleMemoryTrimmer
             GC.Collect(2, GCCollectionMode.Optimized, blocking: false); // 托管压缩（Heap 9MB 顺手）
             using var proc = Process.GetCurrentProcess();
             var before = proc.WorkingSet64;
-            SetProcessWorkingSetSize(proc.Handle, new IntPtr(-1), new IntPtr(-1)); // 物理页让渡
+            if (OperatingSystem.IsWindows())
+                SetProcessWorkingSetSize(proc.Handle, new IntPtr(-1), new IntPtr(-1)); // 物理页让渡（Windows）
             var after = proc.WorkingSet64;
             MemProfile.Sample($"trim:{reason}({before / 1024 / 1024}->{after / 1024 / 1024}MB)");
         }
         catch { /* 修剪失败不影响运行 */ }
     }
 
+    [System.Runtime.Versioning.SupportedOSPlatform("windows")]
     [DllImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool SetProcessWorkingSetSize(IntPtr proc, IntPtr min, IntPtr max);

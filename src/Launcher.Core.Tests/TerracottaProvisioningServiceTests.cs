@@ -194,10 +194,10 @@ public class TerracottaProvisioningServiceTests : IDisposable
         Assert.Equal(1, downloads); // 第二次不再下载
     }
 
-    /// <summary>把 KnownDigests 的 0.4.2/{arch} 换成测试包的 SHA，结束后恢复（IReadOnlyDictionary 的底层就是 Dictionary）</summary>
+    /// <summary>把 KnownDigests 的 0.4.2/{arch}/{os} 换成测试包的 SHA，结束后恢复（IReadOnlyDictionary 的底层就是 Dictionary）</summary>
     private static IDisposable SwapDigest(byte[] package)
     {
-        var key = $"0.4.2/{TerracottaProvisioningService.Arch}";
+        var key = $"0.4.2/{TerracottaProvisioningService.Arch}/{TerracottaProvisioningService.OsKey}";
         var dict = (Dictionary<string, string>)TerracottaProvisioningService.KnownDigests;
         var original = dict[key];
         var sha = Convert.ToHexStringLower(SHA256.HashData(package));

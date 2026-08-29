@@ -1,3 +1,4 @@
+#if WINDOWS
 using System;
 
 namespace PCL.Core.Utils.WinRT.Interface.Windows.UI.Notifications;
@@ -57,3 +58,4 @@ public unsafe struct IToastNotifierVtbl
     /// </summary>
     public delegate* unmanaged<void*, void**, int> GetScheduledToastNotifications;
 }
+#endif

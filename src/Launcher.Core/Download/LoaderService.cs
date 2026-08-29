@@ -102,8 +102,7 @@ public sealed class LoaderService
     // ---------- AL28 版本列表本地缓存（TTL 24h，损坏/空列表回退网络） ----------
 
     private static string CacheFilePath(LoaderKind kind, string mcVersion)
-        => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-            "Launcher", "cache", $"loader-{kind}-{mcVersion}.json");
+        => Path.Combine(Launcher.Core.Utils.AppPaths.DataRoot, "cache", $"loader-{kind}-{mcVersion}.json");
 
     private static bool TryLoadCache(string path, out List<LoaderMetaVersion> list)
     {
@@ -540,8 +539,7 @@ public sealed class LoaderService
     private async Task<string> FetchProfileJsonAsync(LoaderInstallPlan plan, CancellationToken ct)
     {
         var cacheDir = _loaderProfileCacheDir ?? Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-            "Launcher", "cache", "loader-profiles");
+            Launcher.Core.Utils.AppPaths.DataRoot, "cache", "loader-profiles");
         var cachePath = Path.Combine(cacheDir, $"{plan.Kind}-{plan.McVersion}-{plan.LoaderVersion}.json");
         if (File.Exists(cachePath))
         {

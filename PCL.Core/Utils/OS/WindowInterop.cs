@@ -1,3 +1,4 @@
+#if WINDOWS
 using System;
 using System.Runtime.InteropServices;
 using System.ComponentModel;
@@ -122,3 +123,5 @@ public static partial class WindowInterop
         return 96;
     }
 }
+
+#endif

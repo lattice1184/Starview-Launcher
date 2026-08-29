@@ -1,3 +1,4 @@
+#if WINDOWS
 using System;
 using System.ComponentModel;
 using System.Runtime.InteropServices;
@@ -106,3 +107,4 @@ public partial class RegistryChangeMonitor : IDisposable
         GC.SuppressFinalize(this);
     }
 }
+#endif

@@ -19,7 +19,7 @@ public static class DownloadHistoryService
     private const int MaxEntries = 200;
 
     private static readonly string PathFile = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Launcher", "history.json");
+        Launcher.Core.Utils.AppPaths.DataRoot, "history.json");
 
     private static readonly List<DownloadHistoryEntry> Entries = Load();
 

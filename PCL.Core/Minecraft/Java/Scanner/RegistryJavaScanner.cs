@@ -1,3 +1,4 @@
+#if WINDOWS
 using Microsoft.Win32;
 using PCL.Core.Logging;
 using System;
@@ -76,3 +77,4 @@ public class RegistryJavaScanner : IJavaScanner
         }
     }
 }
+#endif

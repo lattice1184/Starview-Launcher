@@ -50,7 +50,7 @@
                     </ComboBox.ItemTemplate>
                 </ComboBox>
                 <Path Grid.Column="2" Classes="help-hint"
-                           ToolTip.Tip="游戏和服务端都按这个跑。调高游戏更顺，其他程序可能卡。调低适合挂着。改完下次启动才生效。"
+                           ToolTip.Tip="游戏按这个跑。调高游戏更顺，其他程序可能卡。调低适合挂着。改完下次启动才生效。"
                            VerticalAlignment="Center"/>
             </Grid>
 

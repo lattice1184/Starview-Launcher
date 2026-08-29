@@ -12,7 +12,7 @@
             <StackPanel Orientation="Horizontal" Spacing="6">
                 <TextBlock Text="存储空间" FontSize="16" FontWeight="SemiBold"/>
                 <Border Classes="help-hint"
-                           ToolTip.Tip="红色删除能清：日志、缓存、崩溃报告、服务端。开窗时会统计大小，大的要等一会"><Path/></Border>
+                           ToolTip.Tip="红色删除能清：日志、缓存、崩溃报告。开窗时会统计大小，大的要等一会"><Path/></Border>
             </StackPanel>
         </StackPanel>
         <ScrollViewer>

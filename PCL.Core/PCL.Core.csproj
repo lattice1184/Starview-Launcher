@@ -17,9 +17,9 @@
         <Platforms>AnyCPU;x64;ARM64</Platforms>
         <ProjectGuid>{A0C2209D-64FB-4C11-9459-8E86304B6F94}</ProjectGuid>
         <RootNamespace>PCL.Core</RootNamespace>
-        <TargetFramework>net10.0-windows</TargetFramework>
+        <TargetFramework>net10.0</TargetFramework>
         <UseWPF>false</UseWPF>
-        <EnableWindowsTargeting>true</EnableWindowsTargeting>
+        <EnableWindowsTargeting Condition="$([MSBuild]::IsOSPlatform('Windows'))">true</EnableWindowsTargeting>
         <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
         <LangVersion>14.0</LangVersion>
         <Nullable>enable</Nullable>
@@ -47,6 +47,11 @@
         <Optimize>true</Optimize>
         <DefineConstants Condition="'$(Configuration)' == 'Release' Or '$(Configuration)' == 'Publish'">RELEASE;PUBLISH</DefineConstants>
         <DefineConstants Condition="'$(Configuration)' == 'Beta'">BETA;PUBLISH</DefineConstants>
+    </PropertyGroup>
+    <!-- 8-29 Linux 移植：#if WINDOWS 条件编译符号（仅 Windows 构建定义）。
+         注意：必须置于上方各 Configuration 的 DefineConstants 赋值之后，否则会被覆盖丢失。 -->
+    <PropertyGroup Condition="$([MSBuild]::IsOSPlatform('Windows'))">
+        <DefineConstants>$(DefineConstants);WINDOWS</DefineConstants>
     </PropertyGroup>
     <!-- NuGet 引用 -->
     <ItemGroup>
@@ -121,6 +126,10 @@ UI\Animation\ValueProcessor\DoubleValueProcessor.cs;UI\Animation\UIAccessProvide
     <!-- 项目自定义源生成器 -->
     <ItemGroup>
         <AdditionalFiles Include="App\IoC\LifecycleState.cs" />
-        <ProjectReference Include="..\PCL.Core.SourceGenerators\PCL.Core.SourceGenerators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+        <!-- 8-30 修 Linux 原生编译：ProjectReference-as-Analyzer 在 Linux 上不传递给 csc（analyzer 列表缺
+             SourceGenerators.dll → partial property 244 个 CS9248）。保留 ProjectReference 保证先生成，
+             再加显式 Analyzer 引用生成的 DLL（Windows 原有行为不变）。 -->
+        <ProjectReference Include="..\PCL.Core.SourceGenerators\PCL.Core.SourceGenerators.csproj" ReferenceOutputAssembly="false" />
+        <Analyzer Include="../PCL.Core.SourceGenerators/bin/$(Configuration)/netstandard2.0/PCL.Core.SourceGenerators.dll" />
     </ItemGroup>
 </Project>

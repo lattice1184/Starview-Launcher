@@ -9,7 +9,7 @@ namespace Launcher.Core.Services;
 public static class FavoritesService
 {
     private static readonly string PathFile = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Launcher", "favorites.json");
+        Launcher.Core.Utils.AppPaths.DataRoot, "favorites.json");
 
     private static readonly HashSet<string> Ids = Load();
 

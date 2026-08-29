@@ -11,7 +11,7 @@ public static class LogExportHelper
     public static string ExportLogs(string outDir)
     {
         Directory.CreateDirectory(outDir);
-        var logDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Launcher", "logs");
+        var logDir = Path.Combine(Launcher.Core.Utils.AppPaths.DataRoot, "logs");
         var zipPath = Path.Combine(outDir, $"Starview-日志-{DateTime.Now:yyyyMMdd-HHmmss}.zip");
 
         using var zip = ZipFile.Open(zipPath, ZipArchiveMode.Create);

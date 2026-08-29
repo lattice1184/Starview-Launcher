@@ -29,7 +29,7 @@ public static class LaunchHistoryService
     private const int MaxEntries = 200;
 
     private static readonly string PathFile = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Launcher", "launch-history.json");
+        Launcher.Core.Utils.AppPaths.DataRoot, "launch-history.json");
 
     private static readonly List<LaunchHistoryEntry> Entries = Load();
 

@@ -12,7 +12,7 @@ public static class ChineseNameCache
 {
     private static readonly ConcurrentDictionary<string, string> Map = new(StringComparer.OrdinalIgnoreCase);
     private static readonly string CachePath = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Launcher", "cache", "chinese-names.json");
+        Launcher.Core.Utils.AppPaths.DataRoot, "cache", "chinese-names.json");
     private static readonly object SaveLock = new();
     private static Timer? _saveTimer;
 

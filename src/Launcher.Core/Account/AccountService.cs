@@ -32,8 +32,7 @@ public sealed class AccountService
     public AccountService(string? storePath = null)
     {
         _storePath = storePath ?? Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-            "Launcher", "accounts.json");
+            Launcher.Core.Utils.AppPaths.DataRoot, "accounts.json");
     }
 
     public AccountInfo LoginOffline(string name)

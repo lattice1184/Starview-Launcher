@@ -19,14 +19,20 @@ public sealed partial class DependencyCheckService
     {
         Context.Info(Lang.Text("Tools.Test.Dependency.Checking"));
 
+#if WINDOWS
         if (RuntimeInformation.OSArchitecture.Equals(Architecture.Arm64))
             await _CheckAndAskAsync("Microsoft.D3DMappingLayers", "OpenGL 兼容包", "9nqpsl29bfff")
                 .ConfigureAwait(false);
 
         await _CheckAndAskAsync("Microsoft.WebpImageExtension", "WebP 组件包", "9pg2dk419drg")
             .ConfigureAwait(false);
+#else
+        // Linux：不支持 Windows 商店依赖检查
+        Context.Info("当前平台不支持依赖检查");
+#endif
     }
 
+#if WINDOWS
     private static async Task _CheckAndAskAsync(string packageId, string packageName, string storeId)
     {
         if (!await _CheckPackageAsync(packageId))
@@ -107,4 +113,5 @@ public sealed partial class DependencyCheckService
             return findedPackName is not null && findedPackName.Contains(id);
         }
     }
+#endif
 }

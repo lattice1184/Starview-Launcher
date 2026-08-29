@@ -44,7 +44,7 @@ public sealed class EcosystemService
         _cf = curseforge;
         // 8-16 批次 53：缓存目录可注入（测试隔离——磁盘缓存跨测试共享会污染请求计数断言）
         _cacheDir = cacheDir ?? Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Launcher", "cache");
+            Launcher.Core.Utils.AppPaths.DataRoot, "cache");
     }
 
     /// <summary>8-25 双源共享 mcmod 候选：一次抓取喂中文 Modrinth + CF 双源（旧各自重抓两遍 mcmod）。

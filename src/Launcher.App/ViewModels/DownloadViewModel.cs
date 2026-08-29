@@ -312,7 +312,10 @@ public partial class DownloadViewModel : ViewModelBase
             NotificationService.Error("文件已不存在（可能被移动或删除）");
             return;
         }
-        Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{dest}\"") { UseShellExecute = true });
+        if (OperatingSystem.IsWindows())
+            Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{dest}\"") { UseShellExecute = true });
+        else
+            Process.Start(new ProcessStartInfo("xdg-open", $"\"{dest}\"") { UseShellExecute = true });
     }
 
     [RelayCommand]

@@ -186,9 +186,11 @@ public sealed partial class PromoteService
     // 主进程: 初始化提权后台服务
     private static bool _StartPromoteProcess()
     {
-        // 启动提权进程
+        // 启动提权进程（仅 Windows 支持 UAC 提权）
+#if WINDOWS
         _promoteProcess = ProcessInterop.Start(
             Basics.ExecutablePath, $"promote {Basics.CurrentProcessId}", true);
+#endif
         if (_promoteProcess is null)
         {
             Context.Warn("提权进程启动失败");
@@ -334,7 +336,9 @@ public sealed partial class PromoteService
         if (_promoteProcess is not null && !_promoteProcess.WaitForExit(3000))
         {
             Context.Debug("正在结束提权进程");
+#if WINDOWS
             ProcessInterop.Kill(_promoteProcess, 0, true);
+#endif
         }
     }
 }

@@ -13,7 +13,10 @@ public static class FolderOpener
         try
         {
             if (!Directory.Exists(path)) Directory.CreateDirectory(path);
-            Process.Start(new ProcessStartInfo("explorer.exe", $"\"{path}\"") { UseShellExecute = true });
+            if (OperatingSystem.IsWindows())
+                Process.Start(new ProcessStartInfo("explorer.exe", $"\"{path}\"") { UseShellExecute = true });
+            else
+                Process.Start(new ProcessStartInfo("xdg-open", $"\"{path}\"") { UseShellExecute = true });
         }
         catch { /* 打开失败静默：非核心功能，不打扰用户 */ }
     }

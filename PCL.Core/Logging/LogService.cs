@@ -25,6 +25,13 @@ public class LogService : ILifecycleLogService
     /// </summary>
     public static Action<string>? FatalErrorReporter { get; set; }
 
+    /// <summary>
+    /// [Starview 8-30] 全局日志目录覆盖（宿主注入）。null = 默认 ExecutableDirectory/Lattice/Log。
+    /// Linux 上可执行目录可能只读（日志写不进），且 Launcher 日志统一进 AppPaths.DataRoot/logs。
+    /// 必须在 Lifecycle.OnLoading（LogService.StartAsync）之前设置。
+    /// </summary>
+    public static string? LogDirectoryOverride { get; set; }
+
     private LogService()
     {
         _context = Lifecycle.GetContext(this);
@@ -39,7 +46,8 @@ public class LogService : ILifecycleLogService
     public Task StartAsync()
     {
         Context.Trace("正在初始化 Logger 实例");
-        var config = new LoggerConfiguration(Path.Combine(Basics.ExecutableDirectory, "Lattice", "Log")); // 8-18：PCL → Lattice（运行时目录改名）
+        var logDir = LogDirectoryOverride ?? Path.Combine(Basics.ExecutableDirectory, "Lattice", "Log");
+        var config = new LoggerConfiguration(logDir);
         _logger = new Logger(config);
         Context.Trace("正在注册日志事件");
         LogWrapper.OnLog += _OnWrapperLog;

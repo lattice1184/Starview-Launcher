@@ -23,17 +23,31 @@ public static class GameDirectory
     /// <summary>自建目录候选（C 盘 Downloads 历史位 + D 盘位）——扫描源用，换盘后旧版本仍可见</summary>
     private static IEnumerable<string> OwnCandidates()
     {
-        yield return Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads", "YanKa Launcher", ".minecraft");
-        if (Directory.Exists("D:\\")) yield return Path.Combine("D:\\", "YanKa Launcher", ".minecraft");
+        if (OperatingSystem.IsWindows())
+        {
+            yield return Path.Combine(
+                Launcher.Core.Utils.AppPaths.Downloads, "YanKa Launcher", ".minecraft");
+            if (Directory.Exists("D:\\")) yield return Path.Combine("D:\\", "YanKa Launcher", ".minecraft");
+        }
+        else
+        {
+            // Linux/macOS：~/Games/YanKa Launcher/.minecraft（无盘符概念）
+            yield return Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Games", "YanKa Launcher", ".minecraft");
+        }
     }
 
-    /// <summary>启动器自建根（优先 D 盘 D:\YanKa Launcher\.minecraft；无 D 盘回退 C 盘 Downloads 历史位）</summary>
+    /// <summary>启动器自建根（Windows 优先 D 盘 D:\YanKa Launcher\.minecraft，无 D 盘回退 Downloads 历史位；Linux 用 ~/Games）</summary>
     public static string OwnDefault()
     {
-        if (Directory.Exists("D:\\")) return Path.Combine("D:\\", "YanKa Launcher", ".minecraft");
+        if (OperatingSystem.IsWindows())
+        {
+            if (Directory.Exists("D:\\")) return Path.Combine("D:\\", "YanKa Launcher", ".minecraft");
+            return Path.Combine(
+                Launcher.Core.Utils.AppPaths.Downloads, "YanKa Launcher", ".minecraft");
+        }
         return Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads", "YanKa Launcher", ".minecraft");
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Games", "YanKa Launcher", ".minecraft");
     }
 
     /// <summary>安装目标目录（下载/安装落点）：用户自配 ?? 启动器自建。永不探测已有环境。</summary>

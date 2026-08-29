@@ -9,10 +9,9 @@ namespace Launcher.Core.Multiplayer;
 /// </summary>
 public static class TerracottaRepairService
 {
-    /// <summary>锁文件（进程间互斥端口）；残留时新实例 meta 校验失败</summary>
-    public static string LockPath => Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "terracotta", "terracotta.lock");
+    /// <summary>锁文件（进程间互斥端口）；残留时新实例 meta 校验失败。与 Lobby 读取一致（%TEMP%/tmp），
+    /// 8-29 修复：原指向 %LocalAppData%\terracotta 是错误路径，永远删不到 daemon 真锁。</summary>
+    public static string LockPath => TerracottaProvisioningService.LockPath;
 
     /// <summary>杀掉本机全部 terracotta 进程（安装 exe 统一命名）+ 删锁文件；返回击杀数</summary>
     public static int KillStaleInstances()

@@ -23,7 +23,7 @@ public sealed class McmodSearchService
 
     public McmodSearchService(string? cacheDir = null)
         => _cacheDir = cacheDir ?? Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Launcher", "cache", "mcmod");
+            Launcher.Core.Utils.AppPaths.DataRoot, "cache", "mcmod");
 
     /// <summary>缓存文件：{dir}/{sha256(key)}.html，内容 = 8 字节 unix 时间戳 + HTML</summary>
     private string CachePath(string key)
@@ -287,26 +287,31 @@ public static class ModAliasTable
     public static IEnumerable<(string Chinese, string[] Slugs)> AllEntries()
         => Map.Select(kv => (kv.Key, kv.Value));
 
-    /// <summary>中文 query → 命中的别名 slug 列表（8-19 生态修缮：多词查询命中全部键并集——
-    /// 「钠 锂」→ sodium + lithium；旧实现只中一个键，多词搜索丢一半；无命中空）</summary>
+    /// <summary>query 分词分隔符（空格/制表/中文逗号/英文逗号/顿号）——8-30 关键词搜索</summary>
+    private static readonly char[] QuerySeperators = [' ', '\t', '，', ',', '、'];
+
+    /// <summary>中文 query → 命中的别名 slug 列表。
+    /// 8-30 关键词化：query 分词，任一词是别名键的子串即命中——「机械动力」少一字成「机械动」也能命中；
+    /// 保留 8-19 多词并集语义（「钠 锂」→ sodium + lithium）。行为变化：短词命中更宽（「钠」同时命中 钠 与 钠扩展）。</summary>
     public static IReadOnlyList<string> Resolve(string? query)
     {
         if (string.IsNullOrWhiteSpace(query)) return [];
+        var words = query.Split(QuerySeperators, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         var result = new List<string>();
         foreach (var (key, slugs) in Map)
-        {
-            if (query.Contains(key, StringComparison.OrdinalIgnoreCase))
+            if (words.Any(w => key.Contains(w, StringComparison.OrdinalIgnoreCase)))
                 result.AddRange(slugs);
-        }
         return result.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
     }
 
-    /// <summary>命中时显示的中文标题（取命中的键——「钠」→「钠 (Sodium)」）</summary>
+    /// <summary>命中时显示的中文标题（取命中的键——「钠」→「钠 (Sodium)」；8-30 同步关键词子串语义）</summary>
     public static string TitleFor(string? query, string slug)
     {
+        if (string.IsNullOrWhiteSpace(query)) return slug;
+        var words = query.Split(QuerySeperators, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         foreach (var (key, slugs) in Map)
             if (slugs.Contains(slug, StringComparer.OrdinalIgnoreCase)
-                && query?.Contains(key, StringComparison.OrdinalIgnoreCase) == true)
+                && words.Any(w => key.Contains(w, StringComparison.OrdinalIgnoreCase)))
                 return $"{key} ({slug})";
         return slug;
     }

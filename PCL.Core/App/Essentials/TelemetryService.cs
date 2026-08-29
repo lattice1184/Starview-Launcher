@@ -74,7 +74,9 @@ public sealed partial class TelemetryService
         {
             scope.User = new SentryUser
             {
+#if WINDOWS
                 Id = Utils.Secret.Identify.LauncherId
+#endif
             };
         });
         
@@ -176,7 +178,11 @@ public sealed partial class TelemetryService
         var telemetry = new TelemetryDeviceEnvironment
         {
             Tag = "Telemetry",
+#if WINDOWS
             Id = Utils.Secret.Identify.LauncherId,
+#else
+            Id = "unknown",
+#endif
             Os = Environment.OSVersion.Version.Build,
             Is64Bit = Environment.Is64BitOperatingSystem,
             IsArm64 = RuntimeInformation.OSArchitecture.Equals(Architecture.Arm64),
@@ -188,12 +194,20 @@ public sealed partial class TelemetryService
                 UpdateChannel.Dev => "Dev",
                 _ => "Unknown"
             },
+#if WINDOWS
             UsedOfficialPcl =
                 bool.TryParse(Registry.GetValue(@"HKEY_CURRENT_USER\Software\PCL", "SystemEula", "false") as string,
                     out var officialPcl) && officialPcl,
+#else
+            UsedOfficialPcl = false,
+#endif
             UsedHmcl = Directory.Exists(Path.Combine(appDataFolder, ".hmcl")),
             UsedBakaXl = Directory.Exists(Path.Combine(appDataFolder, "BakaXL")),
+#if WINDOWS
             Memory = KernelInterop.GetPhysicalMemoryBytes().Total,
+#else
+            Memory = 0,
+#endif
             NatMapBehaviour = natTest?.State.MappingBehavior.ToString(),
             NatFilterBehaviour = natTest?.State.FilteringBehavior.ToString(),
             Ipv6Status = NetworkInterfaceUtils.GetIPv6Status().ToString()

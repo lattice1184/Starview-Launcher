@@ -1,3 +1,4 @@
+#if WINDOWS
 using System;
 using System.Management;
 using PCL.Core.App;
@@ -101,3 +102,4 @@ public static class IdentifyOld
         }
     }
 }
+#endif

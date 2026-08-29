@@ -16,15 +16,27 @@ public sealed class TerracottaProvisioningService
     /// <summary>锁定的陶瓦版本</summary>
     public const string LockedVersion = "0.4.2";
 
-    /// <summary>已知 SHA256（{version}/{arch}）——资产校验用</summary>
+    /// <summary>已知 SHA256（{version}/{arch}/{os}）——资产校验用（8-29 实测下载 Linux x86_64 计算写入）</summary>
     public static readonly IReadOnlyDictionary<string, string> KnownDigests = new Dictionary<string, string>
     {
-        ["0.4.2/x86_64"] = "07ebe139e3ca5f74576e58b1a96efe59abdfbe148d3f1a49bfdca8b6f70745f0",
-        ["0.4.2/arm64"] = "acfab0a87a02dedc6dab7c05303186c8907f56f815548b693fb3324358da7d14",
+        ["0.4.2/x86_64/windows"] = "07ebe139e3ca5f74576e58b1a96efe59abdfbe148d3f1a49bfdca8b6f70745f0",
+        ["0.4.2/arm64/windows"] = "acfab0a87a02dedc6dab7c05303186c8907f56f815548b693fb3324358da7d14",
+        ["0.4.2/x86_64/linux"] = "675c4fd6c74d49ed8165151ba2be5b6582e0af20fb6d912074543c2484b1e10a",
     };
 
-    public static string AssetName(string version, string arch) => $"terracotta-{version}-windows-{arch}-pkg.tar.gz";
-    public static string ExeFileName(string version, string arch) => $"terracotta-{version}-windows-{arch}.exe";
+    /// <summary>平台键：windows / linux（Terracotta 上游无 macOS 包）</summary>
+    public static string OsKey => OperatingSystem.IsWindows() ? "windows" : "linux";
+
+    public static string AssetName(string version, string arch) => $"terracotta-{version}-{OsKey}-{arch}-pkg.tar.gz";
+
+    /// <summary>资产内主文件原始名（用于识别并统一改名）。Windows 包内为 terracotta-{ver}-windows-{arch}.exe；
+    /// Linux 包内无扩展名。8-29 修复：平台化时曾漏掉 Windows 的 .exe，导致重命名匹配不上 → 安装被拒。</summary>
+    public static string ExeFileName(string version, string arch) => OperatingSystem.IsWindows()
+        ? $"terracotta-{version}-{OsKey}-{arch}.exe"
+        : $"terracotta-{version}-{OsKey}-{arch}";
+
+    /// <summary>安装后的统一可执行名（Windows 带 .exe，Linux 无扩展名）</summary>
+    public static string InstalledExeName => OperatingSystem.IsWindows() ? "terracotta.exe" : "terracotta";
 
     /// <summary>Gitee 资产 URL（国内快，优先）</summary>
     public static string GiteeAssetUrl(string version, string arch)
@@ -36,10 +48,13 @@ public sealed class TerracottaProvisioningService
 
     /// <summary>安装根：%AppData%\Launcher\tools\terracotta</summary>
     public static string ModuleRoot => Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Launcher", "tools", "terracotta");
+        Launcher.Core.Utils.AppPaths.DataRoot, "tools", "terracotta");
 
     /// <summary>manifest 文件名（自研命名，区别于 BHL 的 .blockhelm-module.json）</summary>
     public const string ManifestName = ".terracotta-module.json";
+
+    /// <summary>陶瓦守护进程互斥锁文件（%TEMP%/tmp 下，与 HMCL 握手协议一致；Lobby 读、Repair 删共用）</summary>
+    public static string LockPath => Path.Combine(Path.GetTempPath(), "terracotta", "terracotta.lock");
 
     private const long MaxArchiveBytes = 64 * 1024 * 1024;
     private const int BufferSize = 81920;
@@ -75,7 +90,7 @@ public sealed class TerracottaProvisioningService
         TerracottaModule? best = null;
         foreach (var dir in versionDirs)
         {
-            var moduleDir = Path.Combine(dir, $"terracotta-windows-{Arch}");
+            var moduleDir = Path.Combine(dir, $"terracotta-{OsKey}-{Arch}");
             var module = ValidateInstallation(moduleDir);
             if (module is null)
             {
@@ -111,7 +126,7 @@ public sealed class TerracottaProvisioningService
 
             var version = LockedVersion;
             var arch = Arch;
-            var expectedSha = KnownDigests.TryGetValue($"{version}/{arch}", out var s) ? s : null;
+            var expectedSha = KnownDigests.TryGetValue($"{version}/{arch}/{OsKey}", out var s) ? s : null;
 
             var candidates = new[] { GiteeAssetUrl(version, arch), GitHubAssetUrl(version, arch) };
             string? lastError = null;
@@ -194,7 +209,7 @@ public sealed class TerracottaProvisioningService
         IProgress<TerracottaProvisionProgress>? progress, CancellationToken ct)
     {
         var installRoot = Path.Combine(ModuleRoot, version);
-        var targetDir = Path.Combine(installRoot, $"terracotta-windows-{arch}");
+        var targetDir = Path.Combine(installRoot, $"terracotta-{OsKey}-{arch}");
         var staging = targetDir + ".staging-" + Guid.NewGuid().ToString("N")[..8];
         Directory.CreateDirectory(staging);
         try
@@ -210,7 +225,7 @@ public sealed class TerracottaProvisioningService
                     // 扁平名：含目录分隔符或 . / .. 直接拒
                     if (name.Contains('/') || name is "." or "..")
                         throw new InvalidDataException($"归档含非法路径：{name}");
-                    var realName = name == ExeFileName(version, arch) ? "terracotta.exe" : name;
+                    var realName = name == ExeFileName(version, arch) ? InstalledExeName : name;
                     if (files.ContainsKey(realName))
                         throw new InvalidDataException($"归档含重复文件：{realName}");
                     if (entry.Size <= 0 || entry.Size > MaxArchiveBytes)
@@ -221,9 +236,16 @@ public sealed class TerracottaProvisioningService
                     files[realName] = (entry.Size, await Sha256HexAsync(outPath, ct));
                 }
             }
-            // 恰好 2 个文件：terracotta.exe + VCRUNTIME140.DLL
-            if (files.Count != 2 || !files.ContainsKey("terracotta.exe") || !files.ContainsKey("VCRUNTIME140.DLL"))
+            // 文件集：Windows = terracotta.exe + VCRUNTIME140.DLL；Linux = terracotta（无 VC 运行库）
+            if (OperatingSystem.IsWindows())
+            {
+                if (files.Count != 2 || !files.ContainsKey("terracotta.exe") || !files.ContainsKey("VCRUNTIME140.DLL"))
+                    throw new InvalidDataException($"归档文件不齐：{string.Join(", ", files.Keys)}");
+            }
+            else if (files.Count != 1 || !files.ContainsKey("terracotta"))
+            {
                 throw new InvalidDataException($"归档文件不齐：{string.Join(", ", files.Keys)}");
+            }
 
             // manifest（先写 tmp 再 Move 覆盖，防半写）
             var manifestPath = Path.Combine(staging, ManifestName);
@@ -275,10 +297,10 @@ public sealed class TerracottaProvisioningService
             var manifest = JsonSerializer.Deserialize<ModuleManifest>(File.ReadAllText(manifestPath));
             if (manifest is null || manifest.Architecture != Arch) return null;
             var dirName = Path.GetFileName(dir);
-            if (!dirName.StartsWith("terracotta-windows-") || !dirName.EndsWith(manifest.Architecture)) return null;
-            if (manifest.Files.Count != 2
-                || !manifest.Files.ContainsKey("terracotta.exe")
-                || !manifest.Files.ContainsKey("VCRUNTIME140.DLL"))
+            if (!dirName.StartsWith($"terracotta-{OsKey}-") || !dirName.EndsWith(manifest.Architecture)) return null;
+            if (manifest.Files.Count != (OperatingSystem.IsWindows() ? 2 : 1)
+                || !manifest.Files.ContainsKey(InstalledExeName)
+                || (OperatingSystem.IsWindows() && !manifest.Files.ContainsKey("VCRUNTIME140.DLL")))
                 return null;
             foreach (var (name, info) in manifest.Files)
             {
@@ -287,7 +309,7 @@ public sealed class TerracottaProvisioningService
                 if (!fi.Exists || fi.Length != info.Size) return null;
                 if (!string.Equals(Sha256Hex(path), info.Sha256, StringComparison.OrdinalIgnoreCase)) return null;
             }
-            return new TerracottaModule(manifest.Version, manifest.Architecture, dir, Path.Combine(dir, "terracotta.exe"));
+            return new TerracottaModule(manifest.Version, manifest.Architecture, dir, Path.Combine(dir, InstalledExeName));
         }
         catch (Exception ex)
         {

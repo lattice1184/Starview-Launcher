@@ -4,7 +4,6 @@ using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Launcher.App.Services;
-using Launcher.Core.Server;
 using Launcher.Core.Utils;
 
 namespace Launcher.App.Views;
@@ -33,7 +32,7 @@ public sealed partial class StorageItemVM : ObservableObject
     }
 }
 
-/// <summary>存储空间窗口：列出启动器全部文件位置与占用，可清理日志/缓存/崩溃报告/服务端</summary>
+/// <summary>存储空间窗口：列出启动器全部文件位置与占用，可清理日志/缓存/崩溃报告</summary>
 public partial class StorageWindow : Window
 {
     public ObservableCollection<StorageItemVM> Items { get; } = [];
@@ -50,7 +49,7 @@ public partial class StorageWindow : Window
     {
         Items.Clear();
         var gameDir = LauncherSettings.Current.GameDirectory ?? GameDirectory.Detect();
-        var appData = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Launcher");
+        var appData = Path.Combine(AppPaths.DataRoot);
 
         // 分组扫描（Core 层；设置页「模块与存储」分区共用同一逻辑）
         var groups = await Task.Run(() => StorageScanner.Scan(gameDir, appData));

@@ -30,7 +30,7 @@ public sealed record MultiplayerPlayerVM(MultiplayerPlayer Player)
 }
 
 /// <summary>
-/// 联机页：陶瓦（Terracotta）或 EasyTier 两种方案，与开服完全分离。
+/// 联机页：陶瓦（Terracotta）或 EasyTier 两种方案。
 /// 陶瓦：房主在游戏里开「局域网世界」→ 本页「创建房间」→ 出房间码；客机：输码加入（自动代理局域网世界）。
 /// EasyTier：虚拟组网——房间码带房主地址，双方互通后游戏内开局域网世界，直接连接输 虚拟IP:端口。
 /// 未装模块 → 弹协议窗/直接下载；失败/停止 → 复位 + 人话文案。

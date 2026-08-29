@@ -164,12 +164,22 @@ public static class Basics
         }
         catch (Win32Exception ex) when (ex.NativeErrorCode == 1155 && File.Exists(path))
         {
+#if WINDOWS
             Process.Start(new ProcessStartInfo
             {
                 FileName = "notepad.exe",
                 Arguments = $"\"{path}\"",
                 UseShellExecute = false
             });
+#else
+            // Linux：用 xdg-open 打开关联应用
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = "xdg-open",
+                Arguments = $"\"{path}\"",
+                UseShellExecute = false
+            });
+#endif
         }
     }
     #endregion

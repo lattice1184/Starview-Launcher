@@ -1,3 +1,4 @@
+#if WINDOWS
 using System;
 
 namespace PCL.Core.Utils.WinRT.Interface;
@@ -19,3 +20,4 @@ public unsafe struct IInspectableVtbl
     public delegate* unmanaged<void*, IntPtr*, int> GetRuntimeClassName;
     public delegate* unmanaged<void*, int*, int> GetTrustLevel;
 }
+#endif

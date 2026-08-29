@@ -51,9 +51,10 @@ public static class PipeComm
                 {
                     hasNextLoop = false;
                     pipe.WaitForConnection(); // 等待客户端连接
-                    // 获取客户端进程实例并校验
+                    // 获取客户端进程实例并校验（仅 Windows 支持获取命名管道对端进程 ID）
                     Process? clientProcess = null;
                     var clientProcessId = 0;
+#if WINDOWS
                     try
                     {
                         var pid = KernelInterop.GetNamedPipeClientProcessId(pipe.SafePipeHandle.DangerousGetHandle());
@@ -79,6 +80,7 @@ public static class PipeComm
                             throw;
                         }
                     }
+#endif
                     connected = true;
                     LogWrapper.Debug("Pipe", $"{identifier}: {clientProcessId} 已连接");
                     // 初始化读取/写入流

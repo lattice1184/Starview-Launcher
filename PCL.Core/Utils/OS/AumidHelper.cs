@@ -1,3 +1,4 @@
+#if WINDOWS
 using Microsoft.Win32;
 
 namespace PCL.Core.Utils.OS;
@@ -26,3 +27,4 @@ public static class AumidHelper
         Registry.CurrentUser.DeleteSubKey(string.Concat(@"Software\Classes\AppUserModelId\", Aumid), false);
     }
 }
+#endif

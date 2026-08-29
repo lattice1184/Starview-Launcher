@@ -11,7 +11,7 @@ namespace Launcher.Core.Services;
 /// </summary>
 public sealed class VersionManifestService
 {
-    /// <summary>Mojang 版本清单（AM：ServerInstaller 服务端 URL 推断复用）</summary>
+    /// <summary>Mojang 版本清单</summary>
     public const string ManifestUrl = "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json";
 
     /// <summary>BMCLAPI 清单镜像（2026-08-08 实测：200 + 273,470 字节完整清单 + 0.5s；GET 302 跳 CDN，HttpClient 自动跟随）</summary>
@@ -51,7 +51,7 @@ public sealed class VersionManifestService
         // 清单是元数据小请求：15s 总超时（国内直连官方清单慢/失败时快速失败，不卡修复/刷新）
         _http = http ?? HttpClientPool.CreateSharedClient(TimeSpan.FromSeconds(15));
         _cacheDirectory = cacheDirectory ?? Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Launcher", "cache");
+            Launcher.Core.Utils.AppPaths.DataRoot, "cache");
     }
 
     /// <summary>

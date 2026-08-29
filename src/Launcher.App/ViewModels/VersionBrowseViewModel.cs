@@ -402,22 +402,14 @@ public partial class InstalledVersionDetailVM : ViewModelBase
     [ObservableProperty]
     public partial bool JarMissing { get; set; }
 
-    /// <summary>运行状态徽章（AG2：客户端/服务端运行中——全局 RunningVersion 驱动）</summary>
+    /// <summary>运行状态徽章（AG2：客户端运行中——全局 RunningVersion 驱动）</summary>
     [ObservableProperty]
     public partial string RunningText { get; set; } = "";
 
     public string JarMissingText
-    {
-        get
-        {
-            var rv = MainViewModel.Current?.RunningVersion;
-            if (rv is not null && rv.VersionId.Equals(Id, StringComparison.OrdinalIgnoreCase) && rv.Kind == "服务端")
-                return $"版本 {Id} 客户端文件缺失，不影响开服（服务端运行中），需要启动客户端时再补全下载。";
-            return $"版本 {Id} 客户端文件缺失，无法启动。可补全下载，或前往官方页面手动下载。";
-        }
-    }
+        => $"版本 {Id} 客户端文件缺失，无法启动。可补全下载，或前往官方页面手动下载。";
 
-    /// <summary>全局运行状态变化 → 刷新本详情徽章（服务端运行中时缺失红字弱化）</summary>
+    /// <summary>全局运行状态变化 → 刷新本详情徽章</summary>
     private void RefreshRunning()
     {
         var rv = MainViewModel.Current?.RunningVersion;

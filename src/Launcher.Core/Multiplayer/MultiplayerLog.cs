@@ -11,8 +11,7 @@ public static class MultiplayerLog
     private static readonly object Gate = new();
 
     public static string LogPath => Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-        "Launcher", "logs", "multiplayer.log");
+        Launcher.Core.Utils.AppPaths.DataRoot, "logs", "multiplayer.log");
 
     /// <summary>追加一行（毫秒级时间戳）。线程安全；写失败静默（日志不能成为新故障源）。</summary>
     public static void Log(string message)

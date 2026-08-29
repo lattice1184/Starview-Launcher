@@ -14,6 +14,7 @@ partial class Lifecycle
 
     private static void _KillCurrentProcess()
     {
+#if WINDOWS
         var psi = new ProcessStartInfo
         {
             FileName = "taskkill.exe",
@@ -22,5 +23,9 @@ partial class Lifecycle
             CreateNoWindow = true
         };
         Process.Start(psi);
+#else
+        // Linux/其他平台：直接强制结束当前进程
+        Process.GetCurrentProcess().Kill();
+#endif
     }
 }

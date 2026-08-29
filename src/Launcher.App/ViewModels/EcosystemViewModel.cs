@@ -278,7 +278,7 @@ public partial class EcosystemViewModel : ViewModelBase
     /// 实例 → 版本项（8-27 修复「模组显示 1.21」）：此前只传 LoaderBadge 漏传 McVersion，
     /// fabric 实例（fabric-loader-0.19.4-26.1.2）ResolvedGameVersion 走实例名解析失败 → 空 → 详情页不按游戏版本过滤
     /// → 自动匹配从全量选最新（选到 1.21 的 Sodium）。改用 VersionScan.Inspect 读 version.json 的 inheritsFrom 填 McVersion
-    /// （与主页/版本页/开服页口径一致）；LoaderDetector.Detect 只给 loader 徽章，不读继承版本。
+    /// （与主页/版本页口径一致）；LoaderDetector.Detect 只给 loader 徽章，不读继承版本。
     /// </summary>
     internal static VersionInstanceVM BuildInstanceVM(string id, string gameDir)
     {

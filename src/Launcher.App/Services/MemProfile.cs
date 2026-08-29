@@ -32,8 +32,7 @@ public static class MemProfile
             lock (Lock)
             {
                 _log ??= new StreamWriter(Path.Combine(
-                    Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-                    "Launcher", "logs", "mem-profile.log"), append: true) { AutoFlush = true };
+                    Launcher.Core.Utils.AppPaths.DataRoot, "logs", "mem-profile.log"), append: true) { AutoFlush = true };
                 _log.WriteLine(line);
                 Console.WriteLine(line);
             }

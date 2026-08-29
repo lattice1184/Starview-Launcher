@@ -139,7 +139,9 @@ public partial class NetworkService
     {
         UseProxy = true,
         AutomaticDecompression = DecompressionMethods.All,
+#if WINDOWS
         Proxy = HttpProxyManager.Instance,
+#endif
         AllowAutoRedirect = true,
         MaxAutomaticRedirections = 20,
         UseCookies = false,

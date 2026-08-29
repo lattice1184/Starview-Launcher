@@ -22,6 +22,12 @@ public static class JavaSelector
         ("jre-legacy", 8),
     ];
 
+    /// <summary>平台 Java 可执行文件名（Windows: java.exe；Unix: java）</summary>
+    private static string JavaExe => OperatingSystem.IsWindows() ? "java.exe" : "java";
+
+    /// <summary>Mojang 官方 runtime 平台子目录（windows-x64 / linux-x64）</summary>
+    private static string OsRuntimeDir => OperatingSystem.IsWindows() ? "windows-x64" : "linux-x64";
+
     public sealed record JavaInstall(string Path, int Major);
 
     /// <summary>选择 Java 可执行文件路径；找不到匹配版本时返回 null（调用方决定下载或提示）。</summary>
@@ -80,52 +86,62 @@ public static class JavaSelector
             found.Add(new JavaInstall(exe, major ?? 0));
         }
 
-        // 1. AppData\.minecraft\runtime 官方布局（PCL / 官方启动器缓存）——大版本已知
-        var runtimeBase = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), ".minecraft", "runtime");
+        // 1. .minecraft\runtime 官方布局（PCL / 官方启动器缓存）——大版本已知（平台子目录）。
+        //    Windows 在 %AppData%\.minecraft；Linux 在 ~/.minecraft（不跟 XDG——Mojang 硬编码家目录）
+        var mcRoot = OperatingSystem.IsWindows()
+            ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), ".minecraft")
+            : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".minecraft");
+        var runtimeBase = Path.Combine(mcRoot, "runtime");
         foreach (var (name, major) in Runtimes)
         {
-            Add(Path.Combine(runtimeBase, name, "windows-x64", name, "bin", "java.exe"), major);
-            Add(Path.Combine(runtimeBase, name, "bin", "java.exe"), major);
+            Add(Path.Combine(runtimeBase, name, OsRuntimeDir, name, "bin", JavaExe), major);
+            Add(Path.Combine(runtimeBase, name, "bin", JavaExe), major);
         }
 
-        // 2. 注册表 JavaSoft（Oracle/OpenJDK）与 Adoptium
-        try
+        // 2. 注册表 JavaSoft（Oracle/OpenJDK）与 Adoptium（仅 Windows；Linux 无注册表）
+        if (OperatingSystem.IsWindows())
         {
-            using var javaSoft = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(@"SOFTWARE\JavaSoft");
-            if (javaSoft is not null)
+            try
             {
-                AddRegistryFamily(javaSoft, "JDK", Add);
-                AddRegistryFamily(javaSoft, "JRE", Add);
+                using var javaSoft = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(@"SOFTWARE\JavaSoft");
+                if (javaSoft is not null)
+                {
+                    AddRegistryFamily(javaSoft, "JDK", Add);
+                    AddRegistryFamily(javaSoft, "JRE", Add);
+                }
+                using var adoptium = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(@"SOFTWARE\Eclipse Adoptium\JDK");
+                if (adoptium is not null) AddRegistryFamily(adoptium, null, Add);
             }
-            using var adoptium = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(@"SOFTWARE\Eclipse Adoptium\JDK");
-            if (adoptium is not null) AddRegistryFamily(adoptium, null, Add);
+            catch { /* 注册表不可读则跳过 */ }
         }
-        catch { /* 注册表不可读则跳过 */ }
 
         // 3. JAVA_HOME
-        Add(Environment.GetEnvironmentVariable("JAVA_HOME") is { } jh ? Path.Combine(jh, "bin", "java.exe") : null);
+        Add(Environment.GetEnvironmentVariable("JAVA_HOME") is { } jh ? Path.Combine(jh, "bin", JavaExe) : null);
 
-        // 4. PATH 中的 java
-        foreach (var dir in (Environment.GetEnvironmentVariable("PATH") ?? "").Split(';'))
-            Add(Path.Combine(dir.Trim('"'), "java.exe"));
+        // 4. PATH 中的 java（Windows 分号 / Unix 冒号）
+        foreach (var dir in (Environment.GetEnvironmentVariable("PATH") ?? "").Split(Path.PathSeparator))
+            Add(Path.Combine(dir.Trim('"'), JavaExe));
 
-        // 5. Program Files 常见 JDK 目录
-        foreach (var baseDir in new[]
-        {
-            @"C:\Program Files\Java", @"C:\Program Files\Eclipse Adoptium", @"C:\Program Files\Microsoft",
-            @"C:\Program Files\Zulu", @"C:\Program Files\Amazon Corretto", @"D:\Program Files\Java",
-        })
+        // 5. 常见 JDK 目录（Windows: Program Files；Linux: /usr/lib/jvm、/opt 等）
+        var baseDirs = OperatingSystem.IsWindows()
+            ? new[]
+            {
+                @"C:\Program Files\Java", @"C:\Program Files\Eclipse Adoptium", @"C:\Program Files\Microsoft",
+                @"C:\Program Files\Zulu", @"C:\Program Files\Amazon Corretto", @"D:\Program Files\Java",
+            }
+            : new[] { "/usr/lib/jvm", "/usr/java", "/opt" };
+        foreach (var baseDir in baseDirs)
         {
             if (!Directory.Exists(baseDir)) continue;
             foreach (var d in Directory.EnumerateDirectories(baseDir))
-                Add(Path.Combine(d, "bin", "java.exe"));
+                Add(Path.Combine(d, "bin", JavaExe));
         }
 
         return found;
     }
 
-    /// <summary>注册表一个族（JDK/JRE 或 Adoptium）下所有版本的 JavaHome</summary>
+    /// <summary>注册表一个族（JDK/JRE 或 Adoptium）下所有版本的 JavaHome（仅 Windows 调用）</summary>
+    [System.Runtime.Versioning.SupportedOSPlatform("windows")]
     private static void AddRegistryFamily(Microsoft.Win32.RegistryKey family, string? child,
         Action<string?, int?, string?> add)
     {

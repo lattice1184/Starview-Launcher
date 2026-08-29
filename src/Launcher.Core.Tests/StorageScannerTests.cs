@@ -63,9 +63,6 @@ public class StorageScannerTests : IDisposable
 
         // 备份：200B
         Assert.Equal(200, groups["backups"].TotalBytes);
-
-        // 服务端：无 servers 目录 → 空组
-        Assert.Empty(groups["server"].Items);
     }
 
     [Fact]

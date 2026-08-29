@@ -20,9 +20,14 @@ public partial class SectionLaunchView : UserControl
         if (Vm is null || Picker is null) return;
         var files = await Picker.OpenFilePickerAsync(new FilePickerOpenOptions
         {
-            Title = "选择 java.exe",
+            Title = "选择 Java 可执行文件",
             AllowMultiple = false,
-            FileTypeFilter = [new FilePickerFileType("Java 可执行文件") { Patterns = ["java.exe"] }],
+            FileTypeFilter =
+            [
+                OperatingSystem.IsWindows()
+                    ? new FilePickerFileType("Java 可执行文件") { Patterns = ["java.exe"] }
+                    : new FilePickerFileType("Java 可执行文件") { Patterns = ["java"] },
+            ],
         });
         if (files.Count > 0 && files[0].Path.IsAbsoluteUri)
             Vm.ApplyJavaPath(files[0].Path.LocalPath);

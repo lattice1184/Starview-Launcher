@@ -1,5 +1,3 @@
-using Launcher.Core.Server;
-
 namespace Launcher.Core.Utils;
 
 /// <summary>存储位置：路径 + 是文件还是目录 + 是否可删</summary>
@@ -9,7 +7,7 @@ public sealed record StorageLocation(string Path, bool IsFile, bool CanDelete);
 public sealed record StorageGroup(string Key, string DisplayName, IReadOnlyList<StorageLocation> Items, long TotalBytes);
 
 /// <summary>
-/// 存储占用扫描与清理（按模块分组）：游戏文件 / 服务端 / 下载缓存 / 日志 / 备份导出。
+/// 存储占用扫描与清理（按模块分组）：游戏文件 / 下载缓存 / 日志 / 备份导出。
 /// 纯 IO、无 UI 依赖——设置页「模块与存储」分区与 StorageWindow 共用；App 侧 Task.Run 包裹防卡 UI。
 /// </summary>
 public static class StorageScanner
@@ -20,8 +18,7 @@ public static class StorageScanner
     public static List<StorageGroup> Scan(string? gameDir = null, string? appData = null)
     {
         gameDir ??= LauncherSettings.Current.GameDirectory ?? GameDirectory.Detect();
-        appData ??= Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Launcher");
-        var serversRoot = ServerInstaller.ServerDir(gameDir, "").TrimEnd(Path.DirectorySeparatorChar);
+        appData ??= Path.Combine(Launcher.Core.Utils.AppPaths.DataRoot);
 
         var groups = new List<StorageGroup>();
 
@@ -37,12 +34,6 @@ public static class StorageScanner
         };
         groups.Add(new("game", "游戏文件", gameLocations,
             gameLocations.Sum(l => ItemSize(l.Path, l.IsFile, IsPartsDir))));
-
-        // 服务端（每版本一目录，可删）
-        var serverItems = Directory.Exists(serversRoot)
-            ? Directory.EnumerateDirectories(serversRoot).Select(d => new StorageLocation(d, false, true)).ToList()
-            : [];
-        groups.Add(new("server", "服务端", serverItems, Sum(serverItems)));
 
         // 下载缓存（*.parts 分片目录 + AppData 缓存 + 整合包导出 + 直接下载的 mod + 失败下载残留，可删）
         var dlItems = new List<StorageLocation>();

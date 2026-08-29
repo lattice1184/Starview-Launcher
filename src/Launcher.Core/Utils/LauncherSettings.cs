@@ -24,7 +24,7 @@ public enum GamePriority { BelowNormal = 0, Normal = 1, AboveNormal = 2, High = 
 public sealed class LauncherSettings
 {
     private static readonly string DefaultPath = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Launcher", "settings.json");
+        Launcher.Core.Utils.AppPaths.DataRoot, "settings.json");
 
     /// <summary>自配游戏目录（如 C:\Users\yanka\Downloads\YanKa Launcher\.minecraft）；null = 自动探测</summary>
     public string? GameDirectory { get; set; }

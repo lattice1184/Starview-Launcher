@@ -425,7 +425,7 @@ public partial class AccountViewModel : ViewModelBase
     {
         try
         {
-            var dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Launcher", "logs");
+            var dir = Path.Combine(Launcher.Core.Utils.AppPaths.DataRoot, "logs");
             Directory.CreateDirectory(dir);
             File.AppendAllText(Path.Combine(dir, "microsoft-auth.log"),
                 $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {detail}{Environment.NewLine}");

@@ -44,6 +44,8 @@ public class McmodSearchServiceTests
     [InlineData("钠", "sodium")]
     [InlineData("钠 1.21", "sodium")]     // query 含别名键
     [InlineData("简单语音", "simple-voice-chat")]
+    [InlineData("机械动", "create")]      // 8-30 关键词化：前缀少一字（原「机械动」不含完整键「机械动力」搜不到）
+    [InlineData("动力", "create")]        // 8-30 关键词化：中缀少字（子串命中）
     [InlineData("没有这个词的模组", null)] // 无命中 → 空
     public void ModAliasTable_Resolve_HitsKnownSlugs(string query, string? expectedSlug)
     {
@@ -52,6 +54,15 @@ public class McmodSearchServiceTests
             Assert.Empty(slugs);
         else
             Assert.Contains(expectedSlug, slugs);
+    }
+
+    [Fact]
+    public void ModAliasTable_Resolve_ShortWordHitsRelated()
+    {
+        // 8-30 行为变化确认：子串匹配下「钠」同时命中 钠→sodium 与 钠扩展→sodium-extra
+        var slugs = ModAliasTable.Resolve("钠");
+        Assert.Contains("sodium", slugs);
+        Assert.Contains("sodium-extra", slugs);
     }
 
     [Fact]

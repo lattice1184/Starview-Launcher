@@ -1,3 +1,4 @@
+#if WINDOWS
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
@@ -267,3 +268,4 @@ public static partial class KernelInterop
     /// <returns>代表终端窗口的 HWND，若当前进程无关联的终端窗口，则该值为 <see cref="nint.Zero"/></returns>
     public static nint GetConsoleWindow() => _GetConsoleWindow();
 }
+#endif

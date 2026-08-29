@@ -50,7 +50,7 @@ public partial class SectionAboutView : UserControl
             Launcher.App.Services.NotificationService.Error("无法定位启动器路径");
             return;
         }
-        var appDataDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Launcher");
+        var appDataDir = Launcher.Core.Utils.AppPaths.DataRoot;
         var gameDir = Launcher.Core.Utils.LauncherSettings.Current.GameDirectory ?? Launcher.Core.Utils.GameDirectory.Detect();
         var installDir = Path.GetDirectoryName(exePath) ?? "";
 
@@ -67,20 +67,36 @@ public partial class SectionAboutView : UserControl
 
         try
         {
-            var ps = Path.Combine(Path.GetTempPath(), "yanla_uninstall.ps1");
-            var content = "Start-Sleep -Seconds 3\r\n"
-                + $"Remove-Item -LiteralPath '{exePath}' -Force -ErrorAction SilentlyContinue\r\n"
-                + $"Remove-Item -LiteralPath '{installDir}' -Force -ErrorAction SilentlyContinue\r\n" // 仅空目录
-                + $"Remove-Item -LiteralPath '{appDataDir}' -Recurse -Force -ErrorAction SilentlyContinue\r\n"
-                + $"Remove-Item -LiteralPath '{gameDir}' -Recurse -Force -ErrorAction SilentlyContinue\r\n"
-                + "Remove-Item -LiteralPath $MyInvocation.MyCommand.Path -Force -ErrorAction SilentlyContinue\r\n";
-            File.WriteAllText(ps, content, new System.Text.UTF8Encoding(true)); // BOM：PowerShell 5.1 正确识别 UTF-8
-            Process.Start(new ProcessStartInfo("powershell.exe",
-                $"-NoProfile -ExecutionPolicy Bypass -File \"{ps}\"")
+            if (OperatingSystem.IsWindows())
             {
-                UseShellExecute = true,
-                WindowStyle = ProcessWindowStyle.Hidden,
-            });
+                var ps = Path.Combine(Path.GetTempPath(), "yanla_uninstall.ps1");
+                var content = "Start-Sleep -Seconds 3\r\n"
+                    + $"Remove-Item -LiteralPath '{exePath}' -Force -ErrorAction SilentlyContinue\r\n"
+                    + $"Remove-Item -LiteralPath '{installDir}' -Force -ErrorAction SilentlyContinue\r\n" // 仅空目录
+                    + $"Remove-Item -LiteralPath '{appDataDir}' -Recurse -Force -ErrorAction SilentlyContinue\r\n"
+                    + $"Remove-Item -LiteralPath '{gameDir}' -Recurse -Force -ErrorAction SilentlyContinue\r\n"
+                    + "Remove-Item -LiteralPath $MyInvocation.MyCommand.Path -Force -ErrorAction SilentlyContinue\r\n";
+                File.WriteAllText(ps, content, new System.Text.UTF8Encoding(true)); // BOM：PowerShell 5.1 正确识别 UTF-8
+                Process.Start(new ProcessStartInfo("powershell.exe",
+                    $"-NoProfile -ExecutionPolicy Bypass -File \"{ps}\"")
+                {
+                    UseShellExecute = true,
+                    WindowStyle = ProcessWindowStyle.Hidden,
+                });
+            }
+            else
+            {
+                // Linux：sh 延迟自删脚本（延迟 3 秒等主进程退出；安装目录仅删空目录，防误删用户文件）
+                var sh = Path.Combine(Path.GetTempPath(), "yanla_uninstall.sh");
+                var content = "#!/bin/sh\nsleep 3\n"
+                    + $"rm -f '{exePath}'\n"
+                    + $"rmdir '{installDir}' 2>/dev/null\n"
+                    + $"rm -rf '{appDataDir}'\n"
+                    + $"rm -rf '{gameDir}'\n"
+                    + "rm -f \"$0\"\n";
+                File.WriteAllText(sh, content);
+                Process.Start(new ProcessStartInfo("/bin/sh", $"\"{sh}\"") { UseShellExecute = true });
+            }
             // 关闭主窗口（应用随之退出）；延迟删除脚本 3 秒后清理本体
             Launcher.App.Services.DialogService.MainWindow()?.Close();
         }

@@ -11,15 +11,13 @@ public static class DownloadLogFile
 {
     private static readonly object Gate = new();
     private static string LogPath => Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-        "Launcher", "logs", "download.log");
+        Launcher.Core.Utils.AppPaths.DataRoot, "logs", "download.log");
 
     /// <summary>8-22 步骤5：按任务独立落盘目录（内部树形日志查看器数据源）——
     /// logs/downloads/{任务名}_{时间戳}.log，与单文件 download.log 并存（单文件保留给「打开文件」习惯）。
     /// 任务名去非法字符（路径安全）。</summary>
     private static string LogsRoot => Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-        "Launcher", "logs");
+        Launcher.Core.Utils.AppPaths.DataRoot, "logs");
 
     private static bool _attached;
 

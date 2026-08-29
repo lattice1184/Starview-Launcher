@@ -60,7 +60,7 @@ public class TerracottaLobbyServiceTests : IDisposable
         public readonly Queue<string> StateQueue = new();
         public string? DefaultState;
         public int MetaStatus = 200;
-        public string MetaJson = $$"""{"version":"0.4.2","target_os":"windows","target_arch":"{{TerracottaProvisioningService.Arch}}"}""";
+        public string MetaJson = $$"""{"version":"0.4.2","target_os":"{{TerracottaProvisioningService.OsKey}}","target_arch":"{{TerracottaProvisioningService.Arch}}"}""";
         public int GuestingStatus = 200;
         public int IdeStatus = 200;
 

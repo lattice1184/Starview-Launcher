@@ -1,3 +1,4 @@
+#if WINDOWS
 using System;
 
 namespace PCL.Core.Utils.WinRT;
@@ -13,3 +14,4 @@ public readonly record struct HString(IntPtr Value)
     public static implicit operator IntPtr(HString h) => h.Value;
     public static explicit operator HString(IntPtr ptr) => new(ptr);
 }
+#endif

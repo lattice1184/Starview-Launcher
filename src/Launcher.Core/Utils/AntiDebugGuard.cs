@@ -31,7 +31,7 @@ public static class AntiDebugGuard
         if (!Enabled) return false;
         if (Environment.GetEnvironmentVariable("LATTICE_SKIP_ANTIDEBUG") == "1") return false;
         if (ManagedDetector?.Invoke() ?? System.Diagnostics.Debugger.IsAttached) return true;
-        if (NativeDetector?.Invoke() ?? IsDebuggerPresent()) return true;
+        if (OperatingSystem.IsWindows() && (NativeDetector?.Invoke() ?? IsDebuggerPresent())) return true;
         return false;
     }
 
@@ -66,8 +66,7 @@ public static class AntiDebugGuard
     {
         try
         {
-            var dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-                "Launcher", "logs");
+            var dir = Path.Combine(Launcher.Core.Utils.AppPaths.DataRoot, "logs");
             Directory.CreateDirectory(dir);
             File.AppendAllText(Path.Combine(dir, "launcher.log"),
                 $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {message}{Environment.NewLine}");
@@ -75,9 +74,11 @@ public static class AntiDebugGuard
         catch { /* 日志失败不阻塞退出路径 */ }
     }
 
+    [System.Runtime.Versioning.SupportedOSPlatform("windows")]
     [System.Runtime.InteropServices.DllImport("kernel32.dll")]
     private static extern bool IsDebuggerPresent();
 
+    [System.Runtime.Versioning.SupportedOSPlatform("windows")]
     [System.Runtime.InteropServices.DllImport("kernel32.dll")]
     private static extern void TerminateProcess(IntPtr hProcess, uint exitCode);
 

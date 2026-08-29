@@ -1,3 +1,4 @@
+#if WINDOWS
 using System;
 using System.IO;
 
@@ -9,3 +10,5 @@ public static class SystemPaths {
     /// </summary>
     public static string DriveLetter { get; } = Path.GetPathRoot(Environment.SystemDirectory)!;
 }
+
+#endif

@@ -30,7 +30,7 @@ public partial class LogCenterViewModel : ObservableObject
     public ObservableCollection<LogEntry> Entries { get; } = [];
 
     private static string LogsRoot => Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Launcher", "logs");
+        Launcher.Core.Utils.AppPaths.DataRoot, "logs");
 
     public LogCenterViewModel() => Reload();
 

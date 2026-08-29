@@ -25,9 +25,6 @@ public partial class MainViewModel : ViewModelBase
     public partial bool IsSettingsActive { get; set; }
 
     [ObservableProperty]
-    public partial bool IsServerActive { get; set; }
-
-    [ObservableProperty]
     public partial bool IsMultiplayerActive { get; set; }
     [ObservableProperty]
     public partial bool IsEcosystemActive { get; set; }
@@ -35,8 +32,8 @@ public partial class MainViewModel : ViewModelBase
     public HomeViewModel Home { get; } = new();
     public SettingsViewModel Settings { get; } = new();
 
-    // 8-19 惰性实例化：版本/下载/开服/联机/生态 VM 首次进入对应页才创建——
-    // 启动只付主页+设置的成本（版本页的 FileSystemWatcher 递归监听、下载页的历史订阅、开服页的进程事件
+    // 8-19 惰性实例化：版本/下载/联机/生态 VM 首次进入对应页才创建——
+    // 启动只付主页+设置的成本（版本页的 FileSystemWatcher 递归监听、下载页的历史订阅
     // 等常驻开销全部推迟到真正用到时，平时不占内存不耗事件）
     private VersionBrowseViewModel? _versions;
     public VersionBrowseViewModel Versions => _versions ??= new();
@@ -44,20 +41,17 @@ public partial class MainViewModel : ViewModelBase
     private DownloadViewModel? _downloads;
     public DownloadViewModel Downloads => _downloads ??= new();
 
-    private ServerViewModel? _server;
-    public ServerViewModel Server => _server ??= new();
-
     private MultiplayerViewModel? _multiplayer;
     public MultiplayerViewModel Multiplayer => _multiplayer ??= new();
 
     private EcosystemNavViewModel? _ecosystemNav;
     public EcosystemNavViewModel EcosystemNav => _ecosystemNav ??= new();
 
-    /// <summary>全局当前版本（主页权威，单向驱动下载/开服页——AF1：主页选什么，后面就全都是那个版本）</summary>
+    /// <summary>全局当前版本（主页权威，单向驱动下载/联机页——AF1：主页选什么，后面就全都是那个版本）</summary>
     [ObservableProperty]
     public partial VersionInstanceVM? CurrentVersion { get; set; }
 
-    /// <summary>全局运行状态（客户端/服务端；版本页徽章用——AG2 状态同步）</summary>
+    /// <summary>全局运行状态（客户端；版本页徽章用——AG2 状态同步）</summary>
     [ObservableProperty]
     public partial RunningVersionInfo? RunningVersion { get; set; }
 
@@ -85,9 +79,6 @@ public partial class MainViewModel : ViewModelBase
         Navigate("download");
         Downloads.NavigateToGame();
     }
-
-    /// <summary>跳到开服页（AL7：下载服务端失败后切回，配合 Status 红字让用户看到失败原因）</summary>
-    public void NavigateToServer() => Navigate("server");
 
     /// <summary>公共导航入口（支持 "download:tab" 前缀；下载完成跳回来源页用）</summary>
     public void NavigateTo(string page) => Navigate(page);
@@ -125,7 +116,6 @@ public partial class MainViewModel : ViewModelBase
         IsVersionsActive = page == "version";
         IsDownloadsActive = page == "download";
         IsSettingsActive = page == "settings";
-        IsServerActive = page == "server";
         IsMultiplayerActive = page == "multiplayer";
         IsEcosystemActive = page == "ecosystem";
         ReleaseOtherPages(); // 8-18 内存让渡：非激活页的大列表延迟释放（切回时各自懒重建）
@@ -133,15 +123,11 @@ public partial class MainViewModel : ViewModelBase
         if (page == "download") Downloads.ActivateDefault();
         if (page == "home") { Home.RefreshConfigText(); _ = Home.RefreshVersionsAsync(); } // 切回主页刷新配置摘要+已装版本
         if (page == "version") _ = Versions.LoadAsync(); // 每次进入强制重扫（下载补全后 JarMissing 红字同步消失——AG2）
-        if (page == "server") { _ = Server.RefreshVersionsAsync(); Server.OnPageActive(); } // 进开服页：刷新已装版本 + 启状态轮询
-        // 8-19 内存瘦身：离开开服页停轮询（_server 守卫——属性访问会触发惰性构造，未建过就不碰）
-        else if (_server is { } s) s.OnPageInactive();
         CurrentPage = page switch
         {
             "version" => Versions,
             "download" => Downloads,
             "settings" => Settings,
-            "server" => Server,
             "multiplayer" => Multiplayer,
             "ecosystem" => EcosystemNav,
             _ => Home,
@@ -163,12 +149,7 @@ public partial class MainViewModel : ViewModelBase
         });
     }
 
-    /// <summary>退出清理：开服页进程停止（惰性 VM 未创建则无事可做）</summary>
-    public void StopServerIfRunning() => _server?.StopOnExit();
-
-    /// <summary>8-19 内存优化：开服中标记（_server 惰性守卫——未创建不触发构造）</summary>
-    public bool IsServerRunning => _server?.IsRunning == true;
 }
 
-/// <summary>全局运行状态（AG2）：Kind = 客户端 / 服务端</summary>
+/// <summary>全局运行状态（AG2）：Kind = 客户端</summary>
 public sealed record RunningVersionInfo(string VersionId, string Kind);

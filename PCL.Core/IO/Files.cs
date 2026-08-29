@@ -28,6 +28,7 @@ public static class Files {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase
     };
 
+#if WINDOWS
     /// <summary>
     /// 在指定路径创建一个指向目标文件的 .lnk 快捷方式。
     /// </summary>
@@ -70,6 +71,7 @@ public static class Files {
         // 保存 .lnk 文件
         link.Save();
     }
+#endif
     
     public static bool ArePathsEqual(string path1, string path2) {
         var fullPath1 = Path.GetFullPath(path1).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);

@@ -1,3 +1,4 @@
+#if WINDOWS
 using System;
 using System.Collections.Generic;
 using System.Management;
@@ -81,3 +82,4 @@ public static class HardwareInfo
         LogWrapper.Info("已获取系统硬件信息");
     }
 }
+#endif

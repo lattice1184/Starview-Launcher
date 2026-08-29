@@ -110,8 +110,8 @@ public sealed class TerracottaLobbyService : IMultiplayerLobbyService
     {
         if (_controllerPort > 0) return;
 
-        // 1. 已有实例（%TEMP%\terracotta\terracotta.lock 2 字节大端端口）→ /meta 校验通过即复用
-        var lockPath = Path.Combine(Path.GetTempPath(), "terracotta", "terracotta.lock");
+        // 1. 已有实例（%TEMP%/tmp terracotta.lock 2 字节大端端口）→ /meta 校验通过即复用
+        var lockPath = Launcher.Core.Multiplayer.TerracottaProvisioningService.LockPath;
         var lockPort = ReadLockPort(lockPath);
         var metaOk = lockPort is not null && await MetaIsValidAsync(lockPort.Value, requireExactVersion: false, ct);
         MultiplayerLog.Log($"端点准备: lock端口={lockPort}, meta校验={(metaOk ? "通过" : "失败")}");
@@ -128,11 +128,15 @@ public sealed class TerracottaLobbyService : IMultiplayerLobbyService
         {
             WorkingDirectory = _module.Directory,
             UseShellExecute = false,
-            CreateNoWindow = true,
-            WindowStyle = ProcessWindowStyle.Hidden,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
         };
+        if (OperatingSystem.IsWindows())
+        {
+            // Linux 上 WindowStyle=Hidden 会抛 PlatformNotSupportedException；Windows 防黑窗
+            psi.CreateNoWindow = true;
+            psi.WindowStyle = ProcessWindowStyle.Hidden;
+        }
         psi.ArgumentList.Add("--hmcl2");
         psi.ArgumentList.Add(handoffPath);
         IProcessHandle process;
@@ -294,7 +298,7 @@ public sealed class TerracottaLobbyService : IMultiplayerLobbyService
             var root = doc.RootElement;
             if (!root.TryGetProperty("version", out var ver) || string.IsNullOrEmpty(ver.GetString())) return false;
             if (!root.TryGetProperty("target_os", out var os)
-                || !string.Equals(os.GetString(), "windows", StringComparison.OrdinalIgnoreCase)) return false;
+                || !string.Equals(os.GetString(), TerracottaProvisioningService.OsKey, StringComparison.OrdinalIgnoreCase)) return false;
             if (!root.TryGetProperty("target_arch", out var arch)) return false;
             var archText = arch.GetString();
             var expectedArch = _module.Architecture == "arm64" ? "aarch64" : "x86_64";

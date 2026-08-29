@@ -116,7 +116,7 @@
                                     <TextBlock Text="{Binding Detail.ErrorText}" Foreground="{StaticResource Danger}"
                                                FontSize="12" TextWrapping="Wrap" IsVisible="{Binding Detail.HasError}"/>
 
-                                    <!-- 运行状态徽章（客户端/服务端运行中——AG2 状态同步） -->
+                                    <!-- 运行状态徽章（客户端运行中——AG2 状态同步） -->
                                     <Border CornerRadius="6" Padding="10,4" Background="#1E3A2E"
                                             IsVisible="{Binding Detail.RunningText, Converter={x:Static ObjectConverters.IsNotNull}}">
                                         <TextBlock Text="{Binding Detail.RunningText}" FontSize="12"

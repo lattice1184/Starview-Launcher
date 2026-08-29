@@ -17,7 +17,7 @@ public sealed class LittleSkinTokenStore
     public LittleSkinTokenStore(string? path = null)
     {
         _path = path ?? Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Launcher", "littleskin-token.json");
+            Launcher.Core.Utils.AppPaths.DataRoot, "littleskin-token.json");
     }
 
     /// <summary>8-19 签发时间（主动过期判断用；旧文件无此字段 = default，Load 兼容照常返回）</summary>

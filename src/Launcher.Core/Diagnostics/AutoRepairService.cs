@@ -4,7 +4,6 @@ using System.Text.RegularExpressions;
 using Launcher.Core.Download;
 using Launcher.Core.Launch;
 using Launcher.Core.Model.Mojang;
-using Launcher.Core.Server;
 using Launcher.Core.Utils;
 
 namespace Launcher.Core.Diagnostics;
@@ -220,26 +219,6 @@ public sealed class AutoRepairService
     }
 
     /// <summary>
-    /// 修复服务端（开服专用）：删除现有 server.jar 后重新下载（幂等）。
-    /// 客户端自修复只补客户端文件；服务端 jar 缺失/损坏由开服崩溃诊断（FixKind.Redownload）触发此修复。
-    /// </summary>
-    public static async Task<string> FixServerJarAsync(string versionId, string gameDir,
-        ServerInstaller? installer = null, CancellationToken ct = default)
-    {
-        var dir = ServerInstaller.ServerDir(gameDir, versionId);
-        var jar = Path.Combine(dir, "server.jar");
-        if (File.Exists(jar))
-        {
-            try { File.Delete(jar); }
-            catch (Exception ex)
-            {
-                throw new InvalidOperationException($"无法删除损坏的 server.jar（{ex.Message}），可手动删除后重试");
-            }
-        }
-        await (installer ?? new ServerInstaller()).InstallAsync(versionId, gameDir, null, ct);
-        return "服务端文件已重新下载";
-    }
-
     /// <summary>重解压 natives：先递归删 natives 目录清残留，再从库 jar 提取 dll/so/dylib。返回处理描述。</summary>
     public static string FixNatives(string versionId, string gameDir)
     {

@@ -1,3 +1,4 @@
+#if WINDOWS
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -222,3 +223,4 @@ public class HttpProxyManager : IWebProxy, IDisposable
         GC.SuppressFinalize(this);
     }
 }
+#endif

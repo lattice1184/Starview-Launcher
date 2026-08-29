@@ -1,3 +1,4 @@
+#if WINDOWS
 using System;
 using System.Diagnostics;
 using System.IO;
@@ -223,3 +224,4 @@ public enum ProcessExitCode {
     /// </summary>
     AccessDenied = 5
 }
+#endif

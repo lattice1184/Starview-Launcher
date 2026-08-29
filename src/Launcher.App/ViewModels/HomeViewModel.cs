@@ -48,16 +48,25 @@ public partial class HomeViewModel : ViewModelBase
     [ObservableProperty]
     public partial VersionInstanceVM? SelectedVersion { get; set; }
 
-    /// <summary>主页版本选择是全局权威：同步到 MainViewModel.CurrentVersion（下载/开服页跟随）+ Core AppState（修复/日志读）</summary>
+    /// <summary>主页版本选择是全局权威：同步到 MainViewModel.CurrentVersion（下载/联机页跟随）+ Core AppState（修复/日志读）</summary>
     partial void OnSelectedVersionChanged(VersionInstanceVM? value)
     {
         MainViewModel.Current!.CurrentVersion = value;
         Launcher.Core.AppState.SetCurrentVersion(value?.Name); // 8-22 步骤1：Core 层统一状态
         OnPropertyChanged(nameof(CanLaunch)); // 8-26 启动按钮可点性随版本变化
+        OnPropertyChanged(nameof(LaunchButtonTip)); // 8-30 悬停提示随版本变化
     }
 
     /// <summary>8-26 启动更直接：无版本/已在运行/正在启动时启动按钮置灰（不再弹「你还没选版本」模态）</summary>
     public bool CanLaunch => SelectedVersion is not null && !IsLaunching && !IsRunning;
+
+    /// <summary>8-30 启动按钮悬停提示：按钮灰时解释原因（Linux 体验者「点启动没反应」误以为 bug——
+    /// 实际是按钮已灰，缺提示。ToolTip 绑定此属性，随 SelectedVersion/IsRunning/IsLaunching 变化刷新）</summary>
+    public string LaunchButtonTip => SelectedVersion is null
+        ? "主页没有可启动的版本，去【下载】板块装一个"
+        : IsRunning ? "游戏正在运行中"
+        : IsLaunching ? "正在启动中…"
+        : $"启动 {SelectedVersion.Name}";
 
     [ObservableProperty]
     public partial string LaunchState { get; set; } = "就绪";
@@ -140,7 +149,7 @@ public partial class HomeViewModel : ViewModelBase
     [ObservableProperty]
     public partial bool IsRunning { get; set; }
 
-    /// <summary>运行状态上报全局（版本页徽章；服务端运行不覆盖客户端）</summary>
+    /// <summary>运行状态上报全局（版本页徽章）</summary>
     partial void OnIsRunningChanged(bool value)
     {
         var main = MainViewModel.Current;
@@ -150,12 +159,14 @@ public partial class HomeViewModel : ViewModelBase
         else if (main.RunningVersion?.Kind == "客户端")
             main.RunningVersion = null;
         OnPropertyChanged(nameof(CanLaunch));
+        OnPropertyChanged(nameof(LaunchButtonTip)); // 8-30 悬停提示随运行态变化
     }
 
     /// <summary>启动按钮可点性随启动态变化</summary>
     partial void OnIsLaunchingChanged(bool value)
     {
         OnPropertyChanged(nameof(CanLaunch));
+        OnPropertyChanged(nameof(LaunchButtonTip)); // 8-30 悬停提示随启动态变化
         OnPropertyChanged(nameof(LogBodyVisible)); // 8-26 日志卡主体：启动中或看历史时展开
     }
 
@@ -267,8 +278,6 @@ public partial class HomeViewModel : ViewModelBase
         await Task.Run(() =>
         {
             _accounts.Load();
-            // 目录树重构（AE3）：旧 .minecraft\servers 一次性迁移到启动器目录树 servers\
-            Launcher.Core.Server.ServerInstaller.MigrateLegacy(GameDirectory.InstallDir());
         });
         RefreshPlayer();
         RefreshConfigText();
@@ -295,7 +304,7 @@ public partial class HomeViewModel : ViewModelBase
     private static void CleanExpiredCache()
     {
         var cacheDir = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Launcher", "cache");
+            Launcher.Core.Utils.AppPaths.DataRoot, "cache");
         if (!Directory.Exists(cacheDir)) return;
         var cutoff = DateTime.UtcNow - TimeSpan.FromHours(24);
         foreach (var f in Directory.GetFiles(cacheDir))
@@ -462,8 +471,7 @@ public partial class HomeViewModel : ViewModelBase
 
     /// <summary>本地皮肤路径（AppData\Launcher\skins\{name}.png）</summary>
     private static string LocalSkinPath(string name)
-        => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-            "Launcher", "skins", $"{name}.png");
+        => Path.Combine(Launcher.Core.Utils.AppPaths.DataRoot, "skins", $"{name}.png");
 
     /// <summary>8-13 更换皮肤：复制本地图片为头像 + 启动器头像。游戏内下次启动生效
     /// （SkinPack 资源包在启动前自动写入——此前「游戏内不生效」的限制已解除）。
@@ -582,26 +590,23 @@ public partial class HomeViewModel : ViewModelBase
         await LaunchCoreAsync(null, "", null);
     }
 
-    /// <summary>一键进服：启动客户端并自动连接本地服务端（开服页调用；host/port 由开服页读取）</summary>
-    public async Task RequestLaunchWithServerAsync(string versionId, string gameDir, string host, int port)
-    {
-        _autoFixApplied = false; // AL9：新启动重置自修复标志
-        await RefreshVersionsAsync();
-        var found = InstalledVersions.FirstOrDefault(v => v.Name.Equals(versionId, StringComparison.OrdinalIgnoreCase));
-        if (found is null)
-        {
-            InstalledVersions.Add(new VersionInstanceVM(versionId, "本启动器", gameDir));
-            found = InstalledVersions[^1];
-        }
-        SelectedVersion = found;
-        await LaunchCoreAsync(found, gameDir, ["--server", host, "--port", port.ToString()]);
-    }
-
     /// <summary>启动核心（主页按钮/版本页 [启动]/一键进服共用）</summary>
     private async Task LaunchCoreAsync(VersionInstanceVM? overrideVersion, string overrideGameDir, string[]? extraGameArgs)
     {
-        if (IsLaunching || IsRunning) return;
+        // 8-30 启动总线日志：先记入口快照（此时 _launchLogPath 未建，AppendLog 惰性建文件记拦截/首行）。
+        // 区分「按钮没触发」vs「进了启动函数」——体验者 Linux 点启动没反应排查的起点。
+        var entryVersion = overrideVersion ?? SelectedVersion;
+        if (IsLaunching || IsRunning)
+        {
+            AppendLog($"§ 启动被拦截: 已在启动/运行中 (IsLaunching={IsLaunching}, IsRunning={IsRunning})");
+            Launcher.Core.Utils.AppLog.Instance?.LogWarning("[launch] blocked, busy: Launching={IsLaunching} Running={IsRunning}", IsLaunching, IsRunning);
+            return;
+        }
         ResetLaunchLog(); // 8-18：新启动会话新日志文件（与启动记录一一对应）
+        AppendLog($"§ 启动入口: 版本={entryVersion?.Name ?? "(null)"} 账号={_accounts.Current?.Name ?? "(未登录)"} " +
+            $"gameDir={(overrideGameDir.Length > 0 ? overrideGameDir : entryVersion?.GameDir ?? GameDirectory.Detect())}");
+        Launcher.Core.Utils.AppLog.Instance?.LogInformation("[launch] enter: version={Version} account={Account}",
+            entryVersion?.Name, _accounts.Current?.Name);
         // REVIEW-A1：_userStopped 每次启动入口重置——旧代码置 true 后永不复位，
         // 本会话停过一次游戏，之后任何崩溃都被误判「已停止」（不弹崩溃窗/不自动修复/历史记 Stopped）
         _userStopped = false;
@@ -610,6 +615,8 @@ public partial class HomeViewModel : ViewModelBase
         if (version is null)
         {
             LaunchStatus = "你还没选版本";
+            AppendLog("§ 启动被拦截: 主页没有可启动的版本（SelectedVersion 为空，Linux 常见：自建目录无版本且不扫 ~/.minecraft）");
+            NotificationService.Error("主页没有可启动的版本，去【下载】板块装一个");
             return;
         }
         _lastLaunchVersionId = version.Name;
@@ -619,6 +626,8 @@ public partial class HomeViewModel : ViewModelBase
         if (account is null)
         {
             LaunchStatus = "你还没登录账号";
+            AppendLog("§ 启动被拦截: 未登录账号");
+            NotificationService.Error("你还没登录账号，去【账号】页登录");
             return;
         }
 
@@ -657,6 +666,8 @@ public partial class HomeViewModel : ViewModelBase
                 > 0 => memCfg,
                 _ => (int)(GC.GetGCMemoryInfo().TotalAvailableMemoryBytes / 1024 / 1024 * 0.6), // 0=极致
             };
+            // 8-30 启动总线日志：预检关键参数（Linux 敏感：目录/内存/Java 覆盖）
+            AppendLog($"§ 启动参数: gameDir={gameDir} 内存={memMb}MB Java={(string.IsNullOrEmpty(javaCfg) ? "全局" : javaCfg)}");
             // 性能档位：GC 参数预设前置合并（用户"额外 JVM 参数"在后，优先级更高）
             var (_, _, gcArgs) = PerformanceProfiles.Resolve(
                 s.JvmProfile, GC.GetGCMemoryInfo().TotalAvailableMemoryBytes / 1024 / 1024);
@@ -919,6 +930,8 @@ public partial class HomeViewModel : ViewModelBase
         }
         catch (Exception ex)
         {
+            // 8-30 启动总线日志：完整异常进 AppLog（后台线程异常此前只进控制台 § 行，无堆栈难排查）
+            Launcher.Core.Utils.AppLog.Instance?.LogError(ex, "[launch] failed: {Msg}", ex.Message);
             LaunchState = "失败";
             // 客户端文件缺失（残件版本）：显示修复入口按钮
             ShowRepairGuide = ex is FileNotFoundException;
@@ -1225,7 +1238,7 @@ public partial class HomeViewModel : ViewModelBase
 
     private static string BuildLaunchLogPath()
     {
-        var dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Launcher", "logs");
+        var dir = Path.Combine(Launcher.Core.Utils.AppPaths.DataRoot, "logs");
         Directory.CreateDirectory(dir);
         return Path.Combine(dir, $"launch-{DateTime.Now:yyyyMMdd-HHmmss}.log");
     }

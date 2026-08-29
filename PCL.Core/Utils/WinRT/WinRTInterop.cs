@@ -1,3 +1,4 @@
+#if WINDOWS
 using System;
 using System.Runtime.InteropServices;
 
@@ -80,3 +81,4 @@ public static partial class WinRTInterop
         private fixed byte _data[24];
     }
 }
+#endif

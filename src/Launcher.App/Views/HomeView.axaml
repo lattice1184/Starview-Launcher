@@ -41,7 +41,8 @@
                     <Button Grid.Column="2" Content="启动游戏" Classes="primary" Padding="26,9" FontSize="13"
                             Command="{Binding LaunchCommand}" VerticalAlignment="Center"
                             IsEnabled="{Binding CanLaunch}"
-                            IsVisible="{Binding !IsRunning}"/>
+                            IsVisible="{Binding !IsRunning}"
+                            ToolTip.Tip="{Binding LaunchButtonTip}"/>
                     <Button Grid.Column="2" Content="停止" Padding="26,9" FontSize="13"
                             Command="{Binding StopGameCommand}" VerticalAlignment="Center"
                             IsVisible="{Binding IsRunning}"/>

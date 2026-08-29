@@ -129,6 +129,9 @@ public partial class App : Application
                 Launcher.Core.Utils.AppLog.Instance?.LogError(null, "[fatal] {Message}", message);
                 ShowFatalError(message);
             };
+            // 8-30 全局日志统一落盘 AppPaths.DataRoot/logs——Linux 上可执行目录可能只读（写不进），
+            // 且日志中心/体验者排查都看这。必须在 Lifecycle.OnLoading（LogService.StartAsync）前设置。
+            PCL.Core.Logging.LogService.LogDirectoryOverride = Launcher.Core.Utils.AppPaths.LogsDir;
 
             // 启动 PCL.Core 生命周期（Avalonia 驱动消息循环，不运行 WPF 容器）。
             // 任一环节失败只记日志，不得阻止窗口出现；窗口构造失败则仍为 fatal。
@@ -157,9 +160,6 @@ public partial class App : Application
             });
             desktop.Exit += (_, _) =>
             {
-                // 8-22 全栈排查：退出必须停服务端进程——否则孤儿 java 残留占用端口
-                // （ServerProcess.Dispose 从未被调用；stdout 管道无读者还会挂起）
-                try { MainViewModel.Current?.StopServerIfRunning(); } catch { /* 退出清理不阻断 */ }
                 Guard("Lifecycle.Shutdown", () => Lifecycle.Shutdown());
             };
             // UI 线程未捕获异常兜底（弹崩溃窗口 + 防崩溃）
@@ -189,7 +189,7 @@ public partial class App : Application
         try
         {
             var logDir = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Launcher", "logs");
+                Launcher.Core.Utils.AppPaths.DataRoot, "logs");
             Directory.CreateDirectory(logDir);
             File.AppendAllText(Path.Combine(logDir, $"crash-{DateTime.Now:yyyyMMdd-HHmmss}.log"),
                 $"[{DateTime.Now:HH:mm:ss}] {message}{Environment.NewLine}");

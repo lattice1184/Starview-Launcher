@@ -1,3 +1,4 @@
+#if WINDOWS
 using System;
 
 namespace PCL.Core.Utils.WinRT.Interface.Windows.UI.Notifications;
@@ -32,3 +33,4 @@ public unsafe struct IToastNotificationFactoryVtbl
     /// </summary>
     public delegate* unmanaged<void*, void*, void**, int> CreateToastNotification;
 }
+#endif

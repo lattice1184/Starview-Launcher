@@ -53,12 +53,12 @@ public sealed partial class StorageSettingsViewModel : ObservableObject
     public AsyncRelayCommand ReloadStatsCommand { get; }
 
     /// <summary>组名静态表（与 StorageScanner 的 DisplayName 一致，构造时预置行）</summary>
-    private static readonly string[] GroupNames = ["游戏文件", "服务端", "下载缓存", "日志", "备份导出"];
+    private static readonly string[] GroupNames = ["游戏文件", "下载缓存", "日志", "备份导出"];
 
     public StorageSettingsViewModel()
     {
-        // 预置 5 个固定组行（顺序与 StorageScanner.Scan 一致：game/server/downloads/logs/backups）
-        string[] keys = ["game", "server", "downloads", "logs", "backups"];
+        // 预置 4 个固定组行（顺序与 StorageScanner.Scan 一致：game/downloads/logs/backups）
+        string[] keys = ["game", "downloads", "logs", "backups"];
         for (var i = 0; i < keys.Length; i++)
         {
             var vm = new StorageGroupVM(keys[i], GroupNames[i], OnCapChanged);

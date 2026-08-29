@@ -1,3 +1,4 @@
+#if WINDOWS
 using System;
 using System.ComponentModel;
 using System.Runtime.InteropServices;
@@ -25,3 +26,5 @@ public static partial class NtInterop
         return new Version(major, minor, build);
     }
 }
+
+#endif

@@ -1,3 +1,4 @@
+#if WINDOWS
 using System;
 using System.IO;
 using System.Security;
@@ -30,3 +31,5 @@ public class SystemTheme {
         }
     }
 }
+
+#endif
