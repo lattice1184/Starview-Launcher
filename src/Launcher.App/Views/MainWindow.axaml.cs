@@ -42,6 +42,8 @@ public partial class MainWindow : Window
             ApplyAppearanceFromVm();
             ApplyOpacityFallback();
         };
+        // 8-29 工作集修剪（用户拍板「上修剪」）：闲置/失焦/最小化把物理页让渡给系统（PCL 同款原理）
+        IdleMemoryTrimmer.Hook(this);
         // 8-18 透明度防御：合成降级（ActualTransparencyLevel → None）后恢复时重新应用用户透明度——
         // 某些页面/交互触发亚克力合成失败会丢透明度，恢复后自动回到用户设置值。
         // 8-23 改：无条件重放 ApplyAppearanceFromVm（不再 Defensive「数值一致跳过」）——合成降级时
