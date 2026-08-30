@@ -89,9 +89,19 @@ public sealed class ModDependencyResolver
         ArgumentNullException.ThrowIfNull(request.ProjectResolver);
 
         var context = new ResolutionContext(request);
-        foreach (var dependency in request.RequiredDependencies)
+        // 8-30 顶层依赖并行：每个依赖的 resolver 是网络密集（拉版本列表 1.5-7s），串行 N 个叠加
+        // 拖慢（详情页前置提示 / 依赖安装的"读前置慢"主因）。context 变更加锁，resolver 调用在锁外；
+        // 单依赖场景走原串行零开销（无线程切换）。
+        if (request.RequiredDependencies.Count > 1)
         {
-            ResolveDependency(context, dependency, 0);
+            Task.WaitAll(request.RequiredDependencies
+                .Select(d => Task.Run(() => ResolveDependency(context, d, 0)))
+                .ToArray());
+        }
+        else
+        {
+            foreach (var dependency in request.RequiredDependencies)
+                ResolveDependency(context, dependency, 0);
         }
 
         return context.Result;
@@ -104,45 +114,49 @@ public sealed class ModDependencyResolver
             return;
         }
 
-        if (!dependency.IsRequired)
+        // 并行下 context 可变状态（Visited/Result）必须锁；resolver 网络调用放锁外避免持锁等待
+        lock (context)
         {
-            context.AddSatisfied(dependency.ProjectId, dependency.Source, "Optional dependency ignored.");
-            return;
+            if (!dependency.IsRequired)
+            {
+                context.AddSatisfied(dependency.ProjectId, dependency.Source, "Optional dependency ignored.");
+                return;
+            }
+
+            if (depth > MaxDepth)
+            {
+                context.AddUnresolved(dependency.ProjectId, dependency.Source, "Maximum dependency depth exceeded.");
+                return;
+            }
+
+            var visitedKey = context.GetVisitedKey(dependency.ProjectId, dependency.Source);
+            if (!context.Visited.Add(visitedKey))
+            {
+                return;
+            }
+
+            if (context.IsInstalledCompatible(dependency.ProjectId, dependency.Source))
+            {
+                context.AddSatisfied(dependency.ProjectId, dependency.Source, "Already installed and compatible.");
+                return;
+            }
         }
 
-        if (depth > MaxDepth)
-        {
-            context.AddUnresolved(dependency.ProjectId, dependency.Source, "Maximum dependency depth exceeded.");
-            return;
-        }
-
-        var visitedKey = context.GetVisitedKey(dependency.ProjectId, dependency.Source);
-        if (!context.Visited.Add(visitedKey))
-        {
-            return;
-        }
-
-        if (context.IsInstalledCompatible(dependency.ProjectId, dependency.Source))
-        {
-            context.AddSatisfied(dependency.ProjectId, dependency.Source, "Already installed and compatible.");
-            return;
-        }
-
-        var project = context.Request.ProjectResolver(dependency.Source, dependency.ProjectId);
+        var project = context.Request.ProjectResolver(dependency.Source, dependency.ProjectId); // 网络密集，锁外
         if (project is null)
         {
-            context.AddUnresolved(dependency.ProjectId, dependency.Source, "Dependency project was not found.");
+            lock (context) { context.AddUnresolved(dependency.ProjectId, dependency.Source, "Dependency project was not found."); }
             return;
         }
 
         var selectedFile = SelectBestFile(project.Files, context.TargetMinecraftVersion, context.TargetLoaders);
         if (selectedFile is null)
         {
-            context.AddUnresolved(project.ProjectId, project.Source, "No compatible file was found.");
+            lock (context) { context.AddUnresolved(project.ProjectId, project.Source, "No compatible file was found."); }
             return;
         }
 
-        context.AddInstall(project, selectedFile);
+        lock (context) { context.AddInstall(project, selectedFile); }
 
         foreach (var nestedDependency in selectedFile.RequiredDependencies)
         {

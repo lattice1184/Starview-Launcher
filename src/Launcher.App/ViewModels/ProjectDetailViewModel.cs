@@ -787,17 +787,34 @@ public partial class ProjectDetailViewModel : ViewModelBase
         return true;
     }
 
-    /// <summary>读 jar 的 fabric.mod.json id（Forge mods 无此文件返回空；读取失败静默）</summary>
+    /// <summary>jar → id 缓存（8-30：安装冲突扫描顺序读全目录 jar 无缓存，大 mods 目录拖慢；
+    /// 按文件大小+修改时间作 key——jar 被替换/重下自动失效）</summary>
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, (string Id, long Stamp)> JarIdCache = new();
+
+    /// <summary>读 jar 的 fabric.mod.json id（Forge mods 无此文件返回空；读取失败静默；带缓存）</summary>
     private static string JarModId(string jarPath)
     {
         try
         {
-            using var zip = System.IO.Compression.ZipFile.OpenRead(jarPath);
-            var entry = zip.GetEntry("fabric.mod.json") ?? zip.GetEntry("META-INF/fabric.mod.json");
-            if (entry is null) return "";
-            using var sr = new StreamReader(entry.Open());
-            var doc = System.Text.Json.JsonDocument.Parse(sr.ReadToEnd());
-            return doc.RootElement.TryGetProperty("id", out var id) ? id.GetString() ?? "" : "";
+            var fi = new FileInfo(jarPath);
+            var stamp = fi.Length ^ fi.LastWriteTimeUtc.Ticks;
+            if (JarIdCache.TryGetValue(jarPath, out var hit) && hit.Stamp == stamp)
+                return hit.Id;
+            string id;
+            using (var zip = System.IO.Compression.ZipFile.OpenRead(jarPath))
+            {
+                var entry = zip.GetEntry("fabric.mod.json") ?? zip.GetEntry("META-INF/fabric.mod.json");
+                id = "";
+                if (entry is not null)
+                {
+                    using var sr = new StreamReader(entry.Open());
+                    var doc = System.Text.Json.JsonDocument.Parse(sr.ReadToEnd());
+                    id = doc.RootElement.TryGetProperty("id", out var idEl) ? idEl.GetString() ?? "" : "";
+                }
+            }
+            if (JarIdCache.Count > 1024) JarIdCache.Clear(); // 防爆
+            JarIdCache[jarPath] = (id, stamp);
+            return id;
         }
         catch { return ""; }
     }

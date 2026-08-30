@@ -21,9 +21,12 @@ public partial class EcosystemView : UserControl
     }
 
     /// <summary>8-25 下拉列表式安装：点「安装 ▾」在指针处弹出动作菜单（安装到当前实例 / 收藏）——
-    /// 左键触发（ContextMenu 默认右键，这里 Click 显式打开）。</summary>
+    /// 左键触发（ContextMenu 默认右键，这里 Click 显式打开）。
+    /// 8-30 嵌套按钮冒泡根治：内层 Button 点击会冒泡到外层整卡 Button → 点安装也跳详情；
+    /// Handled=true 阻断向上路由，安装按钮独立不触发 OpenDetailCommand。</summary>
     private void OnInstallMenuClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
+        e.Handled = true; // 8-30 阻断冒泡：点「安装」不触发整卡详情跳转
         if (sender is Button { ContextMenu: { } menu } b)
             menu.Open(b);
     }
