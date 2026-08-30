@@ -149,9 +149,21 @@
                                                 <BrushTransition Property="Background" Duration="0:0:0.06"/>
                                             </Transitions>
                                         </Border.Transitions>
-                                        <!-- 8-30 去图：搜索卡改纯文字分块（图标加载问题靠此规避） -->
-                                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
-                                            <StackPanel Spacing="3" VerticalAlignment="Center">
+                                        <!-- 8-30 恢复图标（用户澄清：图标是生态资源必需的，偶发不显示是 bug 要修；根因已修 + 首字母占位兜底） -->
+                                        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12">
+                                            <Border Width="36" Height="36" CornerRadius="{StaticResource RadiusLarge}" ClipToBounds="True"
+                                                    Background="{DynamicResource BgActive}" VerticalAlignment="Center">
+                                                <Grid>
+                                                    <Image Source="{Binding Icon}" Width="36" Height="36" Stretch="Uniform"
+                                                           IsVisible="{Binding Icon, Converter={x:Static ObjectConverters.IsNotNull}}"/>
+                                                    <!-- 8-30 图标失败占位：首字母代替空灰块 -->
+                                                    <TextBlock Text="{Binding Initial}" FontWeight="Bold" FontSize="14"
+                                                               Foreground="{DynamicResource TextDim}"
+                                                               HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                               IsVisible="{Binding Icon, Converter={x:Static ObjectConverters.IsNull}}"/>
+                                                </Grid>
+                                            </Border>
+                                            <StackPanel Grid.Column="1" Spacing="3" VerticalAlignment="Center">
                                                 <StackPanel Orientation="Horizontal" Spacing="8">
                                                     <TextBlock Text="{Binding Title}" FontWeight="SemiBold" Foreground="White"
                                                                MaxLines="1" TextTrimming="CharacterEllipsis"/>
@@ -178,7 +190,7 @@
                                                 <TextBlock Text="{Binding SupportedVersions}" Foreground="{DynamicResource AccentLight}" FontSize="10"
                                                            IsVisible="{Binding HasSupportedVersions}"/>
                                             </StackPanel>
-                                            <Button Grid.Column="1" Classes="ghost" FontSize="12" Padding="10,5"
+                                            <Button Grid.Column="2" Classes="ghost" FontSize="12" Padding="10,5"
                                                     VerticalAlignment="Center" Margin="0,0,2,0"
                                                     Click="OnInstallMenuClick">
                                                 <Button.ContextMenu>

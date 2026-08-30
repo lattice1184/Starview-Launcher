@@ -14,8 +14,8 @@ public static class ThirdPartyLicenses
     [
         "Starview Launcher 依据 Apache-2.0 许可开源。",
         "PCL.Core 为 PCL Community 开源核心库，依据 Apache-2.0 许可（见 NOTICE）。",
-        // 8-26 合规修正：Terracotta 代码仍在线分发（TerracottaLobbyService 等），必须披露 GPL-3.0（与 NOTICE 对齐）
-        "联机模块（Terracotta）移植自 BlockHelm-Launcher，依据 GPL-3.0 许可；运行时联机内核同依据 GPL-3.0（见 NOTICE）。",
+        // 8-30 UI 弱化（用户拍板）：关于页不露 BlockHelm-Launcher 名字，只提陶瓦协议；完整来源声明保留在仓库 NOTICE（GPL-3.0 合规义务由 NOTICE 承担）
+        "联机模块基于陶瓦（Terracotta）联机协议集成，依据 GPL-3.0 许可；运行时联机内核同依据 GPL-3.0（来源声明见仓库 NOTICE）。",
         "独立联机方案 EasyTier 虚拟组网，依据 LGPL-3.0 许可（源码：github.com/EasyTier/EasyTier）。",
         "界面图标来自 Lucide，依据 ISC 许可。",
     ];
