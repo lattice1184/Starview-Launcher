@@ -81,6 +81,34 @@ public partial class App : Application
             }
             // 8-19 内存瘦身：图片磁盘缓存后台清理（30 天前的图标文件），不阻塞启动
             _ = Task.Run(() => ImageLoader.CleanupDiskCache());
+            // 8-30 后台静默更新：延迟 10s 检查最新 release，下载就绪后提示「重启安装」；失败静默只记日志
+            _ = Task.Run(async () =>
+            {
+                await Task.Delay(TimeSpan.FromSeconds(10));
+                try
+                {
+                    if (!LauncherSettings.Current.AutoCheckUpdate) return;
+                    var result = await Launcher.Core.Services.UpdateCheckService.CheckAsync(PCL.Core.App.Basics.VersionName);
+                    if (result.HasUpdate)
+                    {
+                        var tag = result.LatestTag ?? "";
+                        var path = result.ReadyPath!;
+                        Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+                            Services.NotificationService.Success($"发现新版本 {tag}，已准备好，重启后生效",
+                                durationMs: 10000,
+                                actionText: "重启安装",
+                                onAction: () => ApplyUpdate(path, tag)));
+                    }
+                    else if (result.Error is not null)
+                    {
+                        Launcher.Core.Utils.AppLog.Instance?.LogWarning("[update] 后台检查失败: {Error}", result.Error);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Launcher.Core.Utils.AppLog.Instance?.LogWarning(ex, "[update] 后台检查异常");
+                }
+            });
             // 8-29 内存诊断钩子：--mem-profile 开启后启动基线 + 每 3s 采样（默认关，dev 专用）
             if (Services.MemProfile.Enabled)
             {
@@ -272,6 +300,25 @@ public partial class App : Application
 
     /// <summary>8-26 打开日志中心（Toast「查看日志」按钮）——窗口内覆盖层，主窗不失活不降级</summary>
     private static void OpenLogCenter() => Views.LogCenterView.Open();
+
+    /// <summary>应用更新：启动替换流程后退出本进程（Windows 子进程 / Unix 延迟脚本接管替换与重启）。
+    /// 就绪状态靠下载包文件存在性自愈——替换成功新进程删 source，失败则下次启动仍提示重试</summary>
+    private static async void ApplyUpdate(string readyPath, string tag)
+    {
+        var err = await Launcher.Core.Update.UpdateInstaller.StartAsync(readyPath);
+        if (err is not null)
+        {
+            Services.NotificationService.Error($"更新失败：{err}");
+            return;
+        }
+        Launcher.Core.Utils.AppLog.Instance?.LogInformation("[update] 安装流程已启动，进程退出由子进程/脚本接管");
+        try
+        {
+            if (Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime d) d.Shutdown();
+        }
+        catch { }
+        Environment.Exit(0);
+    }
 
     /// <summary>生命周期调用兜底：异常只记录，不阻止窗口创建</summary>
     private static void Guard(string what, Action action)
