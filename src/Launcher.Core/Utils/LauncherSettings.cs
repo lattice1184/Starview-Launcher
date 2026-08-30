@@ -62,6 +62,9 @@ public sealed class LauncherSettings
     /// <summary>沙盒启动模式（关闭/保护/严格隔离）——8-30 新增；默认关闭 = 行为与以往完全一致</summary>
     public SandboxMode SandboxMode { get; set; } = SandboxMode.Disabled;
 
+    /// <summary>插件接口总开关（8-31 MVP；默认关——第三方 dll 未成熟前不开，防投毒靠哈希登记+白名单 API）</summary>
+    public bool EnablePlugins { get; set; }
+
     /// <summary>启动完成后随机弹一条小提示（彩蛋，可关）</summary>
     public bool StartupTipEnabled { get; set; } = true;
 

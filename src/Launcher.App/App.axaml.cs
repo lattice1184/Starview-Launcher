@@ -59,6 +59,8 @@ public partial class App : Application
             {
                 DataContext = new MainViewModel(),
             };
+            // 8-31 插件接口：加载 plugins/ 目录的插件（总开关默认关；坏插件跳过不拖垮启动器）
+            Launcher.Core.Plugin.PluginManager.Instance.Load();
             // 问号 ToolTip 屏幕边缘翻转（8-13）：全局挂主窗口，窗口右/下边缘的提示自动翻向可视区域
             ToolTipEdgeFlip.Attach(desktop.MainWindow);
             // 外观实时应用：保存（AppearanceChanged）与预览（PreviewChanged）都刷新强调色 + 自定义背景。

@@ -1,0 +1,34 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Launcher.App.ViewModels"
+             xmlns:plugin="using:Launcher.Core.Plugin"
+             x:Class="Launcher.App.Views.SectionPluginsView"
+             x:DataType="vm:SettingsViewModel">
+
+    <!-- 8-31 插件管理：总开关 + 已加载列表（哈希防投毒，掉包自动跳过） -->
+    <StackPanel Spacing="12">
+        <Border Classes="setting-group">
+            <StackPanel Spacing="10">
+                <TextBlock Text="插件" Classes="group-header"/>
+                <TextBlock Text="第三方写的 .dll 放进 plugins/ 目录就能被加载（实现 IStarviewPlugin 接口，通过事件钩子扩展启动器）。首次加载会记录文件哈希，之后发现被掉包就自动跳过——防插件投毒。实验功能，默认关。"
+                           Classes="dim" FontSize="11" TextWrapping="Wrap"/>
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <TextBlock Text="启用插件" Classes="setting-label" VerticalAlignment="Center"/>
+                    <ToggleSwitch IsChecked="{Binding EnablePlugins}"/>
+                </StackPanel>
+                <TextBlock Text="{Binding PluginsStatusText}" Foreground="#7E8BA0" FontSize="12"/>
+                <ItemsControl ItemsSource="{Binding Plugins}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="plugin:PluginManager+LoadedPlugin">
+                            <Grid Classes="setting-row" ColumnDefinitions="Auto,*,Auto">
+                                <TextBlock Text="{Binding Name}" Classes="setting-label" VerticalAlignment="Center"/>
+                                <TextBlock Grid.Column="1" Text="{Binding Id}" Classes="dim" FontSize="11" VerticalAlignment="Center"/>
+                                <TextBlock Grid.Column="2" Text="{Binding Version}" Classes="dim" FontSize="11" VerticalAlignment="Center"/>
+                            </Grid>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </StackPanel>
+        </Border>
+    </StackPanel>
+</UserControl>

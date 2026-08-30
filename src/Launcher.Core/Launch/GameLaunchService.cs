@@ -1,6 +1,7 @@
 using System.IO.Compression;
 using System.Text.Json;
 using Launcher.Core.Diagnostics;
+using Launcher.Core.Events;
 using Launcher.Core.Launch.Sandbox;
 using Launcher.Core.Model.Mojang;
 using Launcher.Core.Utils;
@@ -20,6 +21,8 @@ public sealed class GameLaunchService
         string[]? extraGameArgs = null, string userType = "legacy", string? skinUrl = null,
         SandboxMode sandboxMode = SandboxMode.Disabled)
     {
+        // 8-31 插件钩子：启动开始事件（AppEvents 定义已久但从未发布——补发布，插件订阅做"启动前"扩展）
+        AppEvents.Publish(new LaunchStartedEvent(versionId, DateTime.Now));
         // 1. 读版本 JSON
         onStage?.Invoke("解析版本");
         var vjPath = Path.Combine(gameDirectory, "versions", versionId, $"{versionId}.json");

@@ -138,6 +138,7 @@ public partial class SettingsView : UserControl
         2 => new SectionAppearanceView(),
         3 => new SectionDownloadView(),
         5 => new SectionModulesView(),
+        6 => new SectionPluginsView(),
         _ => new SectionAboutView(),
     };
 
@@ -149,6 +150,7 @@ public partial class SettingsView : UserControl
         SetNavVisual(SettingsNavAppearance, _activeSection == 2, accent);
         SetNavVisual(SettingsNavDownload, _activeSection == 3, accent);
         SetNavVisual(SettingsNavModules, _activeSection == 5, accent);
+        SetNavVisual(SettingsNavPlugins, _activeSection == 6, accent);
         SetNavVisual(SettingsNavAbout, _activeSection == 4, accent);
     }
 
@@ -173,6 +175,7 @@ public partial class SettingsView : UserControl
         || ReferenceEquals(btn, SettingsNavAppearance) && _activeSection == 2
         || ReferenceEquals(btn, SettingsNavDownload) && _activeSection == 3
         || ReferenceEquals(btn, SettingsNavModules) && _activeSection == 5
+        || ReferenceEquals(btn, SettingsNavPlugins) && _activeSection == 6
         || ReferenceEquals(btn, SettingsNavAbout) && _activeSection == 4;
 
     /// <summary>设置导航按钮目标视觉（激活深青/白字 vs 透明/灰字）——瞬跳与过渡共用</summary>

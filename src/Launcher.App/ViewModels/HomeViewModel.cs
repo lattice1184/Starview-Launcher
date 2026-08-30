@@ -9,6 +9,7 @@ using Launcher.App.Services;
 using Launcher.Core.Account;
 using Launcher.Core.Diagnostics;
 using Launcher.Core.Download;
+using Launcher.Core.Events;
 using Launcher.Core.Launch;
 using Launcher.Core.Launch.Sandbox;
 using Launcher.Core.Services;
@@ -962,6 +963,8 @@ public partial class HomeViewModel : ViewModelBase
             await Task.Run(() => _running.Process.WaitForExit());
             var code = LaunchProcess.GetExitCode(_running);
             AppendLog($"§ 游戏进程已退出（exitStatus={code}）");
+            // 8-31 插件钩子：游戏退出事件（AppEvents 定义已久未发布——补发布，插件订阅做"启动后"扩展）
+            AppEvents.Publish(new LaunchCompletedEvent(version.Name, code, DateTime.Now));
             if (_userStopped)
             {
                 LaunchState = "已退出";
@@ -1026,6 +1029,8 @@ public partial class HomeViewModel : ViewModelBase
                 ? "你的客户端文件缺失，启动不了。可以补全下载，或去官方页面下载。"
                 : ex.Message;
             AppendLog($"§ 启动失败: {ex.Message}");
+            // 8-31 插件钩子：启动失败事件（AppEvents 定义已久未发布——补发布）
+            AppEvents.Publish(new LaunchFailedEvent(version.Name, ex.Message, DateTime.Now));
             // 8-19 失败记录也关联日志文件（会话开始即建，失败也可回看）
             LaunchHistoryService.Record(version.Name, LaunchOutcome.Failed, ex.Message, _launchWatch?.Elapsed.TotalSeconds ?? 0, _launchLogPath);
             // AL9/AL10 自修复：文件缺失（异常即证据，跳过诊断直接重下）或诊断命中可自动修复项 → 修复后自动重试一次
