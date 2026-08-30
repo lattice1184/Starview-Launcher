@@ -395,50 +395,65 @@ public sealed class EcosystemService
     {
         // 8-19 生态修缮：iris/optifine → 承载 loader（依赖匹配与版本查询两处共用）
         loader = NormalizeLoaderForDependency(loader);
+        var directRefs = EcosystemDependencyAdapter.ToDependencyReferences(version).Where(r => r.IsRequired).ToList();
+        var directIds = directRefs.Select(r => r.ProjectId).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
         var resolver = new ModDependencyResolver();
         var request = new ModDependencyRequest
         {
             TargetMinecraftVersion = gameVersion ?? "",
             TargetLoaders = loader is null ? [] : [loader],
-            RequiredDependencies = EcosystemDependencyAdapter.ToDependencyReferences(version),
+            RequiredDependencies = directRefs,
             ProjectResolver = EcosystemDependencyAdapter.CreateResolver(this, gameVersion, loader),
         };
-        var result = resolver.Resolve(request);
+        // 8-30 两个网络阶段并行：解析传递依赖树 与 查直接依赖标题 同时跑——
+        // 原来串行（解析 1.7s → 名字 1.7s×批）首次叠加 ~5s，用户等不及就下了。并行后 ~max(1.7s, 1.7s)。
+        var resolveTask = Task.Run(() => resolver.Resolve(request), ct);
+        var names = await FetchDependencyNamesAsync(directIds, ct);
+        var result = await resolveTask;
 
-        // 依赖显示名：项目标题 + 一句话说明（用户能看懂装的是什么——如 AANobbMI 是 Iris 的渲染 API 库）。
-        // 8-16 批次 53：串行 → 并行（门 4）——api.modrinth.com 国内 8.6s/次，串行 5 个依赖 = 43s 干等
-        var names = new List<string>(result.ToInstall.Count);
-        var lockObj = new object();
-        using var gate = new SemaphoreSlim(4);
-        var tasks = new List<Task>();
-        foreach (var dep in result.ToInstall.Take(5))
-        {
-            tasks.Add(Task.Run(async () =>
-            {
-                await gate.WaitAsync(ct);
-                try
-                {
-                    // 8-26 名字查询走镜像快路径（官方 2-7s 抖动，镜像稳定 1.7s）
-                    var detail = await GetProjectFastAsync(dep.ProjectId, ct);
-                    string label;
-                    if (detail is null) { label = dep.ProjectId; }
-                    else
-                    {
-                        var hint = detail.Description;
-                        if (hint is { Length: > 28 }) hint = hint[..28] + "…";
-                        label = string.IsNullOrEmpty(hint) ? detail.Title : $"{detail.Title}——{hint}";
-                    }
-                    lock (lockObj) names.Add(label);
-                }
-                catch { lock (lockObj) names.Add(dep.ProjectId); }
-                finally { gate.Release(); }
-            }, ct));
-        }
-        await Task.WhenAll(tasks);
+        // 补查传递依赖（不在直接列表）的标题——直接依赖已覆盖则跳过
+        var extraIds = result.ToInstall.Select(i => i.ProjectId)
+            .Where(id => !directIds.Contains(id))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Take(5 - names.Count)
+            .ToList();
+        if (extraIds.Count > 0)
+            names.AddRange(await FetchDependencyNamesAsync(extraIds, ct));
+
         // 8-26 解析失败兜底：依赖网络查询全挂时 result.ToInstall 为空 → 确认框不弹 =「前置不起作用」假象。
         // 用版本原始 required 依赖数兜底，让「要装 N 个前置」确认框至少弹出来（装不装得到由安装步决定）
-        if (names.Count == 0 && EcosystemDependencyAdapter.ToDependencyReferences(version).Count > 0)
-            names.Add($"{EcosystemDependencyAdapter.ToDependencyReferences(version).Count} 个前置（网络解析受限，仍将尝试安装）");
+        if (names.Count == 0 && directRefs.Count > 0)
+            names.Add($"{directRefs.Count} 个前置（网络解析受限，仍将尝试安装）");
+        return names;
+    }
+
+    /// <summary>依赖标题查询（项目标题 + 一句话说明，镜像快路径；门 4 并行防镜像限流）</summary>
+    private async Task<List<string>> FetchDependencyNamesAsync(IEnumerable<string> projectIds, CancellationToken ct)
+    {
+        var names = new List<string>();
+        var lockObj = new object();
+        using var gate = new SemaphoreSlim(4);
+        var tasks = projectIds.Select(id => Task.Run(async () =>
+        {
+            await gate.WaitAsync(ct);
+            try
+            {
+                // 8-26 名字查询走镜像快路径（官方 2-7s 抖动，镜像稳定 1.7s）
+                var detail = await GetProjectFastAsync(id, ct);
+                string label;
+                if (detail is null) { label = id; }
+                else
+                {
+                    var hint = detail.Description;
+                    if (hint is { Length: > 28 }) hint = hint[..28] + "…";
+                    label = string.IsNullOrEmpty(hint) ? detail.Title : $"{detail.Title}——{hint}";
+                }
+                lock (lockObj) names.Add(label);
+            }
+            catch { lock (lockObj) names.Add(id); }
+            finally { gate.Release(); }
+        }, ct)).ToList();
+        await Task.WhenAll(tasks);
         return names;
     }
 
