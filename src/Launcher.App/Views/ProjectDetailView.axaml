@@ -7,6 +7,10 @@
 
     <!-- 8-27 版本行选中高亮（点击版本名查看该版本 → 行底色 AccentDark） -->
     <UserControl.Styles>
+        <!-- 8-30 透明化：详情卡片半透明（透出主背景，Apple 风轻盈；详情打开时列表层隐藏，底下只有背景色/背景图） -->
+        <Style Selector="Border.card">
+            <Setter Property="Background" Value="#C5242A36"/>
+        </Style>
         <Style Selector="Border.selected">
             <Setter Property="Background" Value="{DynamicResource AccentDark}"/>
         </Style>
@@ -17,14 +21,14 @@
     <Grid RowDefinitions="Auto,*">
         <!-- Row 0：固定返回行（滚动时始终可见） -->
         <Button Content="← 返回" Command="{Binding CloseCommand}" Classes="ghost"
-                HorizontalAlignment="Left" Margin="0,0,0,10"
+                HorizontalAlignment="Left" Margin="0,0,0,6"
                 behaviors:SpringScaleBehavior.Enabled="False"/>
 
         <!-- Row 1：可滚动内容 -->
         <ScrollViewer Grid.Row="1">
-            <StackPanel Spacing="14">
+            <StackPanel Spacing="10">
                 <!-- 段 1：身份卡（全宽顶部） -->
-                <Border Classes="card" Padding="16">
+                <Border Classes="card" Padding="14">
                     <Grid ColumnDefinitions="Auto,*" ColumnSpacing="16">
                         <Border Width="72" Height="72" CornerRadius="{StaticResource RadiusLarge}" ClipToBounds="True"
                                 Background="{DynamicResource BgRaised}">
@@ -51,7 +55,7 @@
                 </Border>
 
                 <!-- 段 2：截图卡 | 匹配版本卡 同行 -->
-                <Grid ColumnDefinitions="*,400" ColumnSpacing="14">
+                <Grid ColumnDefinitions="*,360" ColumnSpacing="10">
                     <!-- 截图画廊（多图左右切换） -->
                     <Border Classes="card" Padding="12" IsVisible="{Binding Screenshot, Converter={x:Static ObjectConverters.IsNotNull}}">
                         <StackPanel Spacing="6">
@@ -70,8 +74,8 @@
                     </Border>
 
                     <!-- 匹配版本卡（匹配版本 + 匹配文件 + 安装） -->
-                    <StackPanel Grid.Column="1" Spacing="12">
-                        <Border Classes="card" Padding="16">
+                    <StackPanel Grid.Column="1" Spacing="10">
+                        <Border Classes="card" Padding="14">
                             <StackPanel Spacing="10">
                                 <TextBlock Text="{Binding VersionHint}" Foreground="#C9D2E3"/>
 
@@ -132,9 +136,9 @@
                 </Grid>
 
                 <!-- 段 3：更新日志 | 文件列表 同行 -->
-                <Grid ColumnDefinitions="*,400" ColumnSpacing="14">
+                <Grid ColumnDefinitions="*,360" ColumnSpacing="10">
                     <!-- 更新日志（阅读内容） -->
-                    <Border Classes="card" Padding="16" IsVisible="{Binding Changelog.Length}">
+                    <Border Classes="card" Padding="14" IsVisible="{Binding Changelog.Length}">
                         <StackPanel Spacing="8">
                             <TextBlock Text="更新日志" Classes="sub" FontSize="12"/>
                             <TextBlock Text="{Binding Changelog}" Foreground="#9AA3B5" FontSize="12"
@@ -143,7 +147,7 @@
                     </Border>
 
                     <!-- 文件列表（当前选中版本的安装文件） -->
-                    <Border Grid.Column="1" Classes="card" Padding="16" IsVisible="{Binding HasFiles}">
+                    <Border Grid.Column="1" Classes="card" Padding="14" IsVisible="{Binding HasFiles}">
                         <StackPanel Spacing="10">
                             <Expander Header="{Binding FilesHeaderText}" IsExpanded="True">
                                 <ItemsControl ItemsSource="{Binding Files}" Margin="0,6,0,0">
@@ -166,14 +170,14 @@
                 <TextBlock Text="{Binding Description}" Foreground="#9AA3B5" TextWrapping="Wrap"/>
 
                 <!-- 段 5：版本列表（全宽横向行，可展开更多；点击版本名查看该版本） -->
-                <Border Classes="card" Padding="16" IsVisible="{Binding HasVersions}">
+                <Border Classes="card" Padding="14" IsVisible="{Binding HasVersions}">
                     <StackPanel Spacing="10">
                         <TextBlock Text="版本列表" Classes="sub" FontSize="12"/>
                         <ItemsControl ItemsSource="{Binding Versions}">
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate x:DataType="vm:VersionOptionVM">
                                     <Border Classes="modcard" Classes.selected="{Binding IsSelected}"
-                                            Padding="12,9" Margin="0,3" CornerRadius="6">
+                                            Padding="10,7" Margin="0,2" CornerRadius="6">
                                         <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="16">
                                             <!-- 版本名区域 = 查看该版本（只选不装：文件列表/变更日志/匹配信息刷新） -->
                                             <Button Grid.Column="0" Padding="0" Background="Transparent" BorderThickness="0"
