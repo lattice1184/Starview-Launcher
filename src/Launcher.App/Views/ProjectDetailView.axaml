@@ -28,7 +28,15 @@
                     <Grid ColumnDefinitions="Auto,*" ColumnSpacing="16">
                         <Border Width="72" Height="72" CornerRadius="{StaticResource RadiusLarge}" ClipToBounds="True"
                                 Background="{DynamicResource BgRaised}">
-                            <Image Source="{Binding Icon}" Width="72" Height="72" Stretch="Uniform"/>
+                            <Grid>
+                                <Image Source="{Binding Icon}" Width="72" Height="72" Stretch="Uniform"
+                                       IsVisible="{Binding Icon, Converter={x:Static ObjectConverters.IsNotNull}}"/>
+                                <!-- 8-30 图标失败占位：首字母代替空灰块 -->
+                                <TextBlock Text="{Binding Initial}" FontWeight="Bold" FontSize="26"
+                                           Foreground="{DynamicResource TextDim}"
+                                           HorizontalAlignment="Center" VerticalAlignment="Center"
+                                           IsVisible="{Binding Icon, Converter={x:Static ObjectConverters.IsNull}}"/>
+                            </Grid>
                         </Border>
                         <StackPanel Grid.Column="1" Spacing="4" VerticalAlignment="Center">
                             <TextBlock Text="{Binding Title}" FontSize="22" FontWeight="Bold" Foreground="White"

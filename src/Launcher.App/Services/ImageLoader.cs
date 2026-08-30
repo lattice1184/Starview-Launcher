@@ -3,6 +3,7 @@ using System.Net.Http;
 using System.Security.Cryptography;
 using System.Text;
 using Avalonia.Media.Imaging;
+using Microsoft.Extensions.Logging;
 
 namespace Launcher.App.Services;
 
@@ -56,19 +57,21 @@ public static class ImageLoader
             // 搜索后 20 张图标同时完成 → Avalonia UI 线程排队风暴（「搜索时明显变卡」主因）
             Avalonia.Threading.Dispatcher.UIThread.Post(() => onLoaded(bitmap));
         }
-        catch
+        catch (Exception ex)
         {
             // 失败也缓存 null：切 tab 反复重建视图时不再重复请求坏图（秒切换的关键）
-            // 8-18 修正：null 缓存改为失败时间戳 + 60s 重试窗（原逻辑永久锁死——启动早期失败永不恢复）
+            // 8-18 修正：null 缓存改为失败时间戳 + 重试窗（原逻辑永久锁死——启动早期失败永不恢复）
             _failedAt[url] = Environment.TickCount64;
             Cache.TryRemove(url, out _);
+            // 8-30 失败不再静默：记 url + 异常到日志（此前无任何感知，"图标不显示"只能靠猜）
+            Launcher.Core.Utils.AppLog.Instance?.LogWarning("[img] 图标加载失败: {Url} ({Ex})", url, ex.Message);
             Avalonia.Threading.Dispatcher.UIThread.Post(() => onLoaded(null));
         }
     }
 
     /// <summary>失败重试窗（毫秒，8-18）：失败后此窗内直接返回 null 不再请求，窗外重新尝试。
-    /// 8-26 60s→20s：cdn-alt 间歇慢导致图标偶发空白，缩短重试窗让图标尽快重新加载</summary>
-    private const long FailRetryMs = 20_000;
+    /// 8-30 20s→8s：Modrinth CDN 间歇超时后整批空白太久，缩短到 8s 尽快重试</summary>
+    private const long FailRetryMs = 8_000;
 
     /// <summary>url → 最近失败时间戳（8-18 替代永久 null 缓存）</summary>
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, long> _failedAt = new();
@@ -112,8 +115,18 @@ public static class ImageLoader
         // 磁盘缓存命中：本地直接解码（无网络）
         if (File.Exists(path))
         {
-            await using var fs = File.OpenRead(path);
-            return Bitmap.DecodeToWidth(fs, decodeWidth);
+            try
+            {
+                await using var fs = File.OpenRead(path);
+                return Bitmap.DecodeToWidth(fs, decodeWidth);
+            }
+            catch (Exception ex)
+            {
+                // 8-30 坏缓存根治：解码失败（下载不全/格式损坏）→ 删文件走重新下载——
+                // 否则坏文件每次重试都解码失败又写失败锁（"修过又复发"的根因之一，imgcache 照涨但显示永远空）
+                try { File.Delete(path); } catch { }
+                Launcher.Core.Utils.AppLog.Instance?.LogWarning("[img] 磁盘缓存解码失败，删除重下: {Url} ({Ex})", url, ex.Message);
+            }
         }
         // 下载并发门：最多 4 个图片请求同时进行
         await Gate.WaitAsync();
@@ -144,7 +157,16 @@ public static class ImageLoader
             if (bytes is null) throw new InvalidOperationException($"图标所有候选源均失败：{url}");
             try { Directory.CreateDirectory(CacheDir); await File.WriteAllBytesAsync(path, bytes); } catch { }
             using var ms = new MemoryStream(bytes);
-            return Bitmap.DecodeToWidth(ms, decodeWidth);
+            try
+            {
+                return Bitmap.DecodeToWidth(ms, decodeWidth);
+            }
+            catch (Exception ex)
+            {
+                // 8-30 下载成功但解码失败（非图片/截断）：删已落盘坏文件，避免下次读它继续失败
+                try { File.Delete(path); } catch { }
+                throw new InvalidOperationException($"图标解码失败：{url} ({ex.Message})", ex);
+            }
         }
         finally
         {

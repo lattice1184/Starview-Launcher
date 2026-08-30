@@ -32,6 +32,9 @@ public partial class ProjectDetailViewModel : ViewModelBase
     [ObservableProperty]
     public partial string Title { get; set; }
 
+    /// <summary>图标加载失败时的首字母占位（8-30：详情身份卡 Icon null 时显示，不再空灰块）</summary>
+    public string Initial => Title.Length > 0 ? Title[..1] : "?";
+
     [ObservableProperty]
     public partial string Author { get; set; }
 
