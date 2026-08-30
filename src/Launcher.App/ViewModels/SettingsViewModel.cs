@@ -7,7 +7,6 @@ using CommunityToolkit.Mvvm.Input;
 using Launcher.App.Services;
 using Launcher.Core.Launch;
 using Launcher.Core.Launch.Sandbox;
-using Launcher.Core.Plugin;
 using Launcher.Core.Services;
 using Launcher.Core.Update;
 using Launcher.Core.Utils;
@@ -130,18 +129,6 @@ public partial class SettingsViewModel : ViewModelBase
     /// <summary>启动随机小提示（彩蛋开关）</summary>
     [ObservableProperty]
     public partial bool StartupTipEnabled { get; set; } = true;
-
-    /// <summary>插件接口总开关（8-31 MVP；默认关——第三方 dll 未成熟前不开）</summary>
-    [ObservableProperty]
-    public partial bool EnablePlugins { get; set; }
-
-    /// <summary>已加载插件列表（设置页插件分区显示；来源 PluginManager 静态单例）</summary>
-    public IReadOnlyList<PluginManager.LoadedPlugin> Plugins => PluginManager.Instance.Plugins;
-
-    /// <summary>插件分区状态文案（无插件时引导放 dll）</summary>
-    public string PluginsStatusText => PluginManager.Instance.Plugins.Count > 0
-        ? $"已加载 {PluginManager.Instance.Plugins.Count} 个插件"
-        : "plugins/ 目录还没有可加载的插件（启用插件 + 放 dll + 重启后生效）";
 
     // ---------- 更新（8-30 后台静默更新：自动检查开关 + 手动检查 + 重启安装） ----------
 
@@ -408,7 +395,6 @@ public partial class SettingsViewModel : ViewModelBase
         SelectedGamePriority = GamePriorityOptions.FirstOrDefault(o => o.Value == s.GamePriority) ?? GamePriorityOptions[1];
         SelectedSandboxMode = SandboxModeOptions.FirstOrDefault(o => o.Value == s.SandboxMode) ?? SandboxModeOptions[0];
         StartupTipEnabled = s.StartupTipEnabled;
-        EnablePlugins = s.EnablePlugins;
         AutoCheckUpdate = s.AutoCheckUpdate;
         SelectedDownloadSource = DownloadSourceOptions.FirstOrDefault(o => o.Value == s.DownloadSource) ?? DownloadSourceOptions[0];
         MaxConcurrentDownloads = s.MaxConcurrentDownloads;
@@ -469,7 +455,6 @@ public partial class SettingsViewModel : ViewModelBase
         s.GamePriority = SelectedGamePriority?.Value ?? GamePriority.Normal;
         s.SandboxMode = SelectedSandboxMode?.Value ?? SandboxMode.Disabled;
         s.StartupTipEnabled = StartupTipEnabled;
-        s.EnablePlugins = EnablePlugins;
         s.AutoCheckUpdate = AutoCheckUpdate;
         s.MaxConcurrentDownloads = MaxConcurrentDownloads;
         s.DownloadSpeedLimitKbps = SpeedLimitKbps;
@@ -536,13 +521,6 @@ public partial class SettingsViewModel : ViewModelBase
     {
         Save();
         NotificationService.Info(value ? "已开启小提示，下次启动生效" : "已关闭小提示，下次启动生效");
-    }
-    partial void OnEnablePluginsChanged(bool value)
-    {
-        Save();
-        NotificationService.Info(value
-            ? "插件已开启，重启启动器后生效（插件放 plugins/ 目录）"
-            : "插件已关闭，下次启动不再加载");
     }
     partial void OnAutoCheckUpdateChanged(bool value) => Save(); // 即时落盘（后台检查下次启动生效）
     partial void OnSelectedDownloadSourceChanged(DownloadSourceOption? value) => Save();

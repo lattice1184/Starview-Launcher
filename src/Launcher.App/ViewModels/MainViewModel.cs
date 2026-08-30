@@ -28,6 +28,8 @@ public partial class MainViewModel : ViewModelBase
     public partial bool IsMultiplayerActive { get; set; }
     [ObservableProperty]
     public partial bool IsEcosystemActive { get; set; }
+    [ObservableProperty]
+    public partial bool IsPluginsActive { get; set; }
 
     public HomeViewModel Home { get; } = new();
     public SettingsViewModel Settings { get; } = new();
@@ -46,6 +48,9 @@ public partial class MainViewModel : ViewModelBase
 
     private EcosystemNavViewModel? _ecosystemNav;
     public EcosystemNavViewModel EcosystemNav => _ecosystemNav ??= new();
+
+    private PluginsViewModel? _plugins;
+    public PluginsViewModel Plugins => _plugins ??= new();
 
     /// <summary>全局当前版本（主页权威，单向驱动下载/联机页——AF1：主页选什么，后面就全都是那个版本）</summary>
     [ObservableProperty]
@@ -118,6 +123,7 @@ public partial class MainViewModel : ViewModelBase
         IsSettingsActive = page == "settings";
         IsMultiplayerActive = page == "multiplayer";
         IsEcosystemActive = page == "ecosystem";
+        IsPluginsActive = page == "plugins";
         ReleaseOtherPages(); // 8-18 内存让渡：非激活页的大列表延迟释放（切回时各自懒重建）
         Launcher.App.Services.MemProfile.Sample(page); // 8-29 内存诊断钩子：切页采样（--mem-profile 才打）
         if (page == "download") Downloads.ActivateDefault();
@@ -130,6 +136,7 @@ public partial class MainViewModel : ViewModelBase
             "settings" => Settings,
             "multiplayer" => Multiplayer,
             "ecosystem" => EcosystemNav,
+            "plugins" => Plugins,
             _ => Home,
         };
     }

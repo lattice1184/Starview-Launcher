@@ -28,10 +28,21 @@
   <ItemGroup>
     <ProjectReference Include="..\Launcher.Core\Launcher.Core.csproj" />
     <ProjectReference Include="..\Launcher.App\Launcher.App.csproj" />
+    <!-- 单测探针插件：TrialProbe.dll 落到测试输出目录（试运行宿主加载用） -->
+    <ProjectReference Include="TestPlugins\TrialProbe\TrialProbe.csproj" />
   </ItemGroup>
 
   <ItemGroup>
     <None Include="Resources\**" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- 探针插件独立工程在测试目录下：排除默认通配，避免 TrialProbe 源码/obj 混进测试程序集（会编两份 AssemblyInfo → CS0579） -->
+    <Compile Remove="TestPlugins\**" />
+    <None Remove="TestPlugins\**" />
+    <Content Remove="TestPlugins\**" />
+    <EmbeddedResource Remove="TestPlugins\**" />
+    <Page Remove="TestPlugins\**" />
   </ItemGroup>
 
 </Project>

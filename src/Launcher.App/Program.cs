@@ -12,6 +12,13 @@ sealed class Program
     [STAThread]
     public static void Main(string[] args)
     {
+        // 8-31 插件沙箱试运行宿主模式：headless 子进程（父进程 PluginTrialRunner 用 --plugin-trial 唤起本 exe）。
+        // 放最顶：不初始化 Avalonia、不跑反调试/防火墙清理，快进快出。
+        if (args.Length >= 4 && args[0] == "--plugin-trial" && args[2] == "--scratch")
+        {
+            Environment.ExitCode = Launcher.Core.Plugin.PluginTrial.RunFromArgs(args);
+            return;
+        }
         if (Launcher.Core.Utils.AntiDebugGuard.ShouldExit()) return;
         Launcher.Core.Utils.AntiDebugGuard.ScheduleLateCheck(TimeSpan.FromSeconds(4));
         // 8-30 沙盒：启动时清理残留的 Starview 防火墙规则（崩溃未删的孤儿规则会持续挡 java 出站）

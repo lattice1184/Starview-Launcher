@@ -80,6 +80,7 @@ public partial class MainWindow : Window
         _navButtons["download"] = NavDownloads;
         _navButtons["multiplayer"] = NavMultiplayer;
         _navButtons["ecosystem"] = NavEcosystem;
+        _navButtons["plugins"] = NavPlugins;
         _navButtons["settings"] = NavSettings;
         RegisterNavIcons();
         // AL47 整合包拖入：全窗口接收 zip/mrpack 拖拽（DragOver 过滤，Drop 取第一个导入）
@@ -386,6 +387,7 @@ public partial class MainWindow : Window
         _navIcons["download"] = (NavDownloadIconR, NavDownloadIconF);
         _navIcons["multiplayer"] = (NavMultiIconR, NavMultiIconF);
         _navIcons["ecosystem"] = (NavEcoIconR, NavEcoIconF);
+        _navIcons["plugins"] = (NavPluginsIconR, NavPluginsIconF);
         _navIcons["settings"] = (NavSettingsIconR, NavSettingsIconF);
     }
 
@@ -546,6 +548,7 @@ public partial class MainWindow : Window
         "download" => main.IsDownloadsActive,
         "multiplayer" => main.IsMultiplayerActive,
         "ecosystem" => main.IsEcosystemActive,
+        "plugins" => main.IsPluginsActive,
         "settings" => main.IsSettingsActive,
         _ => false,
     };

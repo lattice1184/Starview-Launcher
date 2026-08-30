@@ -1,0 +1,125 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Launcher.App.ViewModels"
+             x:Class="Launcher.App.Views.PluginsView"
+             x:DataType="vm:PluginsViewModel">
+
+    <DockPanel Margin="0,0,4,0">
+        <!-- 顶部：标题 + 导入 + 总开关 -->
+        <StackPanel DockPanel.Dock="Top" Spacing="10" Margin="0,0,0,12">
+            <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="12">
+                <StackPanel Spacing="2">
+                    <TextBlock Text="插件" FontSize="18" FontWeight="Bold"/>
+                    <TextBlock Text="第三方扩展。启用前先「沙箱试运行」实测它动了什么，再决定留不留。"
+                               Classes="sub" FontSize="12"/>
+                </StackPanel>
+                <Button Grid.Column="1" Content="+ 导入插件" Classes="primary" FontSize="12" Padding="14,6"
+                        VerticalAlignment="Center" Click="OnImportClick"/>
+                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                    <TextBlock Text="启用插件" Classes="dim" FontSize="12" VerticalAlignment="Center"/>
+                    <ToggleSwitch IsChecked="{Binding IsPluginsEnabled}"/>
+                </StackPanel>
+            </Grid>
+            <TextBlock Text="{Binding PluginsDir}" Classes="dim" FontSize="10"
+                       TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding PluginsDir}"/>
+        </StackPanel>
+
+        <!-- 插件列表 -->
+        <ScrollViewer>
+            <StackPanel Spacing="10">
+                <TextBlock Text="{Binding TrialBusyText}" FontSize="12" Foreground="{DynamicResource Accent}"
+                           IsVisible="{Binding IsTrialRunning}"/>
+
+                <ItemsControl ItemsSource="{Binding Items}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="vm:PluginItemVM">
+                            <Border Classes="row" Padding="12,9" Margin="0,2">
+                                <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="10">
+                                    <StackPanel Spacing="3">
+                                        <StackPanel Orientation="Horizontal" Spacing="8">
+                                            <TextBlock Text="{Binding DisplayName}" FontSize="13" FontWeight="SemiBold"/>
+                                            <TextBlock Text="{Binding VersionText}" Classes="dim" FontSize="11" VerticalAlignment="Center"/>
+                                        </StackPanel>
+                                        <StackPanel Orientation="Horizontal" Spacing="8">
+                                            <TextBlock Text="{Binding IdText}" Classes="dim" FontSize="10"/>
+                                            <Border CornerRadius="3" Padding="5,0" Background="#12332F"
+                                                    VerticalAlignment="Center" IsVisible="{Binding Source.Enabled}">
+                                                <TextBlock Text="{Binding StatusText}" FontSize="9" Foreground="#B5F4E9"/>
+                                            </Border>
+                                            <Border CornerRadius="3" Padding="5,0" Background="#22332F3F"
+                                                    VerticalAlignment="Center" IsVisible="{Binding !Source.Enabled}">
+                                                <TextBlock Text="{Binding StatusText}" FontSize="9" Foreground="{StaticResource Danger}"/>
+                                            </Border>
+                                        </StackPanel>
+                                    </StackPanel>
+                                    <Button Grid.Column="1" Content="沙箱试运行" Classes="ghost" FontSize="11" Padding="8,3"
+                                            VerticalAlignment="Center"
+                                            Command="{Binding $parent[UserControl].((vm:PluginsViewModel)DataContext).TrialCommand}"
+                                            CommandParameter="{Binding}"/>
+                                    <Button Grid.Column="2" Content="{Binding ToggleText}"
+                                            Classes="ghost" FontSize="11" Padding="8,3" VerticalAlignment="Center"
+                                            Command="{Binding $parent[UserControl].((vm:PluginsViewModel)DataContext).ToggleEnabledCommand}"
+                                            CommandParameter="{Binding}"/>
+                                    <Button Grid.Column="3" Content="删除" Classes="danger" FontSize="11" Padding="8,3"
+                                            VerticalAlignment="Center"
+                                            Command="{Binding $parent[UserControl].((vm:PluginsViewModel)DataContext).DeleteCommand}"
+                                            CommandParameter="{Binding}"/>
+                                </Grid>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+
+                <Border Classes="card" Padding="14,12" Margin="0,4,0,0" IsVisible="{Binding !HasPlugins}">
+                    <StackPanel Spacing="6">
+                        <TextBlock Text="还没有插件" FontSize="14" FontWeight="SemiBold"/>
+                        <TextBlock Text="点「+ 导入插件」选择一个 .dll，或把插件文件放进上面的目录。导入后可先「沙箱试运行」再启用。"
+                                   Classes="dim" FontSize="12" TextWrapping="Wrap"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- 试运行结果面板 -->
+                <Border Classes="card" Padding="14,12" IsVisible="{Binding HasTrial}">
+                    <StackPanel Spacing="8">
+                        <TextBlock Text="{Binding TrialStatusText}" FontSize="14" FontWeight="SemiBold"/>
+                        <TextBlock Text="{Binding LastTrial.Note}" Classes="dim" FontSize="11" TextWrapping="Wrap"
+                                   IsVisible="{Binding HasTrialNote}"/>
+                        <StackPanel Spacing="4" IsVisible="{Binding HasOutsideWrites}">
+                            <TextBlock Text="越界写入（敏感目录）：" FontSize="12" FontWeight="SemiBold" Foreground="{StaticResource Danger}"/>
+                            <ItemsControl ItemsSource="{Binding LastTrial.OutsideWrites}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding}" FontSize="11" Foreground="{StaticResource Danger}"
+                                                   TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding}"/>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                        <StackPanel Spacing="4" IsVisible="{Binding HasScratchWrites}">
+                            <TextBlock Text="沙盒临时目录内写入（已隔离，正常）：" Classes="dim" FontSize="11" FontWeight="SemiBold"/>
+                            <ItemsControl ItemsSource="{Binding LastTrial.ScratchWrites}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding}" Classes="dim" FontSize="10" TextTrimming="CharacterEllipsis"/>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                        <StackPanel Spacing="4" IsVisible="{Binding HasTrialLogs}">
+                            <TextBlock Text="插件日志：" Classes="dim" FontSize="11" FontWeight="SemiBold"/>
+                            <ItemsControl ItemsSource="{Binding LastTrial.Logs}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding}" Classes="dim" FontSize="10" TextWrapping="Wrap"/>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                        <TextBlock Text="Windows 试运行为行为监测（TEMP 重定向 + 敏感目录监听），非硬隔离；写监测范围外的绝对路径可能不捕获。"
+                                   Classes="dim" FontSize="10" TextWrapping="Wrap"/>
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+        </ScrollViewer>
+    </DockPanel>
+</UserControl>

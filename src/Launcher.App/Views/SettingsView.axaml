@@ -55,12 +55,6 @@
                             behaviors:HoverBrushBehavior.Enabled="False"
                             PointerEntered="SettingsNavEnter" PointerExited="SettingsNavExit"
                             PointerPressed="SettingsNavPress" PointerReleased="SettingsNavRelease"/>
-                    <Button x:Name="SettingsNavPlugins" Content="插件" CommandParameter="6"
-                            Click="OnSettingsNavClick" HorizontalAlignment="Stretch" Background="Transparent"
-                            behaviors:SpringScaleBehavior.Enabled="False" behaviors:RippleBehavior.Enabled="False"
-                            behaviors:HoverBrushBehavior.Enabled="False"
-                            PointerEntered="SettingsNavEnter" PointerExited="SettingsNavExit"
-                            PointerPressed="SettingsNavPress" PointerReleased="SettingsNavRelease"/>
                     <Button x:Name="SettingsNavAbout" Content="关于" CommandParameter="4"
                             Click="OnSettingsNavClick" HorizontalAlignment="Stretch" Background="Transparent"
                             behaviors:SpringScaleBehavior.Enabled="False" behaviors:RippleBehavior.Enabled="False"
