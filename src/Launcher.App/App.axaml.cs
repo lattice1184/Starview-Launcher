@@ -83,6 +83,27 @@ public partial class App : Application
             }
             // 8-19 内存瘦身：图片磁盘缓存后台清理（30 天前的图标文件），不阻塞启动
             _ = Task.Run(() => ImageLoader.CleanupDiskCache());
+            // 8-31 更新后弹窗：升级后首次启动列本次更新内容（首装不弹；已展示过的版本不再弹）。
+            // 与后台更新检查独立——弹窗在 UI 线程、无需网络，只读本地 changelog 状态。
+            {
+                var currentVersion = PCL.Core.App.Basics.VersionName;
+                if (Launcher.Core.Utils.ChangelogState.ShouldShow(currentVersion))
+                {
+                    var groups = Launcher.Core.Utils.ChangelogCatalog.GroupsAfter(Launcher.Core.Utils.ChangelogState.GetLastSeen());
+                    if (groups.Count > 0)
+                    {
+                        Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+                        {
+                            new Views.WhatNewWindow(currentVersion, groups).ShowDialog(desktop.MainWindow);
+                            Launcher.Core.Utils.ChangelogState.SetSeen(currentVersion);
+                        });
+                    }
+                    else
+                    {
+                        Launcher.Core.Utils.ChangelogState.SetSeen(currentVersion);
+                    }
+                }
+            }
             // 8-30 后台静默更新：延迟 10s 检查最新 release，下载就绪后提示「重启安装」。
             // 8-31 成功落关于页常驻「重启安装」（不再只靠 10s 瞬时 Toast——实测用户找不到入口只能手动检查）；
             // 失败写关于页状态（不再静默）。

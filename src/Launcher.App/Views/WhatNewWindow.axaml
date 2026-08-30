@@ -1,0 +1,40 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:Launcher.Core.Utils"
+        x:Class="Launcher.App.Views.WhatNewWindow"
+        Width="470" Height="430" CanResize="False"
+        WindowStartupLocation="CenterOwner"
+        Background="{DynamicResource BgSurface}">
+
+    <Grid x:Name="Root" Margin="26,22" RowDefinitions="Auto,*,Auto" RowSpacing="16">
+        <StackPanel Spacing="6">
+            <TextBlock x:Name="TitleText" FontSize="17" FontWeight="Bold"
+                       Foreground="{DynamicResource TextPrimary}"/>
+            <TextBlock Text="本次更新内容" Classes="dim" FontSize="12"/>
+        </StackPanel>
+
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+            <ItemsControl x:Name="GroupsList">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:ChangelogCatalog+ChangelogGroup">
+                        <StackPanel Margin="0,4,0,0">
+                            <TextBlock Text="{Binding Version}" FontWeight="SemiBold" FontSize="13"
+                                       Margin="0,2,0,1" Foreground="{DynamicResource TextPrimary}"/>
+                            <ItemsControl ItemsSource="{Binding Items}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding}" Classes="dim" FontSize="12"
+                                                   TextWrapping="Wrap" Margin="0,2,0,2"/>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </ScrollViewer>
+
+        <Button Grid.Row="2" Content="开始使用" Classes="primary" HorizontalAlignment="Right"
+                Padding="18,7" Click="OnDone"/>
+    </Grid>
+</Window>

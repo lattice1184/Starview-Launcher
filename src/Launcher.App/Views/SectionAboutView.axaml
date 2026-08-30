@@ -1,6 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:Launcher.App.ViewModels"
+             xmlns:cu="using:Launcher.Core.Utils"
              x:Class="Launcher.App.Views.SectionAboutView"
              x:DataType="vm:SettingsViewModel">
 
@@ -66,11 +67,22 @@
                     </DataTemplate>
                 </ItemsControl.ItemTemplate>
             </ItemsControl>
+            <!-- 8-31 完整日志改版本分组展示（v1.1.9 / v1.1.8 / … / 更早版本） -->
             <Expander Header="完整更新日志" FontSize="12">
-                <ItemsControl ItemsSource="{Binding ChangelogItems}">
+                <ItemsControl ItemsSource="{Binding ChangelogGroups}">
                     <ItemsControl.ItemTemplate>
-                        <DataTemplate>
-                            <TextBlock Text="{Binding}" Classes="dim" FontSize="11" TextWrapping="Wrap" Margin="0,1,0,1"/>
+                        <DataTemplate x:DataType="cu:ChangelogCatalog+ChangelogGroup">
+                            <StackPanel Margin="0,4,0,0">
+                                <TextBlock Text="{Binding Version}" FontWeight="SemiBold" FontSize="12" Margin="0,2,0,1"
+                                           Foreground="{DynamicResource TextPrimary}"/>
+                                <ItemsControl ItemsSource="{Binding Items}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding}" Classes="dim" FontSize="11" TextWrapping="Wrap" Margin="0,1,0,1"/>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>

@@ -290,52 +290,14 @@ public partial class SettingsViewModel : ViewModelBase
     /// <summary>开源声明（关于页；静态清单见 Models/ThirdPartyLicenses.cs）</summary>
     public IReadOnlyList<string> ProjectNotices => Models.ThirdPartyLicenses.ProjectNotices;
 
-    /// <summary>最近更新（关于页：改动最大的几条功能与修复，用户视角；随版本更新追加）</summary>
-    public IReadOnlyList<string> ChangelogItems { get; } =
-    [
-        // 1.1.1（8-24）：下载提速 + 文字修复 + 体积优化 + 中文搜索
-        "模组中文搜索增强：CurseForge 也能中文搜了，英文搜索结果自动带中文名（本地缓存越用越全）",
-        "下载提速：Modrinth 等限速源每分片独立连接，大文件满并发真正生效，实测数倍提速",
-        "第三方文件支持多线程分片：ISO、安装包等大文件并发下载，不再单线慢慢磨",
-        "CurseForge 文件支持镜像竞速：配置 CDN 前缀后官方与镜像自动比快，谁快用谁",
-        "透明档文字不再发糊：毛玻璃下抗锯齿修正，实色档保持锐利",
-        "发布体积减小约三分之一：自包含版更小、启动更快、占用更低",
-        "模组版本不匹配自动禁用冲突模组，报错弹窗自动修复",
-        "自动修复更透明：启动失败原因正大光明弹窗展示，修复自动读取当时日志执行下载",
-        "加载器覆盖原版：装 Fabric/Forge 后原版自动隐藏合并，删加载器连带清理，删得干净",
-        "主页自动选中最新安装的版本：下载模组不再落错实例",
-        "安装直接选目录：点安装直接弹系统目录选择器，默认指向对应实例 mods，取消即不装",
-        "修复模组装进错误目录（TACZ 落 26.1 的嵌套路径问题根治）",
-        "下载修复：大文件下载不再「提示完成但文件没落地」（合并阶段假成功根治）",
-        "历史「位置」按钮能打开目录了：模组/整合包安装记录直接定位到 mods 文件夹",
-        "首次设置游戏目录后主页版本立即刷新，不用再切页/重启",
-        "更换游戏目录后版本页自动跟随新目录，删除文件秒同步",
-        "设置-关于新增赞助者名单，感谢每一位支持者",
-        "下载完成的文件直接装进当前版本的 mods 文件夹，不再落到缓存区找不到",
-        "模组中文搜索变快了：默认走镜像加速，搜「优化」「小地图」不再干等",
-        "日志中心：下载/启动/修复分三类整理，启动器里直接展开看，不用开记事本",
-        "下载完成弹 2 秒提示，点「查看日志」直接跳到那条记录",
-        "修复补全统一装到当前实例，删了文件启动能自动找回",
-        "外观修复：透明度不再被交互重置——拖动即生效并保存，只有你再改才变",
-        "LittleSkin 登录统一：浏览器授权一次即可登录游戏账号（不再要邮箱密码）",
-        "进服务器角色皮肤不再消失：皮肤数据透传 + 正版验证匹配提示",
-        "服务端控制台中文不乱码了（say 命令和日志编码统一）",
-        "账号列表点一下整行就能切换，不用找小按钮",
-        "启动记录每条都能打开当次日志（失败的也能看）",
-        "启动更快更省内存：页面按需加载、启动扫描后立即释放",
-        "删除版本会把其他来源的同名副本一起清掉，下载缓存过期自动清理",
-        "设置页每个区域都加了说明，看不懂的项现在有解释",
-        "下载引擎重构：多源竞速、分片、断点续传、自动重试、下载质检",
-        "下载卡死根治：响应头超时、读心跳、线程池死锁修复",
-        "整合包导入导出修复：内容落盘、mrpack 反查、路径安全",
-        "模组中文搜索（MC百科链）",
-        "微软正版登录修复（refresh_token 持久化）",
-        "联机修复：超时、进程死亡检测",
-        "网络诊断条 + 下载队列调度",
-    ];
+    /// <summary>8-31 更新内容版本分组（关于页 + 升级弹窗共用 ChangelogCatalog；数据在 Core 便于弹窗复用）</summary>
+    public IReadOnlyList<ChangelogCatalog.ChangelogGroup> ChangelogGroups => ChangelogCatalog.Groups;
 
-    /// <summary>8-19 精简：关于页默认只列最近 5 条，完整日志收进折叠</summary>
-    public IEnumerable<string> ChangelogItemsRecent => ChangelogItems.Take(5);
+    /// <summary>关于页「最近更新」：最新版本组条目取前 5 条（v1.1.9 起）</summary>
+    public IEnumerable<string> ChangelogItemsRecent => ChangelogCatalog.Groups
+        .Where(g => g.Version != ChangelogCatalog.HistoricalVersion)
+        .SelectMany(g => g.Items)
+        .Take(5);
 
     /// <summary>8-23 赞助者名单（用户的资金支持——启动器开发离不开他们）</summary>
     public IReadOnlyList<string> Sponsors { get; } =
