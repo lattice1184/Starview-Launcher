@@ -16,6 +16,7 @@ public sealed record ModrinthProjectDetail(
     [property: JsonPropertyName("follows")] long Follows,
     [property: JsonPropertyName("icon_url")] string? IconUrl,
     [property: JsonPropertyName("gallery")] List<ModrinthGalleryItem>? Gallery,
+    [property: JsonPropertyName("game_versions")] List<string>? GameVersions,
     [property: JsonPropertyName("source_url")] string? SourceUrl,
     [property: JsonPropertyName("client_side")] string? ClientSide,
     [property: JsonPropertyName("server_side")] string? ServerSide,

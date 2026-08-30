@@ -29,8 +29,18 @@ public partial class ProjectCardVM : ObservableObject
     public bool ShowFollows => Source != "curseforge";
     public string Initial => Title.Length > 0 ? Title[..1] : "?";
 
+    /// <summary>卡片显示的支持 MC 版本（8-30：搜索 API 不带 game_versions，详情懒加载；如「支持 1.21.5 / 1.21.6」）</summary>
+    [ObservableProperty]
+    public partial string SupportedVersions { get; set; } = "";
+
+    public bool HasSupportedVersions => SupportedVersions.Length > 0;
+
     [ObservableProperty]
     public partial Bitmap? Icon { get; set; }
+
+    /// <summary>版本支持懒加载共用 service + 并发门（Modrinth ratelimit 严格——20 卡并发打详情会 429）</summary>
+    private static readonly EcosystemService Eco = new();
+    private static readonly SemaphoreSlim VersionGate = new(4, 4);
 
     /// <summary>收藏星标（FavoritesService 持久化）</summary>
     [ObservableProperty]
@@ -78,6 +88,7 @@ public partial class ProjectCardVM : ObservableObject
         };
         IsFavorite = FavoritesService.IsFavorite(Id);
         _ = ImageLoader.LoadAsync(IconUrl, bmp => Icon = bmp);
+        _ = LoadSupportedVersionsAsync(Id);
     }
 
     /// <summary>收藏列表构造（用项目详情；无描述/作者时取字段）</summary>
@@ -145,6 +156,24 @@ public partial class ProjectCardVM : ObservableObject
     /// <summary>最后更新时间："更新于 2026-07-20"（异常/默认值容错）</summary>
     private static string FormatDate(DateTime d)
         => d.Year > 2000 ? $"更新于 {d:yyyy-MM-dd}" : "";
+
+    /// <summary>8-30 卡片懒加载支持版本：搜索 API 无 game_versions → 详情查询（限流 4 并发，失败静默不显示）</summary>
+    private async Task LoadSupportedVersionsAsync(string projectId)
+    {
+        if (Source != "modrinth") return;
+        await VersionGate.WaitAsync();
+        try
+        {
+            var detail = await Eco.GetProjectAsync(projectId);
+            if (detail?.GameVersions is { Count: > 0 })
+            {
+                var list = string.Join(" / ", detail.GameVersions.Take(6));
+                Avalonia.Threading.Dispatcher.UIThread.Post(() => SupportedVersions = $"支持 {list}");
+            }
+        }
+        catch { /* 版本加载失败不显示 */ }
+        finally { VersionGate.Release(); }
+    }
 }
 
 /// <summary>目标版本实例（生态安装目标 / 主页启动选择）；SourceLabel 标识版本来源（PCL2/本启动器等）；GameDir 为版本所在游戏目录；LoaderBadge 为真实加载器徽章（fabric/forge/neoforge/quilt，AG1 检测）；McVersion 为加载器版本继承的原版版本号</summary>
