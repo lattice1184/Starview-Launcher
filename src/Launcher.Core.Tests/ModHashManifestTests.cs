@@ -82,4 +82,37 @@ public class ModHashManifestTests : IDisposable
         var result = await ModHashManifest.VerifyAsync(_dir);
         Assert.Empty(result.Tampered);
     }
+
+    [Fact]
+    public async Task Record_NoOfficialSha1_AutoComputesLocalBaseline()
+    {
+        // 8-31 自动信任：Modrinth/CF 部分版本 API 不给 sha1 → 回退本机实际文件计算基线，
+        // 启动器自己装的 mod 不再标"未校验"，且未被误标 Untracked
+        File.WriteAllText(Path.Combine(_dir, "e.jar"), "launcher-downloaded");
+        ModHashManifest.Record(_dir, "e.jar", null, null, "modrinth"); // 官方 sha1 缺失
+        var result = await ModHashManifest.VerifyAsync(_dir);
+        Assert.Empty(result.Tampered);
+        Assert.DoesNotContain(result.Untracked, u => u == "e.jar");
+    }
+
+    [Fact]
+    public async Task Record_NoOfficialSha1_AutoBaseline_StillDetectsTamper()
+    {
+        // 自动计算的基线同样能抓"同名不同内容"投毒
+        var jar = Path.Combine(_dir, "f.jar");
+        File.WriteAllText(jar, "original");
+        ModHashManifest.Record(_dir, "f.jar", null, null, "curseforge");
+        File.WriteAllText(jar, "EVIL-PAYLOAD");
+        var result = await ModHashManifest.VerifyAsync(_dir);
+        Assert.Contains(result.Tampered, t => t.Contains("f.jar"));
+    }
+
+    [Fact]
+    public void Record_FileMissing_NoOfficialSha1_DoesNotRecord()
+    {
+        // 文件不在且无官方 sha1 → 无法取基线，不记录（不误建空条目/清单）
+        ModHashManifest.Record(_dir, "ghost.jar", null, null, "modrinth");
+        var manifest = Path.Combine(_dir, ".starview-mods.json");
+        Assert.True(!File.Exists(manifest) || !File.ReadAllText(manifest).Contains("ghost.jar"));
+    }
 }

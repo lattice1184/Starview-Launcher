@@ -1,6 +1,7 @@
 using System.IO.Compression;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using Launcher.Core.Diagnostics;
 using Launcher.Core.Model.Loader;
 using Launcher.Core.Model.Modrinth;
 using Launcher.Core.Model.Mojang;
@@ -250,6 +251,10 @@ public sealed class ModpackInstaller
                     {
                         Directory.CreateDirectory(Path.GetDirectoryName(target)!);
                         await _downloads.DownloadFileAsync(url, target, f.Sha1, f.Size, p, c);
+                        // 8-31 自动信任：启动器自己装的 mod 记哈希（预检不再标未校验）；mrpack 文件装进 mods/ 才记
+                        if (target.StartsWith(Path.Combine(versionDir, "mods") + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)
+                            && target.EndsWith(".jar", StringComparison.OrdinalIgnoreCase))
+                            ModHashManifest.Record(Path.Combine(versionDir, "mods"), Path.GetFileName(target), f.Sha1, null, "mrpack");
                     }, target);
                     await child.Completion.WaitAsync(ct);
                     if (child.TerminalState == DownloadTaskState.Failed)
@@ -290,6 +295,8 @@ public sealed class ModpackInstaller
                 var child = ctx.AddChild($"前置 {dep.ProjectKey}", primary.Size, async (p, c) =>
                 {
                     await _downloads.DownloadFileAsync(primary.Url, target, primary.Hashes?.Sha1, primary.Size, p, c);
+                    // 8-31 自动信任：启动器自己装的 mod 记哈希
+                    ModHashManifest.Record(modsDir, Path.GetFileName(target), primary.Hashes?.Sha1, primary.Hashes?.Sha512, "mrpack-dep");
                 }, target);
                 await child.Completion.WaitAsync(ct);
                 if (child.TerminalState == DownloadTaskState.Failed)
@@ -332,12 +339,15 @@ public sealed class ModpackInstaller
         var skipped = new List<(string Name, string Reason)>();
         var versionDir = Path.Combine(_gameDirectory, "versions", packId);
         var jarCount = 0;
+        var extractedJars = new List<string>(); // 8-31 自动信任：记录 CF zip 里落进 mods/ 的 jar（同步解压，无需锁）
         await ctx.AddChild("解压整合包", 0, async (p, c) =>
         {
             using var zip = ZipFile.OpenRead(zipPath);
             ModpackImporter.ExtractZipEntries(zip, versionDir, rel =>
             {
                 if (rel.EndsWith(".jar", StringComparison.OrdinalIgnoreCase)) Interlocked.Increment(ref jarCount);
+                if (rel.StartsWith("mods/", StringComparison.OrdinalIgnoreCase) && rel.EndsWith(".jar", StringComparison.OrdinalIgnoreCase))
+                    extractedJars.Add(rel);
                 return rel != "manifest.json" && rel != "modlist.html";
             }, rel =>
             {
@@ -346,6 +356,10 @@ public sealed class ModpackInstaller
                 return rel;
             }, c);
         }).Completion.WaitAsync(ct);
+        // 8-31 自动信任：CF zip 解压装的 mod 记哈希（官方 sha1 缺失 → 自动算本地基线）
+        var cfModsDir = Path.Combine(versionDir, "mods");
+        foreach (var jar in extractedJars)
+            ModHashManifest.Record(cfModsDir, Path.GetFileName(jar), null, null, "curseforge-zip");
 
         // 兜底：zip 缺 jar 实体（仅清单）→ 按 projectID/fileID 从 CF API 下载（顺序执行避限流）
         if (info.CurseForgeFiles is { Count: > 0 } files && jarCount == 0)

@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -18,12 +19,23 @@ public static class ModHashManifest
 
     private static string PathFor(string modsDir) => System.IO.Path.Combine(modsDir, ".starview-mods.json");
 
-    /// <summary>记录一个已安装 mod 的官方哈希（sha1 空 / 文件名为空不记录——无哈希可比对）。</summary>
+    /// <summary>
+    /// 记录一个已安装 mod 的哈希（启动器自己装的 → 自动信任，预检不再标未校验）。
+    /// 官方 sha1 缺失时（Modrinth/CF 部分版本 API 不给 sha1）回退本机实际文件计算作基线——
+    /// 下载完整性由 DownloadService 另行校验，落盘文件即"启动器装进来的"；后续"同名不同内容"仍能比对检出。
+    /// 文件不在或文件名为空 → 不记录。
+    /// </summary>
     public static void Record(string modsDir, string fileName, string? sha1, string? sha512, string source)
     {
-        if (string.IsNullOrWhiteSpace(sha1) || string.IsNullOrWhiteSpace(fileName)) return;
+        if (string.IsNullOrWhiteSpace(fileName)) return;
         try
         {
+            var path = System.IO.Path.Combine(modsDir, fileName);
+            if (string.IsNullOrWhiteSpace(sha1))
+            {
+                if (!File.Exists(path)) return; // 文件不在 → 无法取基线
+                sha1 = Convert.ToHexStringLower(SHA1.HashData(File.ReadAllBytes(path)));
+            }
             var entries = Load(modsDir);
             entries.RemoveAll(e => string.Equals(e.FileName, fileName, System.StringComparison.OrdinalIgnoreCase));
             entries.Add(new Entry(fileName, sha1, sha512 ?? "", source));
