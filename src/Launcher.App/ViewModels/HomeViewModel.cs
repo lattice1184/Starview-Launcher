@@ -752,6 +752,8 @@ public partial class HomeViewModel : ViewModelBase
             // 8-26 修：游戏版本必须解析真值（McVersion → inheritsFrom → 版本名）——此前直接传 version.Name
             // （fabric-loader-0.19.3-26.1.2 实例 id），ModCompatibilityChecker 解析不出 → 预检静默跳过（「没看出来」根因）
             var checkModsDir = Path.Combine(ModRepairService.InstanceRoot(gameDir, version.Name), "mods");
+            // 8-31 主动隔离：预检发现投毒/未校验 → 覆盖本次启动沙盒模式（局部变量，不污染 LauncherSettings 持久化）
+            var launchSandbox = SandboxMode;
             if (Directory.Exists(checkModsDir))
             {
                 // 8-28 可跳过：大型整合包交给用户决定——随时取消扫描直接启动（不误停调好的包）
@@ -788,16 +790,54 @@ public partial class HomeViewModel : ViewModelBase
                     }
                     catch (OperationCanceledException) { /* 用户跳过 → 当无结果 */ }
 
-                    // 8-30 投毒检测：清单内 jar 重算 SHA1，不一致 = 文件被替换/投毒（同名不同内容）
+                    // 8-30 投毒检测 + 8-31 主动隔离：Tampered=清单内被替换/删除（A 弹 Warn 红字，可取消启动）；
+                    // Untracked=清单外手动放入未校验（C 弹 Confirm）。任一触发 → 本次启动引导/强制严格隔离，
+                    // 恶意 mod 即使执行也断网 + 只准读写游戏文件夹。改的是局部 launchSandbox，不污染持久化设置。
                     if (!preCts.IsCancellationRequested)
                     {
                         try
                         {
-                            var tampered = await Launcher.Core.Diagnostics.ModHashManifest.VerifyAsync(checkModsDir, preCts.Token);
-                            foreach (var t in tampered)
-                                AppendLog($"§ ⚠ 模组文件校验失败：{t}（可能被替换/投毒）");
-                            if (tampered.Count > 0)
-                                NotificationService.Error($"检测到 {tampered.Count} 个模组文件被修改：{string.Join("、", tampered)}");
+                            var verify = await Launcher.Core.Diagnostics.ModHashManifest.VerifyAsync(checkModsDir, preCts.Token);
+                            if (verify.Tampered.Count > 0)
+                            {
+                                foreach (var t in verify.Tampered)
+                                    AppendLog($"§ ⚠ 模组文件校验失败：{t}（可能被替换/投毒）");
+                                var owner = DialogService.MainWindow();
+                                var quarantine = owner is not null
+                                    && await DialogService.Warn(owner,
+                                        $"检测到 {verify.Tampered.Count} 个模组文件被替换或删除",
+                                        "可能被投毒。建议严格隔离运行（断网 + 只准读写游戏文件夹），恶意模组跑不出去；也可取消启动排查。",
+                                        "模组可能被投毒", "严格隔离运行", "取消启动");
+                                if (quarantine)
+                                {
+                                    AppendLog("§ 用户选择：以严格隔离运行（模组可能被投毒）");
+                                    launchSandbox = SandboxMode.StrictIsolation;
+                                }
+                                else
+                                {
+                                    // 仿 :734 先例：try 内 return 前手动复位 IsLaunching（finally 只复位 IsPreCheckRunning）
+                                    AppendLog("§ 检测到模组异常，已取消启动");
+                                    IsLaunching = false;
+                                    LaunchState = "已取消";
+                                    LaunchStatus = "检测到模组异常，已取消启动";
+                                    return;
+                                }
+                            }
+                            else if (verify.Untracked.Count > 0)
+                            {
+                                foreach (var u in verify.Untracked)
+                                    AppendLog($"§ 检测到未校验模组：{u}（手动放入，未记录官方哈希）");
+                                var owner = DialogService.MainWindow();
+                                var quarantine = owner is not null
+                                    && await DialogService.Confirm(owner,
+                                        $"检测到 {verify.Untracked.Count} 个未校验模组（手动放入 mods 目录），无法确认是否被投毒。",
+                                        "未校验模组", "严格隔离运行", "直接运行");
+                                if (quarantine)
+                                {
+                                    AppendLog("§ 用户选择：以严格隔离运行（含未校验模组）");
+                                    launchSandbox = SandboxMode.StrictIsolation;
+                                }
+                            }
                         }
                         catch (OperationCanceledException) { /* 用户跳过 → 当无结果 */ }
                     }
@@ -907,7 +947,7 @@ public partial class HomeViewModel : ViewModelBase
                 onLog: AppendLog, onStage: st => Dispatcher.UIThread.Post(() => SetStage(st)),
                 ct: CancellationToken.None, extraGameArgs: extraGameArgs,
                 userType: account.Type == "microsoft" ? "msa" : "legacy",
-                skinUrl: skinUrl, sandboxMode: SandboxMode));
+                skinUrl: skinUrl, sandboxMode: launchSandbox));
 
             // 游戏进程已启动（窗口拉起）
             IsLaunching = false;

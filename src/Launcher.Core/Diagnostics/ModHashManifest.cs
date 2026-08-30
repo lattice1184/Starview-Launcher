@@ -32,13 +32,22 @@ public static class ModHashManifest
         catch { /* 记录失败不影响安装 */ }
     }
 
-    /// <summary>重算清单内每个 jar 的 SHA1 比对；返回被替换/缺失的描述列表。校验失败不阻断启动。</summary>
-    public static async Task<List<string>> VerifyAsync(string modsDir, CancellationToken ct = default)
+    /// <summary>校验结果：Tampered = 清单内被替换/删除的 mod；Untracked = 目录里清单外的 jar（手动放入/未校验）。</summary>
+    public sealed record VerifyResult(List<string> Tampered, List<string> Untracked);
+
+    /// <summary>
+    /// 重算清单内每个 jar 的 SHA1 比对 + 扫描目录找清单外 jar（手动塞的/未校验）。
+    /// 8-31 主动隔离的前置：Tampered（投毒）由 App 层弹 Warn 引导严格隔离；Untracked（未校验）
+    /// 弹 Confirm。校验失败不阻断启动（读目录异常返回空）。
+    /// </summary>
+    public static async Task<VerifyResult> VerifyAsync(string modsDir, CancellationToken ct = default)
     {
         var tampered = new List<string>();
+        var untracked = new List<string>();
         try
         {
-            foreach (var e in Load(modsDir))
+            var entries = Load(modsDir);
+            foreach (var e in entries)
             {
                 ct.ThrowIfCancellationRequested();
                 var path = System.IO.Path.Combine(modsDir, e.FileName);
@@ -46,10 +55,18 @@ public static class ModHashManifest
                 if (!await Download.DownloadService.Sha1MatchesAsync(path, e.Sha1, ct))
                     tampered.Add($"{e.FileName}（哈希不一致）");
             }
+            // 8-31 C：扫描目录找清单外 jar（手动放入/未校验）——投毒常见入口是"下载站替换 + 手动塞进 mods"
+            foreach (var jar in Directory.EnumerateFiles(modsDir, "*.jar"))
+            {
+                ct.ThrowIfCancellationRequested();
+                var name = System.IO.Path.GetFileName(jar);
+                if (!entries.Any(e => string.Equals(e.FileName, name, System.StringComparison.OrdinalIgnoreCase)))
+                    untracked.Add(name);
+            }
         }
         catch (OperationCanceledException) { throw; }
         catch { /* 校验失败不阻断启动 */ }
-        return tampered;
+        return new VerifyResult(tampered, untracked);
     }
 
     private static List<Entry> Load(string modsDir)
