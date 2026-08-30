@@ -98,6 +98,19 @@ public class GitHubReleaseServiceTests
     }
 
     [Fact]
+    public void Match_PrefersPlainTarGz_OverAppBundleVariant()
+    {
+        // 8-30 发布链同时出散文件包与 .app 变体——更新统一用散文件包
+        var latest = new GitHubReleaseService.LatestRelease("v1.1.4",
+            [
+                new("starview-osx-arm64-20260830.app.tar.gz", "https://x.app.tar.gz", 3),
+                new("starview-osx-arm64-20260830.tar.gz", "https://x.tar.gz", 4),
+            ], null);
+
+        Assert.Equal("starview-osx-arm64-20260830.tar.gz", GitHubReleaseService.MatchFor(latest, "macos")!.Name);
+    }
+
+    [Fact]
     public void Match_MacosFallsBackToX64()
     {
         var latest = new GitHubReleaseService.LatestRelease("v1.1.4",

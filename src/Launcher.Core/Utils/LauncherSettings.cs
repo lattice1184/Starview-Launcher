@@ -96,6 +96,9 @@ public sealed class LauncherSettings
     /// 填了 = 换链 5000 次/小时，防限流）。DPAPI 加密落盘，同 CF key。</summary>
     public string GitHubApiToken { get; set; } = "";
 
+    /// <summary>后台静默更新检查（启动延迟检查最新 release，就绪后提示重启生效）</summary>
+    public bool AutoCheckUpdate { get; set; } = true;
+
     /// <summary>8-13 微软登录 client_id（空 = 走远程下发/内置兜底；手动填的值优先）。
     /// DPAPI 加密落盘——「藏」的第一层（防 grep 挖二进制级防护）。</summary>
     public string MicrosoftClientId { get; set; } = "";

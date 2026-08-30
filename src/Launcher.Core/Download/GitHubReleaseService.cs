@@ -91,7 +91,9 @@ public static class GitHubReleaseService
 
     private static AssetInfo? FindByPrefix(IReadOnlyList<AssetInfo> assets, string prefix)
         => assets.FirstOrDefault(a => a.Name.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
-                                      && a.Name.EndsWith(".tar.gz", StringComparison.OrdinalIgnoreCase));
+                                      && a.Name.EndsWith(".tar.gz", StringComparison.OrdinalIgnoreCase)
+                                      // 8-30 发布链同时出散文件包与 .app 变体——更新统一用散文件包（替换逻辑两种安装布局都适配）
+                                      && !a.Name.EndsWith(".app.tar.gz", StringComparison.OrdinalIgnoreCase));
 
     public sealed record LatestRelease(string Tag, IReadOnlyList<AssetInfo> Assets, DateTime? PublishedAt);
     public sealed record AssetInfo(string Name, string BrowserDownloadUrl, long Size);
