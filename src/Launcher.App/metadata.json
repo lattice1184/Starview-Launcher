@@ -1,9 +1,9 @@
 {
   "name": "Launcher",
   "version": {
-    "base": "1.1.9",
+    "base": "1.1.10",
     "suffix": "",
-    "code": 13,
+    "code": 14,
     "upstream": ""
   },
   "licenses": []
