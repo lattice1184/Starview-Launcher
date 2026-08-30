@@ -104,6 +104,56 @@ public class AccountServiceTests
         finally { if (File.Exists(path)) File.Delete(path); }
     }
 
+    // ---------- 8-31 默认离线账号：无账号自动建 Player，保证启动永远有账号 ----------
+
+    [Fact]
+    public void Load_NoStoreFile_AutoCreatesOfflinePlayer()
+    {
+        // 新装：accounts.json 不存在 → Load 自动建离线 Player + 设为当前
+        var path = TempStore();
+        try
+        {
+            var svc = new AccountService(path);
+            svc.Load();
+            Assert.Single(svc.Accounts);
+            Assert.Equal("Player", svc.Current!.Name);
+            Assert.Equal("offline", svc.Current.Type);
+            Assert.True(File.Exists(path), "自动创建的账号应持久化");
+        }
+        finally { if (File.Exists(path)) File.Delete(path); }
+    }
+
+    [Fact]
+    public void Load_ExistingAccounts_DoesNotAddDefault()
+    {
+        var path = TempStore();
+        try
+        {
+            var svc = new AccountService(path);
+            svc.LoginOffline("Steve");
+            var reloaded = new AccountService(path);
+            reloaded.Load();
+            Assert.Single(reloaded.Accounts); // 只有 Steve，不自动加 Player
+            Assert.Equal("Steve", reloaded.Current!.Name);
+        }
+        finally { if (File.Exists(path)) File.Delete(path); }
+    }
+
+    [Fact]
+    public void Load_EmptyStoreFile_AutoCreatesPlayer()
+    {
+        // 用户删光所有账号（存了空列表）→ 下轮启动自动补回 Player
+        var path = TempStore();
+        try
+        {
+            File.WriteAllText(path, """{"CurrentName":null,"Accounts":[]}""");
+            var svc = new AccountService(path);
+            svc.Load();
+            Assert.Equal("Player", svc.Current!.Name);
+        }
+        finally { if (File.Exists(path)) File.Delete(path); }
+    }
+
     // ---------- 8-13 正版账号：token DPAPI 加密落盘 + 旧明文迁移 ----------
 
     [Fact]

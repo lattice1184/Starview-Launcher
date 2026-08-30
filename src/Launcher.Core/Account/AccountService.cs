@@ -128,28 +128,42 @@ public sealed class AccountService
     {
         try
         {
-            if (!File.Exists(_storePath)) return;
-            var json = File.ReadAllText(_storePath);
-            var saved = JsonSerializer.Deserialize<StoredState>(json);
-            if (saved is null) return;
-            _accounts = (saved.Accounts ?? [])
-                // 8-13 token DPAPI 解密（无前缀旧明文原样返回——迁移兼容，下次保存自动转密）
-                .Select(a => new AccountInfo(a.Name, a.Uuid, a.Type,
-                    Launcher.Core.Utils.Secrets.Read(a.AccessToken),
-                    Launcher.Core.Utils.Secrets.Read(a.RefreshToken),
-                    a.MsExpiresAtUtc))
-                .ToList();
-            Current = saved.CurrentName is { } cur
-                ? _accounts.FirstOrDefault(a => a.Name == cur)
-                : null;
-            if (Current?.Type == "microsoft" && Current.RefreshToken is { } rt)
+            if (File.Exists(_storePath))
             {
-                MicrosoftSession = new MicrosoftAuth.MicrosoftSession(
-                    Current.AccessToken ?? "", rt, Current.Uuid, Current.Name,
-                    Current.MsExpiresAtUtc ?? default);
+                var json = File.ReadAllText(_storePath);
+                var saved = JsonSerializer.Deserialize<StoredState>(json);
+                if (saved is not null)
+                {
+                    _accounts = (saved.Accounts ?? [])
+                        // 8-13 token DPAPI 解密（无前缀旧明文原样返回——迁移兼容，下次保存自动转密）
+                        .Select(a => new AccountInfo(a.Name, a.Uuid, a.Type,
+                            Launcher.Core.Utils.Secrets.Read(a.AccessToken),
+                            Launcher.Core.Utils.Secrets.Read(a.RefreshToken),
+                            a.MsExpiresAtUtc))
+                        .ToList();
+                    Current = saved.CurrentName is { } cur
+                        ? _accounts.FirstOrDefault(a => a.Name == cur)
+                        : null;
+                    if (Current?.Type == "microsoft" && Current.RefreshToken is { } rt)
+                    {
+                        MicrosoftSession = new MicrosoftAuth.MicrosoftSession(
+                            Current.AccessToken ?? "", rt, Current.Uuid, Current.Name,
+                            Current.MsExpiresAtUtc ?? default);
+                    }
+                }
             }
         }
-        catch (Exception) { /* 存储损坏则忽略 */ }
+        catch (Exception) { _accounts = []; Current = null; } // 存储损坏 → 视为无账号
+
+        // 8-31 默认离线账号：无账号（新装 / 全删 / 损坏）自动建一个——保证启动永远有账号、
+        // 好友找不到登录入口也不至于"无法启动"。名字对齐联机兜底名 Player。
+        if (_accounts.Count == 0)
+        {
+            _accounts.Add(new AccountInfo("Player", OfflineUuid("Player"), "offline"));
+            Current = _accounts[0];
+            Save();
+            Changed?.Invoke();
+        }
     }
 
     public void Logout()

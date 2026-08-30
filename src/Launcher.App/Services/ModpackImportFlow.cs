@@ -31,7 +31,7 @@ public static class ModpackImportFlow
             AppLog.Instance?.LogInformation("[modpack] 解析成功 {Zip} → {Id}（{Format}，{Count} 文件，MC {Mc}）",
                 zipPath, info.VersionId, info.Format, info.FileCount, info.McVersion);
             if (owner is not null && !await DialogService.Confirm(owner,
-                    BuildConfirmText(info), "导入整合包", "导入", "取消"))
+                    BuildConfirmText(info, zipPath), "导入整合包", "导入", "取消"))
             {
                 AppLog.Instance?.LogInformation("[modpack] 用户取消导入 {Zip}", zipPath);
                 return;
@@ -84,7 +84,7 @@ public static class ModpackImportFlow
         catch (Exception ex) { return $"（无法读取：{ex.Message}）"; }
     }
 
-    private static string BuildConfirmText(ModpackImportInfo info)
+    private static string BuildConfirmText(ModpackImportInfo info, string zipPath)
     {
         var lines = new List<string>
         {
@@ -97,7 +97,26 @@ public static class ModpackImportFlow
             ? $"模组：{info.FileCount} 个（在线下载）"
             : $"文件：{info.FileCount} 个");
         lines.Add("");
-        lines.Add("导入会创建能启动的版本实例，并下载原版与加载器文件。文件有几百 MB。");
+        // 8-31 修「整合包假大小」：确认弹窗显示 zip 真实大小（原硬编码"文件有几百 MB"）
+        var zipSize = FormatSize(GetZipSize(zipPath));
+        lines.Add(info.Format == ModpackFormat.Modrinth
+            ? $"整合包文件 {zipSize}，模组在线下载另计。会创建能启动的版本实例，并下载原版与加载器文件。"
+            : $"整合包文件 {zipSize}。会创建能启动的版本实例，并下载原版与加载器文件。");
         return string.Join("\n", lines);
+    }
+
+    private static long GetZipSize(string zipPath)
+    {
+        try { return new FileInfo(zipPath).Length; }
+        catch { return 0; }
+    }
+
+    /// <summary>字节 → "550 MB"（<1MB 显示 KB）</summary>
+    public static string FormatSize(long bytes)
+    {
+        const long MB = 1024 * 1024, KB = 1024;
+        return bytes >= MB ? $"{bytes / (double)MB:0.#} MB"
+            : bytes >= KB ? $"{bytes / (double)KB:0.#} KB"
+            : $"{bytes} B";
     }
 }

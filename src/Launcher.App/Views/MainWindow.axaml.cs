@@ -308,7 +308,7 @@ public partial class MainWindow : Window
 
     private void OnVmPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
-        if (e.PropertyName is "IsHomeActive" or "IsVersionsActive" or "IsDownloadsActive" or "IsMultiplayerActive" or "IsEcosystemActive" or "IsSettingsActive")
+        if (e.PropertyName is "IsHomeActive" or "IsVersionsActive" or "IsDownloadsActive" or "IsMultiplayerActive" or "IsEcosystemActive" or "IsPluginsActive" or "IsSettingsActive")
             ApplyNavVisuals();
     }
 
@@ -476,6 +476,17 @@ public partial class MainWindow : Window
                     UiAnim.Animate(600, UiAnim.Curves.Linear, e => NavMultiDash.StrokeDashOffset = -3.6 * e,
                         () => NavMultiDash.StrokeDashOffset = 0, NavMultiDash, slot: "navact");
                 }
+                break;
+            case "plugins": // 拼图块卡入：轻微放大收敛（拼接感）
+                var st3 = new ScaleTransform(1.18, 1.18);
+                target.RenderTransform = st3;
+                target.RenderTransformOrigin = new RelativePoint(0.5, 0.5, RelativeUnit.Relative);
+                UiAnim.Animate(180, UiAnim.Curves.Standard, e =>
+                {
+                    var s = 1.18 - 0.18 * e;
+                    st3.ScaleX = s;
+                    st3.ScaleY = s;
+                }, () => target.RenderTransform = null, target, slot: "navact");
                 break;
         }
     }

@@ -268,13 +268,15 @@ public sealed class ModpackInstaller
             }, ct));
         }
         await Task.WhenAll(tasks);
-        // overrides 解压（条目去前缀）
-        await ctx.AddChild("解压 overrides", 0, async (p, c) =>
+        // overrides 解压（条目去前缀）；8-31 修「整合包假大小」：带 zip 大小权重 + 报进度
+        var overridesBytes = new FileInfo(zipPath).Length;
+        await ctx.AddChild("解压 overrides", overridesBytes, async (p, c) =>
         {
             using var zip = ZipFile.OpenRead(zipPath);
             ModpackImporter.ExtractZipEntries(zip, versionDir, _ => true, rel =>
                 rel.StartsWith("overrides/", StringComparison.OrdinalIgnoreCase)
-                    ? rel["overrides/".Length..] : null, c);
+                    ? rel["overrides/".Length..] : null, c,
+                onBytes: b => p(new DownloadProgress("解压 overrides", null, b, overridesBytes, 0)));
         }).Completion.WaitAsync(ct);
 
         // 8-26 修「整合包不下前置」：mrpack dependencies[] 里非 minecraft/loader 的模组前置
@@ -340,7 +342,10 @@ public sealed class ModpackInstaller
         var versionDir = Path.Combine(_gameDirectory, "versions", packId);
         var jarCount = 0;
         var extractedJars = new List<string>(); // 8-31 自动信任：记录 CF zip 里落进 mods/ 的 jar（同步解压，无需锁）
-        await ctx.AddChild("解压整合包", 0, async (p, c) =>
+        // 8-31 修「整合包假大小」：解压子任务带 zip 真实大小权重 + 逐条报进度——
+        // 之前 weight=0 且不报进度，550MB 的 zip 解压对总数贡献 0，UI 只显示基座 ~8MB
+        var zipBytes = new FileInfo(zipPath).Length;
+        await ctx.AddChild("解压整合包", zipBytes, async (p, c) =>
         {
             using var zip = ZipFile.OpenRead(zipPath);
             ModpackImporter.ExtractZipEntries(zip, versionDir, rel =>
@@ -354,7 +359,8 @@ public sealed class ModpackInstaller
                 if (rel.StartsWith("overrides/", StringComparison.OrdinalIgnoreCase)) return rel["overrides/".Length..];
                 if (rel.StartsWith("clientoverrides/", StringComparison.OrdinalIgnoreCase)) return rel["clientoverrides/".Length..];
                 return rel;
-            }, c);
+            }, c,
+            onBytes: b => p(new DownloadProgress("解压整合包", null, b, zipBytes, 0)));
         }).Completion.WaitAsync(ct);
         // 8-31 自动信任：CF zip 解压装的 mod 记哈希（官方 sha1 缺失 → 自动算本地基线）
         var cfModsDir = Path.Combine(versionDir, "mods");

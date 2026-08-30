@@ -435,7 +435,7 @@ public partial class HomeViewModel : ViewModelBase
         var acc = _accounts.Current;
         PlayerName = acc?.Name ?? "未登录";
         // 8-22 全栈排查：空 Name（accounts.json 被手工编辑/外部账号返回空名）→ [..1] 索引越界崩
-        PlayerAvatarFallback = acc is null || string.IsNullOrEmpty(acc.Name) ? "" : acc.Name[..1].ToUpperInvariant();
+        PlayerAvatarFallback = acc is null || string.IsNullOrEmpty(acc.Name) ? "?" : acc.Name[..1].ToUpperInvariant();
         AccountTypeText = acc?.Type == "microsoft" ? "正版"
             : acc?.Type == "littleskin" ? "Littleskin"
             : acc?.Type == "offline" ? "离线" : "未登录";

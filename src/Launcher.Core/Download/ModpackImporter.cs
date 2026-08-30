@@ -233,8 +233,9 @@ public sealed class ModpackImporter
 
     /// <summary>通用解压子例程：include 过滤条目，prefixStrip 剥离前缀（返回 null = 命中排除前缀）；目录穿越防护。</summary>
     public static void ExtractZipEntries(ZipArchive zip, string versionDir, Func<string, bool> include,
-        Func<string, string?>? prefixStrip, CancellationToken ct)
+        Func<string, string?>? prefixStrip, CancellationToken ct, Action<long>? onBytes = null)
     {
+        var written = 0L;
         foreach (var entry in zip.Entries)
         {
             ct.ThrowIfCancellationRequested();
@@ -252,6 +253,12 @@ public sealed class ModpackImporter
                 continue; // 目录穿越防护
             Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
             entry.ExtractToFile(dest, overwrite: true);
+            // 8-31 解压进度：累计已写字节上报（weight=0 时整合包进度不显示真实大小）
+            if (onBytes is not null)
+            {
+                written += entry.Length;
+                onBytes(written);
+            }
         }
     }
 

@@ -189,7 +189,8 @@ public partial class AccountViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(IsMicrosoftMode))]
     [NotifyPropertyChangedFor(nameof(IsOfflineMode))]
     [NotifyPropertyChangedFor(nameof(IsLittleskinMode))]
-    public partial LoginModeKind LoginMode { get; set; } = LoginModeKind.Microsoft;
+    // 8-31 默认离线登录：新用户首次添加账号落在「离线登录」tab（不再是正版登录，找不到入口以为没法登录）
+    public partial LoginModeKind LoginMode { get; set; } = LoginModeKind.Offline;
 
     public bool IsMicrosoftMode => LoginMode == LoginModeKind.Microsoft;
     public bool IsOfflineMode => LoginMode == LoginModeKind.Offline;

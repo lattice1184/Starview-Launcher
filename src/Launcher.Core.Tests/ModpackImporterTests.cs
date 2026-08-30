@@ -15,13 +15,13 @@ public class ModpackImporterTests
         using (var zip = ZipFile.Open(zipPath, ZipArchiveMode.Create))
         {
             var m = zip.CreateEntry("manifest.json");
-            using (var sw = new StreamWriter(m.Open(), Encoding.UTF8))
+            using (var sw = new StreamWriter(m.Open(), new UTF8Encoding(false))) // 无 BOM：条目长度 = 内容长度
                 sw.Write(manifestJson);
 
             foreach (var (path, content) in files)
             {
                 var e = zip.CreateEntry(path);
-                using (var sw = new StreamWriter(e.Open(), Encoding.UTF8))
+                using (var sw = new StreamWriter(e.Open(), new UTF8Encoding(false)))
                     sw.Write(content);
             }
         }
@@ -203,6 +203,25 @@ public class ModpackImporterTests
             ModpackImporter.Import(zip, gameDir, CancellationToken.None);
             Assert.False(File.Exists(Path.Combine(dir, "evil.txt"))); // 未逃出
             Assert.True(InstallMarker.IsMarked(gameDir, "pack-b"));
+        }
+        finally { if (Directory.Exists(dir)) Directory.Delete(dir, true); }
+    }
+
+    [Fact]
+    public void ExtractZipEntries_ReportsCumulativeBytes()
+    {
+        // 8-31 修「整合包假大小」：onBytes 回调累计已写字节（解压子任务报真实进度）
+        var dir = Path.Combine(Path.GetTempPath(), $"imp-{Guid.NewGuid():N}");
+        try
+        {
+            var zip = MakeZip(dir, "{}", ("mods/a.txt", "aaaa"), ("mods/b.txt", "bbbbbb"));
+            using var z = ZipFile.OpenRead(zip);
+            var reported = new List<long>();
+            ModpackImporter.ExtractZipEntries(z, Path.Combine(dir, "out"),
+                rel => rel.StartsWith("mods/", StringComparison.OrdinalIgnoreCase), null,
+                CancellationToken.None, reported.Add);
+            // a.txt=4 字节 → 4；b.txt=6 字节 → 累计 10
+            Assert.Equal([4L, 10L], reported);
         }
         finally { if (Directory.Exists(dir)) Directory.Delete(dir, true); }
     }
