@@ -78,10 +78,7 @@ public static class AntiDebugGuard
     [System.Runtime.InteropServices.DllImport("kernel32.dll")]
     private static extern bool IsDebuggerPresent();
 
-    [System.Runtime.Versioning.SupportedOSPlatform("windows")]
-    [System.Runtime.InteropServices.DllImport("kernel32.dll")]
-    private static extern void TerminateProcess(IntPtr hProcess, uint exitCode);
-
+    // 8-30 macOS：kernel32 TerminateProcess 非 Windows 会 DllNotFoundException——改跨平台 Process.Kill()
     private static void TerminateSelf() =>
-        TerminateProcess(System.Diagnostics.Process.GetCurrentProcess().Handle, 0);
+        System.Diagnostics.Process.GetCurrentProcess().Kill();
 }

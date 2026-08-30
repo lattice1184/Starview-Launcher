@@ -1,7 +1,8 @@
 namespace Launcher.Core.Utils;
 
 /// <summary>
-/// 跨平台路径服务（8-29 Linux 移植）：Windows 保留 %AppData%\Launcher 现有语义，Linux/macOS 走 XDG。
+/// 跨平台路径服务（8-29 Linux 移植，8-30 macOS）：Windows 保留 %AppData%\Launcher 现有语义；
+/// macOS 走 ~/Library/Application Support 与 ~/Library/Caches；Linux 走 XDG。
 /// 各业务调用点统一经此类取路径，避免散落 Environment.GetFolderPath + 硬编码子目录。
 /// </summary>
 public static class AppPaths
@@ -9,7 +10,7 @@ public static class AppPaths
     private const string AppDirName = "starview";
 
     /// <summary>配置与数据根目录（settings/账号/收藏/历史/日志/工具/多人在线）。</summary>
-    /// <remarks>Windows: %AppData%\Launcher；Linux: $XDG_DATA_HOME/starview（默认 ~/.local/share/starview）。</remarks>
+    /// <remarks>Windows: %AppData%\Launcher；macOS: ~/Library/Application Support/starview；Linux: $XDG_DATA_HOME/starview（默认 ~/.local/share/starview）。</remarks>
     public static string DataRoot { get; } = ResolveDataRoot();
 
     /// <summary>缓存根目录（imgcache 等）。</summary>
@@ -36,6 +37,12 @@ public static class AppPaths
             return Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Launcher");
         }
+        if (OperatingSystem.IsMacOS())
+        {
+            return Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                "Library", "Application Support", AppDirName);
+        }
 
         var xdgData = Environment.GetEnvironmentVariable("XDG_DATA_HOME");
         var baseDir = string.IsNullOrWhiteSpace(xdgData)
@@ -50,6 +57,12 @@ public static class AppPaths
         {
             return Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Launcher");
+        }
+        if (OperatingSystem.IsMacOS())
+        {
+            return Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                "Library", "Caches", AppDirName);
         }
 
         var xdgCache = Environment.GetEnvironmentVariable("XDG_CACHE_HOME");

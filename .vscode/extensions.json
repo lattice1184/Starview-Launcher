@@ -1,0 +1,10 @@
+{
+  // Starview 启动器开发推荐插件（VS Code 打开项目时提示安装）
+  "recommendations": [
+    "ms-dotnettools.csharp",              // C#（基础语言支持）
+    "ms-dotnettools.csdevkit",            // C# Dev Kit（调试/测试/项目管理）
+    "ms-dotnettools.vscode-dotnet-runtime", // .NET Runtime 安装辅助
+    "AvaloniaTeam.vscode",                // Avalonia XAML 支持（预览/诊断）
+    "ms-ceintl.vscode-language-pack-zh-hans" // 中文界面
+  ]
+}

@@ -22,10 +22,15 @@ public sealed class TerracottaProvisioningService
         ["0.4.2/x86_64/windows"] = "07ebe139e3ca5f74576e58b1a96efe59abdfbe148d3f1a49bfdca8b6f70745f0",
         ["0.4.2/arm64/windows"] = "acfab0a87a02dedc6dab7c05303186c8907f56f815548b693fb3324358da7d14",
         ["0.4.2/x86_64/linux"] = "675c4fd6c74d49ed8165151ba2be5b6582e0af20fb6d912074543c2484b1e10a",
+        // macOS：pending = 安全拒装（digest 待 Mac/代理实测下载回填）
+        ["0.4.2/arm64/macos"] = "pending",
+        ["0.4.2/x86_64/macos"] = "pending",
     };
 
-    /// <summary>平台键：windows / linux（Terracotta 上游无 macOS 包）</summary>
-    public static string OsKey => OperatingSystem.IsWindows() ? "windows" : "linux";
+    /// <summary>平台键：windows / macos / linux（macOS 值须与上游 /meta 的 target_os 一致，可能 darwin——待实测；
+    /// 若上游确无 macOS 构建则 Mac 隐藏联机入口）</summary>
+    public static string OsKey => OperatingSystem.IsMacOS() ? "macos"
+        : OperatingSystem.IsWindows() ? "windows" : "linux";
 
     public static string AssetName(string version, string arch) => $"terracotta-{version}-{OsKey}-{arch}-pkg.tar.gz";
 
@@ -126,7 +131,8 @@ public sealed class TerracottaProvisioningService
 
             var version = LockedVersion;
             var arch = Arch;
-            var expectedSha = KnownDigests.TryGetValue($"{version}/{arch}/{OsKey}", out var s) ? s : null;
+            // 8-30 修：pending 未过滤会当真哈希比对（Mac 联机下载报"SHA256 不匹配：期望 pending"）——对齐 EasyTier 拒装语义
+            var expectedSha = KnownDigests.TryGetValue($"{version}/{arch}/{OsKey}", out var s) && s != "pending" ? s : null;
 
             var candidates = new[] { GiteeAssetUrl(version, arch), GitHubAssetUrl(version, arch) };
             string? lastError = null;

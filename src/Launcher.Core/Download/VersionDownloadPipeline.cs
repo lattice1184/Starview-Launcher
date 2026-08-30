@@ -91,7 +91,7 @@ public sealed class VersionDownloadPipeline
                 }, path).Completion);
             }
 
-            if (lib.Natives is { } natives && natives.TryGetValue("windows", out var classifierKey)
+            if (lib.Natives is { } natives && PlatformNatives.ResolveKey(natives) is { } classifierKey
                 && lib.Downloads?.Classifiers?.TryGetValue(classifierKey, out var nativeFile) == true)
             {
                 var nativeName = MavenPath.FileName(lib.Name + ":" + classifierKey);

@@ -1,0 +1,23 @@
+{
+  // Starview 项目级 VS Code 设置
+  "files.encoding": "utf8",
+  "files.eol": "\n",
+  "editor.formatOnSave": true,
+  "editor.tabSize": 4,
+  "dotnet.enableDiagnostics": true,
+  "[csharp]": {
+    "editor.defaultFormatter": "ms-dotnettools.csharp"
+  },
+  // 排除构建产物与敏感目录（.local 含 CF key，禁止进搜索/文件树）
+  "search.exclude": {
+    "**/bin": true,
+    "**/obj": true,
+    "**/publish": true,
+    "**/发布": true,
+    ".local": true
+  },
+  "files.exclude": {
+    "**/bin": true,
+    "**/obj": true
+  }
+}

@@ -1,0 +1,41 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": ".NET 启动 (Launcher.App)",
+      "type": "coreclr",
+      "request": "launch",
+      "preLaunchTask": "build",
+      // Windows Debug 产物在 net10.0-windows；macOS/Linux 是 net10.0（交叉编译或本机编译）——换平台时改这里
+      "program": "${workspaceFolder}/src/Launcher.App/bin/Debug/net10.0-windows/Launcher.App.dll",
+      "args": [],
+      "cwd": "${workspaceFolder}",
+      "stopAtEntry": false,
+      "console": "internalConsole",
+      "justMyCode": true
+    },
+    {
+      "name": ".NET 启动 (macOS/Linux)",
+      "type": "coreclr",
+      "request": "launch",
+      "preLaunchTask": "build",
+      "program": "${workspaceFolder}/src/Launcher.App/bin/Debug/net10.0/Launcher.App.dll",
+      "args": [],
+      "cwd": "${workspaceFolder}",
+      "stopAtEntry": false,
+      "console": "internalConsole",
+      "justMyCode": true
+    },
+    {
+      "name": "单测 (Launcher.Core.Tests)",
+      "type": "coreclr",
+      "request": "launch",
+      "preLaunchTask": "build",
+      "program": "dotnet",
+      "args": ["test", "${workspaceFolder}/src/Launcher.Core.Tests/Launcher.Core.Tests.csproj", "-c", "Debug"],
+      "cwd": "${workspaceFolder}",
+      "console": "internalConsole",
+      "justMyCode": true
+    }
+  ]
+}

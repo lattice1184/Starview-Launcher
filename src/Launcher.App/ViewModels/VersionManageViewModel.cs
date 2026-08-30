@@ -581,6 +581,8 @@ public partial class VersionManageViewModel : ViewModelBase
             if (!Directory.Exists(dir)) dir = _gameDir;
             if (OperatingSystem.IsWindows())
                 Process.Start(new ProcessStartInfo("explorer.exe", $"\"{dir}\"") { UseShellExecute = true });
+            else if (OperatingSystem.IsMacOS())
+                Process.Start(new ProcessStartInfo("open", dir) { UseShellExecute = true });
             else
                 Process.Start(new ProcessStartInfo("xdg-open", $"\"{dir}\"") { UseShellExecute = true });
         }
@@ -599,6 +601,8 @@ public partial class VersionManageViewModel : ViewModelBase
             if (Directory.Exists(path))
                 if (OperatingSystem.IsWindows())
                     Process.Start(new ProcessStartInfo("explorer.exe", $"\"{path}\"") { UseShellExecute = true });
+                else if (OperatingSystem.IsMacOS())
+                    Process.Start(new ProcessStartInfo("open", path) { UseShellExecute = true });
                 else
                     Process.Start(new ProcessStartInfo("xdg-open", $"\"{path}\"") { UseShellExecute = true });
         }

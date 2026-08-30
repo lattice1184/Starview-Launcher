@@ -15,6 +15,8 @@ public static class FolderOpener
             if (!Directory.Exists(path)) Directory.CreateDirectory(path);
             if (OperatingSystem.IsWindows())
                 Process.Start(new ProcessStartInfo("explorer.exe", $"\"{path}\"") { UseShellExecute = true });
+            else if (OperatingSystem.IsMacOS())
+                Process.Start(new ProcessStartInfo("open", path) { UseShellExecute = true });
             else
                 Process.Start(new ProcessStartInfo("xdg-open", $"\"{path}\"") { UseShellExecute = true });
         }

@@ -185,6 +185,82 @@ public static class ModCompatibilityChecker
         return missing;
     }
 
+    /// <summary>合并扫描（8-30 加速）：一遍并行读全部 jar 的 id+depends（每 jar 只开一次 zip），
+    /// 同时产出「不兼容」与「缺失前置」——消除 FindIncompatible + FindMissingDependencies 各开一遍 zip 的 2×N 重复。
+    /// 缓存命中直接返回；onProgress 覆盖整个扫描（含前置收集段，不再静默空白）。</summary>
+    public static (List<IncompatibleMod> Incompatible, List<MissingDependency> Missing) Scan(
+        string modsDir, string gameVersion, Action<int, int>? onProgress = null, CancellationToken ct = default)
+    {
+        var game = ParseGameVersion(gameVersion);
+        if (game is null || !Directory.Exists(modsDir)) return ([], []);
+        var jars = Directory.EnumerateFiles(modsDir, "*.jar")
+            .Where(f => !f.EndsWith(".disabled", StringComparison.OrdinalIgnoreCase))
+            .OrderBy(f => f, StringComparer.Ordinal)
+            .ToList();
+        if (jars.Count == 0) return ([], []);
+
+        var fingerprint = BuildFingerprint(jars);
+        var compatKey = $"{modsDir}{gameVersion}{fingerprint}";
+        var missingKey = $"{modsDir}{fingerprint}";
+        if (ScanCache.TryGetValue(compatKey, out var cachedInc)
+            && MissingCache.TryGetValue(missingKey, out var cachedMiss))
+            return (cachedInc, cachedMiss);
+
+        var incompatible = new List<IncompatibleMod>();
+        var provided = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var fabricApiBundled = false;
+        // per-jar 解析缓存：一遍读的 id+depends 供前置判定复用（不二次开 zip）
+        var parsed = new List<(string Jar, string Id, Dictionary<string, string> Depends)>();
+        var total = jars.Count;
+        var done = 0;
+        var sync = new object();
+        var options = new ParallelOptions { CancellationToken = ct };
+        Parallel.ForEach(jars, options, jar =>
+        {
+            ct.ThrowIfCancellationRequested();
+            var fileName = Path.GetFileName(jar);
+            if (TryReadFabricDeps(jar, out var id, out var depends) && !string.IsNullOrWhiteSpace(id))
+            {
+                lock (sync)
+                {
+                    parsed.Add((jar, id!, depends));
+                    provided.Add(id!);
+                    if (id!.Equals("fabric-api", StringComparison.OrdinalIgnoreCase)
+                        || id.Equals("quilted_fabric_api", StringComparison.OrdinalIgnoreCase)
+                        || id.Equals("qsl", StringComparison.OrdinalIgnoreCase))
+                        fabricApiBundled = true;
+                    if (depends.TryGetValue("minecraft", out var mc) && !RangeAllows(mc, game))
+                        incompatible.Add(new IncompatibleMod(id, fileName, mc, gameVersion));
+                }
+            }
+            int d;
+            lock (sync) { done++; d = done; }
+            onProgress?.Invoke(d, total);
+        });
+
+        provided.UnionWith(LoaderProvided);
+        var missing = new List<MissingDependency>();
+        foreach (var (jar, id, depends) in parsed)
+        {
+            ct.ThrowIfCancellationRequested();
+            foreach (var (depId, range) in depends)
+            {
+                if (provided.Contains(depId)) continue;
+                // fabric-api 捆绑模块在装有 fabric-api 时视为已提供；独立语言前置除外
+                if (fabricApiBundled && depId.StartsWith("fabric-", StringComparison.OrdinalIgnoreCase)
+                    && !FabricStandaloneDeps.Contains(depId)) continue;
+                missing.Add(new MissingDependency(
+                    id, Path.GetFileName(jar), depId, string.IsNullOrWhiteSpace(range) ? "任意版本" : range));
+            }
+        }
+
+        if (ScanCache.Count >= CacheCap) ScanCache.Clear();
+        if (MissingCache.Count >= CacheCap) MissingCache.Clear();
+        ScanCache[compatKey] = incompatible;
+        MissingCache[missingKey] = missing;
+        return (incompatible, missing);
+    }
+
     /// <summary>读 jar（zip）内 fabric.mod.json 的 id + depends.minecraft；非 Fabric 模组 / 无 id / 读失败返回 false。
     /// 内部复用 TryReadFabricDeps（读整个 depends 对象），minecraft 值只取 String/Array（原语义），
     /// 其它键为 ""（RangeAllows 空串 → 允许，不误报）——与旧实现行为一致。</summary>

@@ -243,6 +243,9 @@ public sealed class CurseForgeService
         // ResolvingDlSourceMapper.Default 里映射为多候选（官方 vs 镜像）进 AL32 并行竞速（原 ApplyCdnPrefix
         // 单值替换已删——双路替换会冲突）。无镜像配置时单候选直连，行为不变。
         await _downloads.DownloadFileAsync(file.downloadUrl, destPath, sha1, file.fileLength, progress, ct);
+        // 8-30 投毒检测：记录官方哈希（CF 只有 SHA1）
+        if (type == ProjectType.Mod)
+            Launcher.Core.Diagnostics.ModHashManifest.Record(targetDir, Path.GetFileName(destPath), sha1, null, "curseforge");
         return destPath;
     }
 

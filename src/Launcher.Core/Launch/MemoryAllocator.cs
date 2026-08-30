@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 
 namespace Launcher.Core.Launch;
@@ -38,7 +39,42 @@ public static class MemoryAllocator
             availMb = (long)(status.ullAvailPhys / 1024 / 1024);
             return true;
         }
+        if (OperatingSystem.IsMacOS())
+            return TryReadMemAvailableMacOS(out availMb);
         return TryReadMemAvailableLinux(out availMb);
+    }
+
+    /// <summary>macOS：sysctl hw.pagesize + vm.page_free_count 算可用物理内存；拿不到返回 false 退化总内存 60%</summary>
+    private static bool TryReadMemAvailableMacOS(out long availMb)
+    {
+        try
+        {
+            var pageSize = SysctlLong("hw.pagesize");
+            var freePages = SysctlLong("vm.page_free_count");
+            if (pageSize > 0 && freePages >= 0)
+            {
+                availMb = freePages * pageSize / 1024 / 1024;
+                return true;
+            }
+        }
+        catch { /* 读不到走退化 */ }
+        availMb = 0;
+        return false;
+    }
+
+    /// <summary>macOS：sysctl -n 读整数值（输出纯数字）</summary>
+    private static long SysctlLong(string name)
+    {
+        var psi = new ProcessStartInfo("sysctl", "-n " + name)
+        {
+            RedirectStandardOutput = true,
+            UseShellExecute = false,
+        };
+        using var p = Process.Start(psi);
+        if (p is null) return -1;
+        var text = p.StandardOutput.ReadToEnd().Trim();
+        p.WaitForExit(2000);
+        return long.TryParse(text, out var v) ? v : -1;
     }
 
     /// <summary>Linux：/proc/meminfo MemAvailable（kB）；拿不到返回 false 退化总内存 60%</summary>

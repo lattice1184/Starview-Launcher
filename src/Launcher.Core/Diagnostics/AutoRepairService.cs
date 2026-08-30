@@ -142,9 +142,9 @@ public sealed class AutoRepairService
             else missing.Add(p);
 
             // 8-14 natives（classifier）文件也参与校验——路径生成与下载侧一致
-            // （DownloadService 下载 loop 同款 natives-windows 逻辑）：删了 natives jar 却报
-            // 「已完整」会在启动解压时报错，质检误导用户（BUGS.md:55-59）
-            if (lib.Natives is { } natives && natives.TryGetValue("windows", out var classifierKey)
+            // （DownloadService 下载 loop 同款 natives 逻辑，8-30 平台化 PlatformNatives）：
+            // 删了 natives jar 却报「已完整」会在启动解压时报错，质检误导用户（BUGS.md:55-59）
+            if (lib.Natives is { } natives && Launcher.Core.Download.PlatformNatives.ResolveKey(natives) is { } classifierKey
                 && lib.Downloads?.Classifiers?.TryGetValue(classifierKey, out var nativeFile) == true)
             {
                 var nativeName = MavenPath.FileName(lib.Name + ":" + classifierKey);

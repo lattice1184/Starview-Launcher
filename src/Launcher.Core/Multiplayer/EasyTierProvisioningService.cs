@@ -16,19 +16,25 @@ public sealed class EasyTierProvisioningService
     /// <summary>锁定的 EasyTier 版本</summary>
     public const string LockedVersion = "2.6.4";
 
-    /// <summary>已知 SHA256（{version}/x86_64/{os}）——资产校验用（8-29 Linux 实测下载后计算写入）</summary>
+    /// <summary>已知 SHA256（{version}/{arch}/{os}）——资产校验用（8-29 Linux 实测下载后计算写入；
+    /// macOS 仍 pending = 安全拒装，待 Mac/代理实测下载回填）</summary>
     public static readonly IReadOnlyDictionary<string, string> KnownDigests = new Dictionary<string, string>
     {
         ["2.6.4/x86_64/windows"] = "27af91e270e554709b048bd32327fefd2dfce5062ae1e8701af7550c6f525f84",
         ["2.6.4/x86_64/linux"] = "pending",
+        ["2.6.4/aarch64/macos"] = "pending",
+        ["2.6.4/x86_64/macos"] = "pending",
     };
 
-    /// <summary>平台键：windows / linux（EasyTier 上游无 macOS 包）</summary>
-    public static string OsKey => OperatingSystem.IsWindows() ? "windows" : "linux";
+    /// <summary>平台键：windows / macos / linux（macOS 包命名需上游实测；若确无 macOS 构建则 Mac 隐藏联机入口）</summary>
+    public static string OsKey => OperatingSystem.IsMacOS() ? "macos"
+        : OperatingSystem.IsWindows() ? "windows" : "linux";
 
-    public static string AssetName(string version) => OperatingSystem.IsWindows()
-        ? $"easytier-windows-x86_64-v{version}.zip"
-        : $"easytier-linux-x86_64-v{version}.zip";
+    /// <summary>EasyTier 上游 arch 键：Apple Silicon → aarch64，x64 → x86_64</summary>
+    public static string ArchKey => RuntimeInformation.ProcessArchitecture == Architecture.Arm64 ? "aarch64" : "x86_64";
+
+    /// <summary>资产名：easytier-{os}-{arch}-v{version}.zip（windows/linux 现有命名不变）</summary>
+    public static string AssetName(string version) => $"easytier-{OsKey}-{ArchKey}-v{version}.zip";
 
     /// <summary>包内可执行名（Windows 带 .exe，Linux 无扩展名）</summary>
     public static string CoreExeName => OperatingSystem.IsWindows() ? "easytier-core.exe" : "easytier-core";
@@ -90,7 +96,7 @@ public sealed class EasyTierProvisioningService
             if (TryGetAvailable(out var installed)) return installed;
 
             var version = LockedVersion;
-            var expectedSha = KnownDigests.TryGetValue($"{version}/x86_64/{OsKey}", out var s) && s != "pending" ? s : null;
+            var expectedSha = KnownDigests.TryGetValue($"{version}/{ArchKey}/{OsKey}", out var s) && s != "pending" ? s : null;
 
             var candidates = new List<string> { GitHubAssetUrl(version) };
             candidates.AddRange(MirrorUrls(version));

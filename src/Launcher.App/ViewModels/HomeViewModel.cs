@@ -31,7 +31,7 @@ public partial class HomeViewModel : ViewModelBase
     public SettingsViewModel Settings => MainViewModel.Current?.Settings!;
 
     private static readonly string[] StageNames =
-        ["解析版本", "检测 Java", "解压 natives", "启动 JVM", "游戏加载中", "运行中"];
+        ["解析版本", "检测 Java", "检查模组兼容性", "解压 natives", "启动 JVM", "游戏加载中", "运行中"];
 
     private readonly GameLaunchService _launcher = new();
     private readonly AccountService _accounts = AccountService.Shared;
@@ -567,15 +567,16 @@ public partial class HomeViewModel : ViewModelBase
             Stages[i].IsDone = i < idx;
             Stages[i].IsCurrent = i == idx;
         }
-        // 阶段进度映射：前 4 个阶段占 0-80%，游戏加载 80-100%
+        // 阶段进度映射：7 阶段平滑递增（8-30 新增"检查模组兼容性"占 idx=2，进度同步后移）
         LaunchProgress = idx switch
         {
-            0 => 15,
-            1 => 35,
-            2 => 55,
-            3 => 75,
-            4 => 85,
-            _ => LaunchProgress,
+            0 => 15,  // 解析版本
+            1 => 30,  // 检测 Java
+            2 => 45,  // 检查模组兼容性
+            3 => 60,  // 解压 natives
+            4 => 80,  // 启动 JVM
+            5 => 90,  // 游戏加载中
+            _ => LaunchProgress, // 运行中
         };
         LaunchStatus = stageName == "启动 JVM" ? "正在启动 JVM…" : $"{stageName}…";
     }
@@ -727,31 +728,39 @@ public partial class HomeViewModel : ViewModelBase
                     // 8-27 可视化：扫描开始即切阶段 + 控制台先亮一句——此前扫描全程零输出像卡死
                     SetStage("检查模组兼容性");
                     AppendLog($"§ 正在检查 {modCount} 个模组的兼容性…");
+                    // 8-30 合并扫描：FindIncompatible + FindMissingDependencies 一遍并行读全部 jar（每 jar 一次 zip），
+                    // 同时产出不兼容与缺失前置——消除 2×N 重复读；缺失前置段也有进度（不再静默空白）。
                     List<ModCompatibilityChecker.IncompatibleMod> incompatible = [];
+                    List<ModCompatibilityChecker.MissingDependency> missingDeps = [];
                     try
                     {
-                        incompatible = await Task.Run(() => ModCompatibilityChecker.FindIncompatible(checkModsDir, checkGameVersion,
-                            (done, total) =>
-                            {
-                                // 节流：每 5 个 / 最后一个才刷状态（几十个 mods 不刷屏）
-                                if (total > 0 && (done % 5 == 0 || done == total))
+                        var (inc, miss) = await Task.Run(
+                            () => ModCompatibilityChecker.Scan(checkModsDir, checkGameVersion,
+                                (done, total) =>
                                 {
-                                    var d = done;
-                                    Dispatcher.UIThread.Post(() => LaunchStatus = $"正在检查模组（{d}/{total}）…");
-                                }
-                            }, preCts.Token), preCts.Token);
+                                    // 节流：每 5 个 / 最后一个才刷状态 + 控制台进度（几十个 mods 不刷屏；AppendLog 自动切 UI 线程）
+                                    if (total > 0 && (done % 5 == 0 || done == total))
+                                    {
+                                        var d = done;
+                                        Dispatcher.UIThread.Post(() => LaunchStatus = $"正在检查模组（{d}/{total}）…");
+                                        AppendLog($"§ 检查模组进度 {d}/{total}");
+                                    }
+                                }, preCts.Token), preCts.Token);
+                        incompatible = inc;
+                        missingDeps = miss;
                     }
                     catch (OperationCanceledException) { /* 用户跳过 → 当无结果 */ }
 
-                    // 8-29 缺失前置检测（minihud 缺 malilib 实锤）：minecraft 版本匹配 ≠ 能启动——
-                    // 模组间硬前置缺失照样崩 Fabric 报错页。jar 直读元数据，不靠日志（Fabric 26.x 明细只在屏幕）。
-                    List<ModCompatibilityChecker.MissingDependency> missingDeps = [];
+                    // 8-30 投毒检测：清单内 jar 重算 SHA1，不一致 = 文件被替换/投毒（同名不同内容）
                     if (!preCts.IsCancellationRequested)
                     {
                         try
                         {
-                            missingDeps = await Task.Run(
-                                () => ModCompatibilityChecker.FindMissingDependencies(checkModsDir, preCts.Token), preCts.Token);
+                            var tampered = await Launcher.Core.Diagnostics.ModHashManifest.VerifyAsync(checkModsDir, preCts.Token);
+                            foreach (var t in tampered)
+                                AppendLog($"§ ⚠ 模组文件校验失败：{t}（可能被替换/投毒）");
+                            if (tampered.Count > 0)
+                                NotificationService.Error($"检测到 {tampered.Count} 个模组文件被修改：{string.Join("、", tampered)}");
                         }
                         catch (OperationCanceledException) { /* 用户跳过 → 当无结果 */ }
                     }

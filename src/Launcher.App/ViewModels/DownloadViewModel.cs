@@ -314,6 +314,8 @@ public partial class DownloadViewModel : ViewModelBase
         }
         if (OperatingSystem.IsWindows())
             Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{dest}\"") { UseShellExecute = true });
+        else if (OperatingSystem.IsMacOS())
+            Process.Start(new ProcessStartInfo("open", dest) { UseShellExecute = true });
         else
             Process.Start(new ProcessStartInfo("xdg-open", $"\"{dest}\"") { UseShellExecute = true });
     }

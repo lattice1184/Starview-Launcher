@@ -222,9 +222,9 @@ public sealed class EcosystemService
             SortIndex.Updated => "updated",
             _ => "relevance",
         };
-        var url = $"{ApiBase}/search?query={Uri.EscapeDataString(query ?? "")}"
+        var path = $"/search?query={Uri.EscapeDataString(query ?? "")}"
                   + $"&facets={Uri.EscapeDataString(facets)}&index={indexName}&limit={limit}&offset={offset}";
-        return await GetJsonAsyncCached<ModrinthSearchResponse>(url, SearchCacheTtl, ct);
+        return await GetWithFallbackAsync<ModrinthSearchResponse>(path, SearchCacheTtl, ct);
     }
 
     /// <summary>缓存 TTL 分级（8-16 批次 53 后按数据新鲜度分级）：搜索 5 分钟（结果要新鲜）、
@@ -258,9 +258,25 @@ public sealed class EcosystemService
         return result;
     }
 
+    /// <summary>镜像→官方回退（8-30 修：主链路单源镜像，境外网络不通即全挂——Mac 下载失败根因之一）。
+    /// 镜像 enabled 时先试镜像，失败/空回退官方；镜像关直接用官方。</summary>
+    private async Task<T?> GetWithFallbackAsync<T>(string path, TimeSpan ttl, CancellationToken ct) where T : class
+    {
+        if (!Launcher.Core.Utils.LauncherSettings.Current.ModrinthMirrorEnabled)
+            return await GetJsonAsyncCached<T>(ApiBaseOfficial + path, ttl, ct);
+        try
+        {
+            var mirror = await GetJsonAsyncCached<T>(
+                "https://mod.mcimirror.top/modrinth/v2" + path, ttl, ct);
+            if (mirror is not null) return mirror;
+        }
+        catch { /* 镜像失败/超时回退官方 */ }
+        return await GetJsonAsyncCached<T>(ApiBaseOfficial + path, ttl, ct);
+    }
+
     /// <summary>项目详情（8-16 批次 53：走磁盘缓存——依赖名前查询/详情页重复打开不再重复打 API；24h TTL）</summary>
     public Task<ModrinthProjectDetail?> GetProjectAsync(string projectIdOrSlug, CancellationToken ct = default)
-        => GetJsonAsyncCached<ModrinthProjectDetail>($"{ApiBase}/project/{projectIdOrSlug}", ProjectCacheTtl, ct);
+        => GetWithFallbackAsync<ModrinthProjectDetail>($"/project/{projectIdOrSlug}", ProjectCacheTtl, ct);
 
     /// <summary>8-26 快路径镜像直查：官方 api.modrinth.com 国内 2-7s 抖动（实测），mcimirror 镜像稳定 ~1.7s。
     /// 仅中文快路径（已知 slug）用镜像，失败回退官方。不影响全局 ApiBase（镜像默认关的顾虑不扩散）。</summary>
@@ -308,11 +324,11 @@ public sealed class EcosystemService
             query.Add($"game_versions={Uri.EscapeDataString(JsonSerializer.Serialize(new[] { gameVersion }))}");
         if (loader is not null)
             query.Add($"loaders={Uri.EscapeDataString(JsonSerializer.Serialize(new[] { loader }))}");
-        var url = $"{ApiBase}/project/{projectId}/version"
+        var path = $"/project/{projectId}/version"
                   + (query.Count > 0 ? "?" + string.Join("&", query) : "");
         // 8-16 批次 53：版本列表走缓存（30 分钟 TTL）——安装流程主文件/依赖/手动选择会重复查同一版本列表
         // （api.modrinth.com 国内直连实测 8.6s/次，缓存后重复查询秒回；Fabric API 附带安装也吃这个缓存）
-        var list = await GetJsonAsyncCached<List<ModrinthVersion>>(url, VersionsCacheTtl, ct);
+        var list = await GetWithFallbackAsync<List<ModrinthVersion>>(path, VersionsCacheTtl, ct);
         return list ?? [];
     }
 
@@ -363,6 +379,10 @@ public sealed class EcosystemService
             destPath = Launcher.Core.Download.UniquePath.Resolve(desired);
         }
         await _downloads.DownloadFileAsync(file.Url, destPath, file.Hashes?.Sha1, file.Size, progress, ct);
+        // 8-30 投毒检测：记录官方哈希（启动预检比对，防文件被替换/投毒）
+        if (type == ProjectType.Mod)
+            Launcher.Core.Diagnostics.ModHashManifest.Record(
+                targetDir, Path.GetFileName(destPath), file.Hashes?.Sha1, file.Hashes?.Sha512, "modrinth");
         return destPath;
     }
 

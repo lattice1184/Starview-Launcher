@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
 using Launcher.Core.Model.Mojang;
 
@@ -25,8 +26,10 @@ public static class JavaSelector
     /// <summary>平台 Java 可执行文件名（Windows: java.exe；Unix: java）</summary>
     private static string JavaExe => OperatingSystem.IsWindows() ? "java.exe" : "java";
 
-    /// <summary>Mojang 官方 runtime 平台子目录（windows-x64 / linux-x64）</summary>
-    private static string OsRuntimeDir => OperatingSystem.IsWindows() ? "windows-x64" : "linux-x64";
+    /// <summary>Mojang 官方 runtime 平台子目录（windows-x64 / linux-x64 / osx-arm64 / osx-x86_64）</summary>
+    private static string OsRuntimeDir => OperatingSystem.IsMacOS()
+        ? (RuntimeInformation.ProcessArchitecture == Architecture.Arm64 ? "osx-arm64" : "osx-x86_64")
+        : OperatingSystem.IsWindows() ? "windows-x64" : "linux-x64";
 
     public sealed record JavaInstall(string Path, int Major);
 
@@ -87,10 +90,13 @@ public static class JavaSelector
         }
 
         // 1. .minecraft\runtime 官方布局（PCL / 官方启动器缓存）——大版本已知（平台子目录）。
-        //    Windows 在 %AppData%\.minecraft；Linux 在 ~/.minecraft（不跟 XDG——Mojang 硬编码家目录）
+        //    Windows 在 %AppData%\.minecraft；macOS 在 ~/Library/Application Support/minecraft；
+        //    Linux 在 ~/.minecraft（不跟 XDG——Mojang 硬编码家目录）
         var mcRoot = OperatingSystem.IsWindows()
             ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), ".minecraft")
-            : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".minecraft");
+            : OperatingSystem.IsMacOS()
+                ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Library", "Application Support", "minecraft")
+                : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".minecraft");
         var runtimeBase = Path.Combine(mcRoot, "runtime");
         foreach (var (name, major) in Runtimes)
         {
@@ -122,14 +128,18 @@ public static class JavaSelector
         foreach (var dir in (Environment.GetEnvironmentVariable("PATH") ?? "").Split(Path.PathSeparator))
             Add(Path.Combine(dir.Trim('"'), JavaExe));
 
-        // 5. 常见 JDK 目录（Windows: Program Files；Linux: /usr/lib/jvm、/opt 等）
+        // 5. 常见 JDK 目录（Windows: Program Files；macOS: /Library/Java + 用户级；Linux: /usr/lib/jvm、/opt 等）
+        var userJvm = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Library", "Java", "JavaVirtualMachines");
         var baseDirs = OperatingSystem.IsWindows()
             ? new[]
             {
                 @"C:\Program Files\Java", @"C:\Program Files\Eclipse Adoptium", @"C:\Program Files\Microsoft",
                 @"C:\Program Files\Zulu", @"C:\Program Files\Amazon Corretto", @"D:\Program Files\Java",
             }
-            : new[] { "/usr/lib/jvm", "/usr/java", "/opt" };
+            : OperatingSystem.IsMacOS()
+                ? new[] { "/Library/Java/JavaVirtualMachines", userJvm, "/opt" }
+                : new[] { "/usr/lib/jvm", "/usr/java", "/opt" };
         foreach (var baseDir in baseDirs)
         {
             if (!Directory.Exists(baseDir)) continue;

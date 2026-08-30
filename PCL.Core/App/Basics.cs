@@ -172,10 +172,10 @@ public static class Basics
                 UseShellExecute = false
             });
 #else
-            // Linux：用 xdg-open 打开关联应用
+            // Linux/macOS：用 xdg-open（Linux）/ open（macOS）打开关联应用
             Process.Start(new ProcessStartInfo
             {
-                FileName = "xdg-open",
+                FileName = OperatingSystem.IsMacOS() ? "open" : "xdg-open",
                 Arguments = $"\"{path}\"",
                 UseShellExecute = false
             });
