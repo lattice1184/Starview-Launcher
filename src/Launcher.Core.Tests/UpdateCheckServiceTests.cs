@@ -42,11 +42,11 @@ public class UpdateCheckServiceTests
         }
     }
 
-    private void WriteState(string? readyTag, string? readyPath, DateTime? lastChecked)
+    private void WriteState(string? readyTag, string? readyPath, DateTime? lastChecked, DateTime? autoChecked = null)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(_stateFile)!);
         File.WriteAllText(_stateFile,
-            $$"""{"readyTag":{{Js(readyTag)}},"readyPath":{{Js(readyPath)}},"lastCheckedUtc":{{Js(lastChecked?.ToString("o"))}}}""");
+            $$"""{"readyTag":{{Js(readyTag)}},"readyPath":{{Js(readyPath)}},"lastCheckedUtc":{{Js(lastChecked?.ToString("o"))}},"autoCheckedUtc":{{Js(autoChecked?.ToString("o"))}}}""");
     }
 
     private static string Js(string? s)
@@ -89,9 +89,10 @@ public class UpdateCheckServiceTests
     }
 
     [Fact]
-    public async Task AutoCooldown_SkipsWithinSixHours()
+    public async Task AutoCooldown_SkipsWithinOneHour()
     {
-        WriteState(null, null, DateTime.UtcNow);
+        // 8-31 冷却改 1h + 用 autoCheckedUtc 专用时间戳（写 lastCheckedUtc 不再挡自动检查）
+        WriteState(null, null, DateTime.UtcNow.AddHours(-2), DateTime.UtcNow);
         var handler = new StubHandler(() => new HttpResponseMessage(HttpStatusCode.OK));
         Use(handler);
 
@@ -102,9 +103,26 @@ public class UpdateCheckServiceTests
     }
 
     [Fact]
+    public async Task LastChecked_Alone_DoesNotBlockAuto()
+    {
+        // 只有 lastCheckedUtc（手动检查刷的）、没有 autoCheckedUtc → 自动检查不受冷却挡（会打 API）
+        WriteState(null, null, DateTime.UtcNow);
+        var handler = new StubHandler(() => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("""{"tag_name":"v1.1.4","assets":[]}""", System.Text.Encoding.UTF8, "application/json"),
+        });
+        Use(handler);
+
+        var r = await RunAsync("1.1.4", false);
+
+        Assert.Equal("uptodate", r);
+        Assert.Equal(1, handler.Calls);
+    }
+
+    [Fact]
     public async Task Force_IgnoresCooldown()
     {
-        WriteState(null, null, DateTime.UtcNow);
+        WriteState(null, null, DateTime.UtcNow, DateTime.UtcNow);
         var handler = new StubHandler(() => new HttpResponseMessage(HttpStatusCode.OK)
         {
             Content = new StringContent("""{"tag_name":"v1.1.4","assets":[]}""", System.Text.Encoding.UTF8, "application/json"),
@@ -114,6 +132,26 @@ public class UpdateCheckServiceTests
         var r = await RunAsync("1.1.4", true); // 手动检查：忽略冷却，当前版本=最新 tag → up to date
 
         Assert.Equal("uptodate", r);
+        Assert.Equal(1, handler.Calls);
+    }
+
+    [Fact]
+    public async Task ManualForce_DoesNotRefreshAutoCooldown()
+    {
+        // 8-31 核心：手动 force 检查只写 lastCheckedUtc，不刷新 autoCheckedUtc → 之后自动检查仍受原冷却限制
+        WriteState(null, null, DateTime.UtcNow.AddHours(-2), DateTime.UtcNow.AddMinutes(-30)); // autoChecked 30min 前（1h 冷却内）
+        var handler = new StubHandler(() => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("""{"tag_name":"v1.1.4","assets":[]}""", System.Text.Encoding.UTF8, "application/json"),
+        });
+        Use(handler);
+
+        // 手动检查：无视冷却 → 打到 API
+        Assert.Equal("uptodate", await RunAsync("1.1.4", true));
+        Assert.Equal(1, handler.Calls);
+
+        // 手动检查后自动检查：autoCheckedUtc 未被手动刷新（仍 30min 前）→ 冷却中 → skipped，不再打 API
+        Assert.Equal("skipped", await RunAsync("1.1.4", false));
         Assert.Equal(1, handler.Calls);
     }
 

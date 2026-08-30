@@ -509,22 +509,12 @@ public static class Files {
         Action<double>? progressIncrementHandler,
         CancellationToken cancellationToken)
     {
-        var entries = new List<TarEntry>();
-        long totalBytes = 0;
-
+        // 8-31 修「Linux 更新后文件损坏打不开」：原实现两遍（先 GetNextEntry 收集 header，再 tarStream.Reset() 重读）。
+        // SharpZipLib 1.4.2 TarInputStream.Reset() 是 NO-OP（源码注释 "we do nothing"）——gzip 流不可 seek，
+        // 第二遍从包尾读 → 所有文件内容错位损坏（实机：更新后文件都在但变成不可运行/其他格式）。
+        // 改单遍：GetNextEntry 已定位到每个 entry 的 data 区，边读边写。无法预知 total →
+        // 进度回调不再调用（当前唯一调用方 UpdateInstaller 传 null，不受影响）。
         while (await _GetNextEntryAsync(tarStream, cancellationToken).ConfigureAwait(false) is { } entry)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            entries.Add(entry);
-            totalBytes += entry.Size;
-        }
-
-        long processedBytes = 0;
-
-        tarStream.Reset(); // 重置流以重新读取条目
-
-        foreach (var entry in entries)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
@@ -554,9 +544,6 @@ public static class Files {
                 await tarStream
                     .CopyEntryContentsAsync(outputStream, cancellationToken)
                     .ConfigureAwait(false);
-
-                processedBytes += entry.Size;
-                progressIncrementHandler?.Invoke((double)processedBytes / totalBytes);
             }
             catch (IOException ex)
             {

@@ -615,6 +615,21 @@ public partial class SettingsViewModel : ViewModelBase
     [RelayCommand]
     public void RemoveBackgroundImage() => BackgroundImagePathText = "";
 
+    /// <summary>8-31 后台自动检查成功：把就绪状态落常驻（关于页「重启安装」按钮出现，不靠瞬时 Toast）。
+    /// 后台任务（App.axaml.cs）调用——与手动 CheckUpdate 共用同一就绪状态。</summary>
+    public void SetUpdateReady(string tag, string path)
+    {
+        _readyUpdatePath = path;
+        IsUpdateReady = true;
+        UpdateStatusText = $"发现新版本 {tag}，已下载，重启后生效";
+    }
+
+    /// <summary>8-31 后台自动检查失败：写进关于页状态（不再静默——用户能看到「上次自动检查失败」）</summary>
+    public void SetAutoCheckFailed(string error)
+    {
+        UpdateStatusText = $"上次自动检查失败：{error}，可点「检查更新」重试";
+    }
+
     /// <summary>手动检查更新（force 忽略冷却；有新版本自动后台下载到就绪）</summary>
     [RelayCommand]
     private async Task CheckUpdate()

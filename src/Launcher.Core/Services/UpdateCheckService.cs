@@ -15,11 +15,15 @@ public static class UpdateCheckService
     private static readonly JsonSerializerOptions JsonOpts = new() { PropertyNameCaseInsensitive = true };
     private static readonly SemaphoreSlim Gate = new(1, 1);
 
-    /// <summary>自动检查冷却：每次启动都打 GitHub API 浪费额度（未认证 60 次/小时按 IP）——6 小时内不重复自动检查</summary>
-    private static readonly TimeSpan AutoCooldown = TimeSpan.FromHours(6);
+    /// <summary>自动检查冷却：每次启动都打 GitHub API 浪费额度（未认证 60 次/小时按 IP）——1 小时内不重复自动检查。
+    /// 8-31 从 6h 收紧到 1h（原 6h + 手动检查共写 LastCheckedUtc → 发布新版后最长 6h 无自动推送，实测「必须手动检查」）。</summary>
+    private static readonly TimeSpan AutoCooldown = TimeSpan.FromHours(1);
 
-    /// <summary>就绪状态落盘（同名文件幂等：dest 已完整存在时 DownloadService 按 size 跳过）</summary>
-    private sealed record StateFile(string? ReadyTag, string? ReadyPath, DateTime? ReadyUtc, DateTime? LastCheckedUtc);
+    /// <summary>就绪状态落盘（同名文件幂等：dest 已完整存在时 DownloadService 按 size 跳过）。
+    /// AutoCheckedUtc 8-31 新增：自动检查专用时间戳——手动 force 只写 LastCheckedUtc，不刷新自动冷却，
+    /// 手动查过一次后自动检查不再被挡。</summary>
+    private sealed record StateFile(string? ReadyTag, string? ReadyPath, DateTime? ReadyUtc,
+        DateTime? LastCheckedUtc, DateTime? AutoCheckedUtc = null);
 
     public sealed record CheckResult(
         bool HasUpdate, bool WasSkipped, string? LatestTag, string? ReadyPath, string? AssetName, string? Error)
@@ -51,9 +55,13 @@ public static class UpdateCheckService
             if (state is not null && !string.IsNullOrWhiteSpace(state.ReadyPath) && File.Exists(state.ReadyPath))
                 return CheckResult.Ready(state.ReadyTag ?? "", state.ReadyPath);
 
-            // 2. 自动检查冷却（手动 force=true 无视）
-            if (!force && state is { LastCheckedUtc: { } last } && DateTime.UtcNow - last < AutoCooldown)
+            // 2. 自动检查冷却（手动 force=true 无视；用 AutoCheckedUtc 专用时间戳——手动检查不挡自动）
+            if (!force && state is { AutoCheckedUtc: { } last } && DateTime.UtcNow - last < AutoCooldown)
                 return CheckResult.Skipped();
+
+            // 自动检查刷新 AutoCheckedUtc；手动 force 保留旧值（不清空、不挡下次自动检查）
+            var now = DateTime.UtcNow;
+            var autoChecked = force ? state?.AutoCheckedUtc : (DateTime?)now;
 
             // 3. 查最新 release
             var release = await GitHubReleaseService.GetLatestAsync(ct);
@@ -63,7 +71,7 @@ public static class UpdateCheckService
             // 4. 版本比较（当前已是最新 → 只记检查时间）
             if (VersionUtil.Compare(release.Tag, currentVersion) <= 0)
             {
-                SaveState(new StateFile(null, null, null, DateTime.UtcNow));
+                SaveState(new StateFile(null, null, null, now, autoChecked));
                 return CheckResult.UpToDate(release.Tag);
             }
 
@@ -71,7 +79,7 @@ public static class UpdateCheckService
             var asset = GitHubReleaseService.MatchPlatformAsset(release);
             if (asset is null)
             {
-                SaveState(new StateFile(null, null, null, DateTime.UtcNow));
+                SaveState(new StateFile(null, null, null, now, autoChecked));
                 return CheckResult.Failed("最新版没有本平台安装包");
             }
 
@@ -85,7 +93,7 @@ public static class UpdateCheckService
             await dl.DownloadFileAsync(asset.BrowserDownloadUrl, dest, null,
                 asset.Size > 0 ? asset.Size : null, null, ct);
 
-            SaveState(new StateFile(release.Tag, dest, DateTime.UtcNow, DateTime.UtcNow));
+            SaveState(new StateFile(release.Tag, dest, now, now, autoChecked));
             return CheckResult.Ready(release.Tag, dest);
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)

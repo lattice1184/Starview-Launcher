@@ -83,27 +83,34 @@ public partial class App : Application
             }
             // 8-19 内存瘦身：图片磁盘缓存后台清理（30 天前的图标文件），不阻塞启动
             _ = Task.Run(() => ImageLoader.CleanupDiskCache());
-            // 8-30 后台静默更新：延迟 10s 检查最新 release，下载就绪后提示「重启安装」；失败静默只记日志
+            // 8-30 后台静默更新：延迟 10s 检查最新 release，下载就绪后提示「重启安装」。
+            // 8-31 成功落关于页常驻「重启安装」（不再只靠 10s 瞬时 Toast——实测用户找不到入口只能手动检查）；
+            // 失败写关于页状态（不再静默）。
             _ = Task.Run(async () =>
             {
                 await Task.Delay(TimeSpan.FromSeconds(10));
                 try
                 {
                     if (!LauncherSettings.Current.AutoCheckUpdate) return;
+                    var settings = MainViewModel.Current?.Settings; // 后台线程引用，UI 回调内使用
                     var result = await Launcher.Core.Services.UpdateCheckService.CheckAsync(PCL.Core.App.Basics.VersionName);
                     if (result.HasUpdate)
                     {
                         var tag = result.LatestTag ?? "";
                         var path = result.ReadyPath!;
                         Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+                        {
+                            settings?.SetUpdateReady(tag, path);
                             Services.NotificationService.Success($"发现新版本 {tag}，已准备好，重启后生效",
                                 durationMs: 10000,
                                 actionText: "重启安装",
-                                onAction: () => ApplyUpdate(path, tag)));
+                                onAction: () => ApplyUpdate(path, tag));
+                        });
                     }
                     else if (result.Error is not null)
                     {
                         Launcher.Core.Utils.AppLog.Instance?.LogWarning("[update] 后台检查失败: {Error}", result.Error);
+                        Avalonia.Threading.Dispatcher.UIThread.Post(() => settings?.SetAutoCheckFailed(result.Error));
                     }
                 }
                 catch (Exception ex)
