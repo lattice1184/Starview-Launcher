@@ -75,11 +75,13 @@ public static class UpdateCheckService
                 return CheckResult.Failed("最新版没有本平台安装包");
             }
 
-            // 6. 后台下载到临时目录（GitHub 资产走现有镜像竞速 + ghapi 换链）
+            // 6. 后台下载到临时目录。必须显式用 ThirdPartyDlSourceResolver——
+            // 默认 resolver 不含 GitHub 加速（DefaultDlSourceMapper 原样返回，github.com 官方直链国内被墙）。
+            // 竞速候选：官方 + ghproxy.net/gh-proxy.com 镜像 + ghapi 换签名 CDN 直链，谁快用谁
             var dir = Path.Combine(Path.GetTempPath(), "starview-update");
             Directory.CreateDirectory(dir);
             var dest = Path.Combine(dir, asset.Name);
-            var dl = new DownloadService();
+            var dl = new DownloadService(http: null, resolver: new ThirdPartyDlSourceResolver(), options: null, gameDirectory: null);
             await dl.DownloadFileAsync(asset.BrowserDownloadUrl, dest, null,
                 asset.Size > 0 ? asset.Size : null, null, ct);
 
