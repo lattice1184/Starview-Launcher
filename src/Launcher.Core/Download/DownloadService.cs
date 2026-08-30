@@ -988,8 +988,12 @@ public sealed class DownloadService
         response.EnsureSuccessStatusCode();
 
         // AL8：进度 total 用真实目标大小（expectedSize 优先）——源返回 1B 垃圾（WAF 拦截页等）
-        // 时不再显示 "1 B" 误导；校验仍由 sha1/size 兜底，无效响应自动换源
-        var total = expectedSize ?? response.Content.Headers.ContentLength ?? 0;
+        // 时不再显示 "1 B" 误导；校验仍由 sha1/size 兜底，无效响应自动换源。
+        // 8-30 修「整合包下载无单位/进度」：mrpack 无 size 字段 → expectedSize 传 0（非 null）——
+        // 旧 `0 ?? ContentLength` 取 0 吞掉响应头，total 恒 0 → "-/-" 无进度。改 expectedSize<=0 回落 Content-Length。
+        var total = expectedSize is > 0
+            ? expectedSize.Value
+            : response.Content.Headers.ContentLength ?? 0;
         await using (var src = await response.Content.ReadAsStreamAsync(ct))
         {
             // BUGS#3 单连接半边（8-19 修复，与分片路径 1388 对齐）：服务器忽略 Range 回 200 全量时

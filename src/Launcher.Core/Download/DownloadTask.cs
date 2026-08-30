@@ -564,7 +564,9 @@ public partial class DownloadTask : ObservableObject
             foreach (var c in Children)
             {
                 if (c is null) continue; // 防御
-                var w = Math.Max(c.Weight, 0);
+                // 8-30 修「整合包无单位/进度」：weight=0（未知大小，如 mrpack 无 size）时用子任务 TotalBytes
+                // 动态补——子任务下载中从 Content-Length 拿到真实总量，主任务聚合才有值（否则恒 "-/-"）
+                var w = Math.Max(c.Weight, c.TotalBytes);
                 total += w;
                 weighted += w * c.ProgressPercent;
                 if (c.IsActive) active = c;

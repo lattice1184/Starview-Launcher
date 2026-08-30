@@ -225,4 +225,24 @@ public class DownloadServiceTests : IAsyncLifetime
         }
         finally { File.Delete(dest); }
     }
+
+    [Fact]
+    public async Task UnknownSize_ExpectedSizeZero_UsesContentLength_ForProgress()
+    {
+        // 8-30 修「整合包无单位/进度」：mrpack 无 size 字段 → expectedSize=0（非 null）——
+        // 旧 `expectedSize ?? ContentLength` 在 0 时取 0 吞掉响应头，total 恒 0 → UI "-/-" 无进度。
+        // 修复后 expectedSize<=0 回落 Content-Length，progress 报真实总量。
+        var small = _smallPayload;
+        var sha1 = Convert.ToHexStringLower(SHA1.HashData(small));
+        var dest = TempPath();
+        try
+        {
+            long? seenTotal = null;
+            var svc = new DownloadService();
+            await svc.DownloadFileAsync($"http://localhost:{Port}/small.bin", dest, sha1, expectedSize: 0,
+                p => { if (p.FileTotalBytes > 0) seenTotal = p.FileTotalBytes; });
+            Assert.Equal(small.Length, seenTotal);
+        }
+        finally { File.Delete(dest); }
+    }
 }

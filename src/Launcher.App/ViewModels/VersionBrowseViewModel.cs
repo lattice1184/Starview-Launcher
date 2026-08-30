@@ -541,7 +541,10 @@ public partial class InstalledVersionDetailVM : ViewModelBase
         var gen = ++_sizeGeneration;
         try
         {
-            var version = await _installer.GetOrFetchVersionJsonAsync(row.Id, null, CancellationToken.None);
+            // 8-30 回归修复：只读取体积（GetVersionJsonAsync 不落盘不打 .prefetched）——
+            // 8-26 修复注释明说"LoadSizeAsync 走 GetOrFetchVersionJsonAsync 会把已删版本 json
+            // 重写回盘（.prefetched + json-only 残件）→ 删除后复活"，但代码当时没改到位，真机 1.20.1 复活。
+            var version = await _installer.GetVersionJsonAsync(row.Id, null, CancellationToken.None);
             if (gen != _sizeGeneration) return;
             long total = version.Downloads?.Client?.Size ?? 0;
             foreach (var lib in version.Libraries ?? [])
