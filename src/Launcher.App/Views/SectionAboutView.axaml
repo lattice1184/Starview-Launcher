@@ -19,6 +19,24 @@
             </StackPanel>
             <TextBlock Text="此启动器为 1 学生 + 1 AI 开发" Classes="dim" FontSize="11"/>
             <TextBlock Text="基于 Avalonia / .NET 10，core 库基于 PCL Community（Apache-2.0）" Classes="dim" FontSize="11"/>
+
+            <!-- 8-30 后台静默更新：自动检查开关 + 手动检查 + 就绪后重启安装 -->
+            <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,4,0,0">
+                <TextBlock Text="自动检查更新" Classes="setting-label" VerticalAlignment="Center"/>
+                <ToggleSwitch IsChecked="{Binding AutoCheckUpdate}"/>
+                <Border Classes="help-hint"
+                           ToolTip.Tip="启动后后台检查 GitHub 最新版，有新版下载好后提示重启生效"
+                           VerticalAlignment="Center"><Path/></Border>
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <Button Content="检查更新" Classes="ghost" Padding="14,6"
+                        Command="{Binding CheckUpdateCommand}" IsEnabled="{Binding !IsCheckingUpdate}"/>
+                <Button Content="重启安装" Classes="primary" Padding="14,6"
+                        Command="{Binding InstallUpdateCommand}" IsVisible="{Binding IsUpdateReady}"/>
+                <TextBlock Text="{Binding UpdateStatusText}" Classes="dim" FontSize="11"
+                           VerticalAlignment="Center" TextWrapping="Wrap" MaxWidth="360"/>
+            </StackPanel>
+
             <StackPanel Orientation="Horizontal" Spacing="10">
                 <Button Content="管理空间" Classes="ghost" Padding="14,6" Click="OnOpenStorage"/>
                 <Button Content="仓库主页 ↗" Classes="link" Padding="14,6" Click="OnOpenGitHub"

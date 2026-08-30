@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -6,6 +7,7 @@ using CommunityToolkit.Mvvm.Input;
 using Launcher.App.Services;
 using Launcher.Core.Launch;
 using Launcher.Core.Services;
+using Launcher.Core.Update;
 using Launcher.Core.Utils;
 
 namespace Launcher.App.ViewModels;
@@ -111,6 +113,27 @@ public partial class SettingsViewModel : ViewModelBase
     /// <summary>启动随机小提示（彩蛋开关）</summary>
     [ObservableProperty]
     public partial bool StartupTipEnabled { get; set; } = true;
+
+    // ---------- 更新（8-30 后台静默更新：自动检查开关 + 手动检查 + 重启安装） ----------
+
+    /// <summary>自动检查更新（启动延迟后台检查，有新版下载好后提示重启生效）</summary>
+    [ObservableProperty]
+    public partial bool AutoCheckUpdate { get; set; } = true;
+
+    /// <summary>更新状态文案（检查中/已是最新/发现新版本/失败原因）</summary>
+    [ObservableProperty]
+    public partial string UpdateStatusText { get; set; } = "";
+
+    /// <summary>检查更新进行中（禁用按钮防连点）</summary>
+    [ObservableProperty]
+    public partial bool IsCheckingUpdate { get; set; }
+
+    /// <summary>有新版本已下载就绪（显示「重启安装」按钮）</summary>
+    [ObservableProperty]
+    public partial bool IsUpdateReady { get; set; }
+
+    /// <summary>就绪的更新包路径（重启安装用）</summary>
+    private string? _readyUpdatePath;
 
     // ---------- 内存优化（8-19 第二批：轻度 GC 零盘写默认开；工作集修剪默认关） ----------
 
@@ -355,6 +378,7 @@ public partial class SettingsViewModel : ViewModelBase
         SelectedJvmProfile = JvmProfileOptions.FirstOrDefault(o => o.Value == s.JvmProfile) ?? JvmProfileOptions[1];
         SelectedGamePriority = GamePriorityOptions.FirstOrDefault(o => o.Value == s.GamePriority) ?? GamePriorityOptions[1];
         StartupTipEnabled = s.StartupTipEnabled;
+        AutoCheckUpdate = s.AutoCheckUpdate;
         SelectedDownloadSource = DownloadSourceOptions.FirstOrDefault(o => o.Value == s.DownloadSource) ?? DownloadSourceOptions[0];
         MaxConcurrentDownloads = s.MaxConcurrentDownloads;
         SpeedLimitKbps = s.DownloadSpeedLimitKbps;
@@ -413,6 +437,7 @@ public partial class SettingsViewModel : ViewModelBase
         s.JvmProfile = SelectedJvmProfile?.Value ?? PerformanceProfile.Medium;
         s.GamePriority = SelectedGamePriority?.Value ?? GamePriority.Normal;
         s.StartupTipEnabled = StartupTipEnabled;
+        s.AutoCheckUpdate = AutoCheckUpdate;
         s.MaxConcurrentDownloads = MaxConcurrentDownloads;
         s.DownloadSpeedLimitKbps = SpeedLimitKbps;
         s.ChunkCount = ChunkCount;
@@ -476,6 +501,7 @@ public partial class SettingsViewModel : ViewModelBase
         Save();
         NotificationService.Info(value ? "已开启小提示，下次启动生效" : "已关闭小提示，下次启动生效");
     }
+    partial void OnAutoCheckUpdateChanged(bool value) => Save(); // 即时落盘（后台检查下次启动生效）
     partial void OnSelectedDownloadSourceChanged(DownloadSourceOption? value) => Save();
     // 滑块拖动连续触发——150ms 防抖写盘（避免每 tick 写 settings.json）
     private CancellationTokenSource? _saveDebounce;
@@ -567,6 +593,60 @@ public partial class SettingsViewModel : ViewModelBase
     /// <summary>移除背景（还原亚克力纯色；预览不写盘）</summary>
     [RelayCommand]
     public void RemoveBackgroundImage() => BackgroundImagePathText = "";
+
+    /// <summary>手动检查更新（force 忽略冷却；有新版本自动后台下载到就绪）</summary>
+    [RelayCommand]
+    private async Task CheckUpdate()
+    {
+        IsCheckingUpdate = true;
+        IsUpdateReady = false;
+        UpdateStatusText = "检查中…";
+        try
+        {
+            var r = await UpdateCheckService.CheckAsync(PCL.Core.App.Basics.VersionName, force: true);
+            if (r.HasUpdate)
+            {
+                _readyUpdatePath = r.ReadyPath;
+                IsUpdateReady = true;
+                UpdateStatusText = $"发现新版本 {r.LatestTag}，已下载，重启后生效";
+            }
+            else if (r.Error is not null)
+            {
+                UpdateStatusText = r.Error;
+            }
+            else
+            {
+                UpdateStatusText = $"已是最新版本（{PCL.Core.App.Basics.VersionName}）";
+            }
+        }
+        catch (Exception ex)
+        {
+            UpdateStatusText = $"检查失败：{ex.Message}";
+        }
+        finally
+        {
+            IsCheckingUpdate = false;
+        }
+    }
+
+    /// <summary>重启安装已就绪的更新（Windows 子进程 / Unix 延迟脚本接管替换与重启）</summary>
+    [RelayCommand]
+    private async Task InstallUpdate()
+    {
+        if (string.IsNullOrEmpty(_readyUpdatePath)) return;
+        var err = await UpdateInstaller.StartAsync(_readyUpdatePath);
+        if (err is not null)
+        {
+            NotificationService.Error($"更新失败：{err}");
+            return;
+        }
+        try
+        {
+            if (Avalonia.Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime d) d.Shutdown();
+        }
+        catch { }
+        Environment.Exit(0);
+    }
 
     /// <summary>设置-游戏目录「打开文件夹」：explorer 定位当前安装目录</summary>
     [RelayCommand]
