@@ -533,6 +533,8 @@ public partial class ProjectDetailViewModel : ViewModelBase
     /// <summary>后台解析依赖：前置提示 + 安装按钮文字（"安装（含 N 个前置）"）</summary>
     private async Task ResolveDependencyHintAsync(ModrinthVersion version, string? gameVersion, string? loader)
     {
+        // 8-30 立即反馈：打开详情即显示"正在解析"，避免 3 秒空窗用户以为没检查（响应感）
+        DependencyHint = "正在解析前置…";
         try
         {
             var names = await SlowQueryNotifier.WatchAsync(Task.Run(() => _eco.ResolveDependencyNamesAsync(version, gameVersion, loader, CancellationToken.None)),
