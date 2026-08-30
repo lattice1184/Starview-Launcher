@@ -154,6 +154,116 @@ public class AccountServiceTests
         finally { if (File.Exists(path)) File.Delete(path); }
     }
 
+    // ---------- 8-31 离线账号改名（自动 Player 允许改成自己的名字）----------
+
+    [Fact]
+    public void RenameOffline_UpdatesNameAndUuid_CurrentFollows()
+    {
+        var path = TempStore();
+        try
+        {
+            var svc = new AccountService(path);
+            svc.LoginOffline("Player");
+            var oldUuid = svc.Current!.Uuid;
+
+            Assert.Null(svc.RenameOffline("Player", "YanKa"));
+            var acc = svc.Accounts.Single();
+            Assert.Equal("YanKa", acc.Name);
+            Assert.NotEqual(oldUuid, acc.Uuid); // 离线 UUID 由名字派生 → 改名换身份
+            Assert.Equal(AccountService.OfflineUuid("YanKa"), acc.Uuid);
+            Assert.Equal("YanKa", svc.Current!.Name);
+        }
+        finally { if (File.Exists(path)) File.Delete(path); }
+    }
+
+    [Fact]
+    public void RenameOffline_Collision_WithExistingAccount_Rejected()
+    {
+        var path = TempStore();
+        try
+        {
+            var svc = new AccountService(path);
+            svc.LoginOffline("Player");
+            svc.LoginOffline("YanKa");
+            svc.SwitchTo("Player");
+
+            var err = svc.RenameOffline("Player", "yanka"); // 大小写不敏感撞名
+            Assert.NotNull(err);
+            Assert.Contains("已有账号", err);
+            Assert.Equal("Player", svc.Current!.Name); // 没动
+        }
+        finally { if (File.Exists(path)) File.Delete(path); }
+    }
+
+    [Fact]
+    public void RenameOffline_NonOffline_Rejected()
+    {
+        var path = TempStore();
+        try
+        {
+            var svc = new AccountService(path);
+            svc.LoginMicrosoft(new MicrosoftAuth.MicrosoftSession(
+                "at", "rt", "069a79f444e94726a5befca90e38aaf5", "Steve"));
+
+            var err = svc.RenameOffline("Steve", "YanKa");
+            Assert.NotNull(err);
+            Assert.Contains("只有离线账号", err);
+            Assert.Equal("Steve", svc.Current!.Name);
+        }
+        finally { if (File.Exists(path)) File.Delete(path); }
+    }
+
+    [Fact]
+    public void RenameOffline_InvalidInput_Rejected()
+    {
+        var path = TempStore();
+        try
+        {
+            var svc = new AccountService(path);
+            svc.LoginOffline("Player");
+
+            Assert.Contains("不能为空", svc.RenameOffline("Player", "   "));
+            Assert.Contains("最长 16", svc.RenameOffline("Player", new string('a', 17)));
+            Assert.Contains("空格", svc.RenameOffline("Player", "Yan Ka"));
+            Assert.NotNull(svc.RenameOffline("Nobody", "YanKa")); // 不存在
+            Assert.Equal("Player", svc.Accounts.Single().Name); // 全部拒绝、没动
+        }
+        finally { if (File.Exists(path)) File.Delete(path); }
+    }
+
+    [Fact]
+    public void RenameOffline_Persisted_OnReload()
+    {
+        var path = TempStore();
+        try
+        {
+            var svc = new AccountService(path);
+            svc.LoginOffline("Player");
+            svc.RenameOffline("Player", "YanKa");
+
+            var reloaded = new AccountService(path);
+            reloaded.Load();
+            Assert.Equal("YanKa", reloaded.Current!.Name);
+            Assert.Equal(AccountService.OfflineUuid("YanKa"), reloaded.Current.Uuid);
+        }
+        finally { if (File.Exists(path)) File.Delete(path); }
+    }
+
+    [Fact]
+    public void RenameOffline_SameName_NoOp_Success()
+    {
+        var path = TempStore();
+        try
+        {
+            var svc = new AccountService(path);
+            svc.LoginOffline("Player");
+            Assert.Null(svc.RenameOffline("Player", "player")); // 大小写不同视为没变
+            Assert.Single(svc.Accounts);
+            Assert.Equal("Player", svc.Current!.Name);
+        }
+        finally { if (File.Exists(path)) File.Delete(path); }
+    }
+
     // ---------- 8-13 正版账号：token DPAPI 加密落盘 + 旧明文迁移 ----------
 
     [Fact]

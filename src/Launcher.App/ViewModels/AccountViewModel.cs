@@ -48,6 +48,18 @@ public partial class AccountViewModel : ViewModelBase
     [ObservableProperty]
     public partial string AvatarFallback { get; set; } = "";
 
+    /// <summary>8-31 当前账号是离线类型（显示「改名」按钮——正版/LittleSkin 名字是平台身份不改）</summary>
+    [ObservableProperty]
+    public partial bool IsOfflineAccount { get; set; }
+
+    /// <summary>8-31 离线账号改名：是否处于内联改名态（当前账号行变输入框）</summary>
+    [ObservableProperty]
+    public partial bool IsRenamingOffline { get; set; }
+
+    /// <summary>8-31 离线账号改名输入框内容（进入改名态时预填当前名）</summary>
+    [ObservableProperty]
+    public partial string RenameInput { get; set; } = "";
+
     /// <summary>已保存账号列表（当前账号标记）</summary>
     public ObservableCollection<AccountRowVM> Accounts { get; } = [];
 
@@ -62,6 +74,8 @@ public partial class AccountViewModel : ViewModelBase
         var acc = _accounts.Current;
         IsLoggedIn = acc is not null;
         IsMicrosoftAccount = acc?.Type == "microsoft";
+        IsOfflineAccount = acc?.Type == "offline";
+        IsRenamingOffline = false; // 刷新时退出改名态（切号/删除等）
         CurrentName = acc?.Name ?? "未登录";
         CurrentUuid = acc?.Uuid ?? "";
         AccountType = TypeTextOf(acc);
@@ -116,6 +130,31 @@ public partial class AccountViewModel : ViewModelBase
         Status = $"已登录 {name}";
         Refresh();
     }
+
+    // ---------- 8-31 离线账号改名（自动 Player 允许改成自己的名字）----------
+
+    /// <summary>进入改名态：输入框预填当前名（改名 = 换离线身份，UUID 由名字派生）</summary>
+    [RelayCommand]
+    private void StartRenameOffline()
+    {
+        RenameInput = CurrentName;
+        IsRenamingOffline = true;
+    }
+
+    /// <summary>确认改名：校验 + 重建账号；失败原因进 Status（面板下方展示）</summary>
+    [RelayCommand]
+    private void CommitRenameOffline()
+    {
+        var oldName = CurrentName;
+        var error = _accounts.RenameOffline(oldName, RenameInput);
+        if (error is not null) { Status = error; return; }
+        Status = $"已改名为 {RenameInput.Trim()}";
+        Refresh();
+    }
+
+    /// <summary>取消改名（退出内联输入态）</summary>
+    [RelayCommand]
+    private void CancelRenameOffline() => IsRenamingOffline = false;
 
     /// <summary>切换账号（点击列表行）</summary>
     [RelayCommand]

@@ -124,6 +124,35 @@ public sealed class AccountService
         return removed;
     }
 
+    /// <summary>
+    /// 8-31 离线账号改名（自动 Player 允许改成自己的名字）。
+    /// Minecraft 离线 UUID 由名字派生（OfflineUuid）→ 改名 = 重建账号（UUID 重算、无 token）。
+    /// 仅 type=offline 可改；正版/LittleSkin 名字是平台侧身份，不改。
+    /// 返回 null=成功；非 null=错误原因（UI 直接展示）。
+    /// </summary>
+    public string? RenameOffline(string oldName, string newName)
+    {
+        var idx = _accounts.FindIndex(a => a.Name.Equals(oldName, StringComparison.OrdinalIgnoreCase));
+        if (idx < 0) return "账号不存在";
+        if (_accounts[idx].Type != "offline") return "只有离线账号可以改名";
+        newName = newName.Trim();
+        if (newName.Length == 0) return "名字不能为空";
+        if (newName.Length > 16) return "名字最长 16 个字符";
+        if (newName.Any(ch => char.IsWhiteSpace(ch))) return "名字不能包含空格";
+        if (newName.Equals(oldName, StringComparison.OrdinalIgnoreCase)) return null; // 没变，视为成功
+        // 撞名检查：oldName≠newName（已提前返回）→ idx 处账号必不匹配 newName，直接 Any 即可
+        if (_accounts.Any(a => a.Name.Equals(newName, StringComparison.OrdinalIgnoreCase)))
+            return $"已有账号叫「{newName}」";
+
+        var renamed = new AccountInfo(newName, OfflineUuid(newName), "offline");
+        _accounts[idx] = renamed;
+        if (Current?.Name.Equals(oldName, StringComparison.OrdinalIgnoreCase) == true)
+            Current = renamed;
+        Save();
+        Changed?.Invoke();
+        return null;
+    }
+
     public void Load()
     {
         try

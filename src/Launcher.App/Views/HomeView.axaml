@@ -242,12 +242,29 @@
                                         Command="{Binding Account.OpenMojangProfileCommand}"
                                         IsVisible="{Binding Account.IsMicrosoftAccount}"
                                         ToolTip.Tip="皮肤、披风、用户名在 Minecraft 官网修改"/>
+                                <!-- 8-31 离线改名：自动 Player 允许改成自己的名字（正版/LittleSkin 不改——平台身份） -->
+                                <Button Content="改名" Classes="link" FontSize="11" Padding="0"
+                                        VerticalAlignment="Center"
+                                        Command="{Binding Account.StartRenameOfflineCommand}"
+                                        IsVisible="{Binding Account.IsOfflineAccount}"
+                                        ToolTip.Tip="改成你自己的名字（离线身份，UUID 由名字派生）"/>
                             </StackPanel>
                         </StackPanel>
                         <Button Grid.Column="2" Content="退出" Classes="ghost" FontSize="12" Padding="10,5"
                                 VerticalAlignment="Center" Command="{Binding Account.LogoutCommand}"
                                 IsVisible="{Binding Account.IsLoggedIn}"/>
                     </Grid>
+
+                    <!-- 8-31 离线改名内联行：点「改名」展开，输入新名 + 确认/取消 -->
+                    <StackPanel Spacing="8" IsVisible="{Binding Account.IsRenamingOffline}">
+                        <TextBox Text="{Binding Account.RenameInput}" PlaceholderText="新名字（最长 16 字符，不能有空格）" FontSize="13"/>
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <Button Content="确认改名" Classes="primary" FontSize="12" Padding="14,5"
+                                    Command="{Binding Account.CommitRenameOfflineCommand}"/>
+                            <Button Content="取消" Classes="ghost" FontSize="12" Padding="14,5"
+                                    Command="{Binding Account.CancelRenameOfflineCommand}"/>
+                        </StackPanel>
+                    </StackPanel>
 
                     <!-- 已保存账号列表（切换/删除） -->
                     <Border CornerRadius="6" Background="{DynamicResource BgBase}" Padding="8"
