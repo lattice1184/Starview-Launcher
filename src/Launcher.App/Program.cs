@@ -14,6 +14,8 @@ sealed class Program
     {
         if (Launcher.Core.Utils.AntiDebugGuard.ShouldExit()) return;
         Launcher.Core.Utils.AntiDebugGuard.ScheduleLateCheck(TimeSpan.FromSeconds(4));
+        // 8-30 沙盒：启动时清理残留的 Starview 防火墙规则（崩溃未删的孤儿规则会持续挡 java 出站）
+        Launcher.Core.Launch.Sandbox.SandboxManager.CleanupOrphanFirewallRules();
         // 8-29 内存诊断钩子：--mem-profile 开启定时/切页内存采样（默认关，dev 专用）
         if (args.Contains("--mem-profile")) Services.MemProfile.Enabled = true;
         BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);

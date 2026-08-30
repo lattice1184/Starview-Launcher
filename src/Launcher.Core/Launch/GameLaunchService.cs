@@ -1,6 +1,7 @@
 using System.IO.Compression;
 using System.Text.Json;
 using Launcher.Core.Diagnostics;
+using Launcher.Core.Launch.Sandbox;
 using Launcher.Core.Model.Mojang;
 using Launcher.Core.Utils;
 
@@ -16,7 +17,8 @@ public sealed class GameLaunchService
         string accountName, string accountUuid, string accessToken,
         long memoryMb, string[]? extraJvmArgs, string? javaPathOverride = null,
         Action<string>? onLog = null, Action<string>? onStage = null, CancellationToken ct = default,
-        string[]? extraGameArgs = null, string userType = "legacy", string? skinUrl = null)
+        string[]? extraGameArgs = null, string userType = "legacy", string? skinUrl = null,
+        SandboxMode sandboxMode = SandboxMode.Disabled)
     {
         // 1. 读版本 JSON
         onStage?.Invoke("解析版本");
@@ -84,7 +86,7 @@ public sealed class GameLaunchService
         ExtractNatives(profile.NativeJars, profile.NativesDirectory, onLog);
 
         onStage?.Invoke("启动 JVM");
-        var result = LaunchProcess.Start(profile, onLog, ct, LauncherSettings.Current.GamePriority);
+        var result = LaunchProcess.Start(profile, onLog, ct, LauncherSettings.Current.GamePriority, sandboxMode);
         onStage?.Invoke("拉起游戏窗口"); // 8-30 进程已拉起——HomeViewModel 的"拉起游戏窗口"阶段
         return result;
     }

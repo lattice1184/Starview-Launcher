@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using Launcher.Core.Launch.Sandbox;
 using Launcher.Core.Utils;
 
 namespace Launcher.Core.Launch;
@@ -45,11 +46,14 @@ public sealed class LaunchProcess
             ? "\"" + arg.Replace("\"", "\\\"") + "\""
             : arg;
 
-    /// <summary>启动游戏进程。日志行通过 onLog 回调实时输出。</summary>
+    /// <summary>启动游戏进程。日志行通过 onLog 回调实时输出。
+    /// 8-30 sandboxMode：非 Disabled 时用沙盒包装命令（Linux bwrap / macOS sandbox-exec / Windows 防火墙），
+    /// 包装失败自动降级普通启动并 onLog 提示原因。</summary>
     public static LaunchResult Start(
         JavaArgumentsBuilder.LaunchProfile profile,
         Action<string>? onLog = null, CancellationToken ct = default,
-        GamePriority priority = GamePriority.Normal)
+        GamePriority priority = GamePriority.Normal,
+        SandboxMode sandboxMode = SandboxMode.Disabled)
     {
         var psi = new ProcessStartInfo
         {
@@ -62,16 +66,41 @@ public sealed class LaunchProcess
             StandardOutputEncoding = System.Text.Encoding.UTF8,
             StandardErrorEncoding = System.Text.Encoding.UTF8,
         };
-        // JvmArgs 已含 -cp + classpath（JavaArgumentsBuilder 统一末尾追加）；这里补主类与游戏参数
-        foreach (var arg in profile.JvmArgs) psi.ArgumentList.Add(arg);
-        psi.ArgumentList.Add(profile.MainClass);
-        foreach (var arg in profile.GameArgs) psi.ArgumentList.Add(arg);
+
+        // 沙盒包装：替换 FileName + 参数（Windows 防火墙模式命令不变仅挂清理），失败降级普通启动
+        SandboxCommand? cmd = null;
+        if (sandboxMode != SandboxMode.Disabled)
+        {
+            cmd = SandboxManager.GetRunner().Wrap(profile, sandboxMode, out var degrade);
+            if (degrade is not null) onLog?.Invoke($"§ 沙盒降级：{degrade}");
+            if (cmd is not null)
+            {
+                psi.FileName = cmd.FileName;
+                foreach (var a in cmd.Arguments) psi.ArgumentList.Add(a);
+            }
+        }
+        if (cmd is null)
+        {
+            // JvmArgs 已含 -cp + classpath（JavaArgumentsBuilder 统一末尾追加）；这里补主类与游戏参数
+            foreach (var arg in profile.JvmArgs) psi.ArgumentList.Add(arg);
+            psi.ArgumentList.Add(profile.MainClass);
+            foreach (var arg in profile.GameArgs) psi.ArgumentList.Add(arg);
+        }
 
         var process = new Process { StartInfo = psi };
         process.OutputDataReceived += (_, e) => { if (e.Data is not null) onLog?.Invoke(e.Data); };
         process.ErrorDataReceived += (_, e) => { if (e.Data is not null) onLog?.Invoke(e.Data); };
 
         process.Start();
+        if (cmd is not null)
+            onLog?.Invoke("§ 启动命令（沙盒）：" + DescribeCommandLine(cmd.FileName, cmd.Arguments));
+        if (cmd?.Cleanup is not null)
+        {
+            // 游戏退出清理（如删防火墙规则）：EnableRaisingEvents 才能收到 Exited；异常吞掉不影响退出检测
+            var cleanup = cmd.Cleanup;
+            process.EnableRaisingEvents = true;
+            process.Exited += (_, _) => { try { cleanup(); } catch { } };
+        }
         ApplyPriority(process, priority, onLog);
         process.BeginOutputReadLine();
         process.BeginErrorReadLine();

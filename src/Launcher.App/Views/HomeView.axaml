@@ -29,15 +29,28 @@
                             </Grid>
                         </Border>
                     </Button>
-                    <ComboBox Grid.Column="1" ItemsSource="{Binding InstalledVersions}" SelectedItem="{Binding SelectedVersion}"
-                              PlaceholderText="选择版本" MinWidth="160" MaxWidth="260" VerticalAlignment="Center">
-                        <ComboBox.ItemTemplate>
-                            <DataTemplate x:DataType="vm:VersionInstanceVM">
-                                <TextBlock Text="{Binding DisplayName}" TextTrimming="CharacterEllipsis"
-                                           MaxWidth="220" ToolTip.Tip="{Binding DisplayName}"/>
-                            </DataTemplate>
-                        </ComboBox.ItemTemplate>
-                    </ComboBox>
+                    <!-- 8-30 沙盒下拉：与版本下拉并排，选择即存（严格隔离断网会挡联机，tooltip 已提示） -->
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                        <ComboBox ItemsSource="{Binding InstalledVersions}" SelectedItem="{Binding SelectedVersion}"
+                                  PlaceholderText="选择版本" MinWidth="160" MaxWidth="240" VerticalAlignment="Center">
+                            <ComboBox.ItemTemplate>
+                                <DataTemplate x:DataType="vm:VersionInstanceVM">
+                                    <TextBlock Text="{Binding DisplayName}" TextTrimming="CharacterEllipsis"
+                                               MaxWidth="210" ToolTip.Tip="{Binding DisplayName}"/>
+                                </DataTemplate>
+                            </ComboBox.ItemTemplate>
+                        </ComboBox>
+                        <ComboBox ItemsSource="{x:Static vm:HomeViewModel.SandboxOptions}"
+                                  SelectedItem="{Binding SelectedSandboxOption}"
+                                  MinWidth="104" VerticalAlignment="Center"
+                                  ToolTip.Tip="沙盒启动：严格隔离 = 断网 + 只准读写游戏文件夹。Windows 端断网需管理员权限；断网会挡住游戏内联机">
+                            <ComboBox.ItemTemplate>
+                                <DataTemplate x:DataType="vm:SandboxOption">
+                                    <TextBlock Text="{Binding Display}"/>
+                                </DataTemplate>
+                            </ComboBox.ItemTemplate>
+                        </ComboBox>
+                    </StackPanel>
                     <Button Grid.Column="2" Content="启动游戏" Classes="primary" Padding="26,9" FontSize="13"
                             Command="{Binding LaunchCommand}" VerticalAlignment="Center"
                             IsEnabled="{Binding CanLaunch}"

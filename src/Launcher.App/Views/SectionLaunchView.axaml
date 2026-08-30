@@ -54,6 +54,23 @@
                            VerticalAlignment="Center"/>
             </Grid>
 
+            <!-- 8-30 沙盒模式：普通启动不隔离；保护模式只准读写游戏文件夹（Windows 端等同普通启动）；
+                 严格隔离 = 断网 + 只准读写游戏文件夹（Windows 端断网需管理员权限；断网会挡住游戏内联机） -->
+            <Grid Classes="setting-row" ColumnDefinitions="Auto,*,Auto">
+                <TextBlock Text="沙盒模式" Classes="setting-label" VerticalAlignment="Center"/>
+                <ComboBox Grid.Column="1" ItemsSource="{Binding SandboxModeOptions}"
+                          SelectedItem="{Binding SelectedSandboxMode}" HorizontalAlignment="Left">
+                    <ComboBox.ItemTemplate>
+                        <DataTemplate x:DataType="vm:SandboxModeOption">
+                            <TextBlock Text="{Binding Name}"/>
+                        </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                </ComboBox>
+                <Path Grid.Column="2" Classes="help-hint"
+                           ToolTip.Tip="游戏跑在隔离环境里。普通启动 = 不隔离；保护模式 = 只准读写游戏文件夹（Windows 端等同普通启动）；严格隔离 = 断网 + 只准读写游戏文件夹（Windows 端断网需管理员权限，且断网会挡住游戏内联机）"
+                           VerticalAlignment="Center"/>
+            </Grid>
+
             <Grid Classes="setting-row" ColumnDefinitions="Auto,*">
                 <TextBlock Text="额外 JVM 参数" Classes="setting-label" VerticalAlignment="Center"/>
                 <TextBox Grid.Column="1" Text="{Binding ExtraJvmArgsText}"

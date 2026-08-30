@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Launcher.Core.Launch;
+using Launcher.Core.Launch.Sandbox;
 
 namespace Launcher.Core.Utils;
 
@@ -57,6 +58,9 @@ public sealed class LauncherSettings
 
     /// <summary>游戏/服务端进程优先级（独立设置，不随性能档位；默认正常）</summary>
     public GamePriority GamePriority { get; set; } = GamePriority.Normal;
+
+    /// <summary>沙盒启动模式（关闭/保护/严格隔离）——8-30 新增；默认关闭 = 行为与以往完全一致</summary>
+    public SandboxMode SandboxMode { get; set; } = SandboxMode.Disabled;
 
     /// <summary>启动完成后随机弹一条小提示（彩蛋，可关）</summary>
     public bool StartupTipEnabled { get; set; } = true;

@@ -10,6 +10,7 @@ using Launcher.Core.Account;
 using Launcher.Core.Diagnostics;
 using Launcher.Core.Download;
 using Launcher.Core.Launch;
+using Launcher.Core.Launch.Sandbox;
 using Launcher.Core.Services;
 using Launcher.Core.Utils;
 using Microsoft.Extensions.Logging;
@@ -21,6 +22,9 @@ public enum LogLineKind { Normal, Warn, Error, Fatal, Launcher }
 
 /// <summary>启动日志行（控制台显示）：文本 + 类别 + 时间戳（着色与层级用）</summary>
 public sealed record LogLine(string Text, LogLineKind Kind, string Timestamp);
+
+/// <summary>沙盒模式下拉项（模式 + 白话文案，避免 ComboBox 直接显示枚举名）</summary>
+public sealed record SandboxOption(SandboxMode Mode, string Display);
 
 /// <summary>
 /// 主页：玩家信息 + 版本选择 + 启动状态机（阶段指示条）+ 游戏控制台。
@@ -38,6 +42,38 @@ public partial class HomeViewModel : ViewModelBase
     private LaunchProcess.LaunchResult? _running;
     private const int MaxLogLines = 300; // 8-26 内存瘦身：500→300（每行可能含长堆栈串）
     private volatile bool _userStopped;
+
+    /// <summary>沙盒模式下拉固定项（主页 ComboBox 数据源）</summary>
+    public static IReadOnlyList<SandboxOption> SandboxOptions { get; } =
+    [
+        new(SandboxMode.Disabled, "普通启动"),
+        new(SandboxMode.Protected, "保护模式"),
+        new(SandboxMode.StrictIsolation, "严格隔离"),
+    ];
+
+    /// <summary>沙盒启动模式（主页下拉即时生效并落盘）：关闭/保护/严格隔离。
+    /// 严格隔离断网会挡住游戏内联机/联网 mod，选择处 UI 有提示。</summary>
+    public SandboxMode SandboxMode
+    {
+        get => _sandboxMode;
+        set
+        {
+            if (_sandboxMode == value) return;
+            _sandboxMode = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(SelectedSandboxOption));
+            LauncherSettings.Current.SandboxMode = value;
+            LauncherSettings.Current.Save();
+        }
+    }
+    private SandboxMode _sandboxMode = LauncherSettings.Current.SandboxMode;
+
+    /// <summary>主页下拉选中项（与 SandboxMode 双向：选 → 写模式并落盘）</summary>
+    public SandboxOption? SelectedSandboxOption
+    {
+        get => SandboxOptions.FirstOrDefault(o => o.Mode == _sandboxMode);
+        set { if (value is not null && value.Mode != _sandboxMode) SandboxMode = value.Mode; }
+    }
 
     public ObservableCollection<VersionInstanceVM> InstalledVersions { get; } = [];
 
@@ -871,7 +907,7 @@ public partial class HomeViewModel : ViewModelBase
                 onLog: AppendLog, onStage: st => Dispatcher.UIThread.Post(() => SetStage(st)),
                 ct: CancellationToken.None, extraGameArgs: extraGameArgs,
                 userType: account.Type == "microsoft" ? "msa" : "legacy",
-                skinUrl: skinUrl));
+                skinUrl: skinUrl, sandboxMode: SandboxMode));
 
             // 游戏进程已启动（窗口拉起）
             IsLaunching = false;

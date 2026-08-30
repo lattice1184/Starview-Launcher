@@ -6,6 +6,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Launcher.App.Services;
 using Launcher.Core.Launch;
+using Launcher.Core.Launch.Sandbox;
 using Launcher.Core.Services;
 using Launcher.Core.Update;
 using Launcher.Core.Utils;
@@ -29,6 +30,9 @@ public sealed record JvmProfileOption(string Name, PerformanceProfile Value);
 
 /// <summary>进程优先级选项（游戏 JVM 进程；独立设置不随性能档位）</summary>
 public sealed record GamePriorityOption(string Name, GamePriority Value);
+
+/// <summary>沙盒模式选项（设置页/主页下拉共用文案）</summary>
+public sealed record SandboxModeOption(string Name, SandboxMode Value);
 
 /// <summary>
 /// 设置页：游戏目录 / 版本隔离 / 内存预设 / Java 路径 / 额外 JVM 参数 / 下载选项。
@@ -109,6 +113,18 @@ public partial class SettingsViewModel : ViewModelBase
     /// <summary>当前进程优先级（游戏）</summary>
     [ObservableProperty]
     public partial GamePriorityOption? SelectedGamePriority { get; set; }
+
+    /// <summary>沙盒模式档位（普通/保护/严格隔离——严格隔离断网会挡联机，tooltip 已提示）</summary>
+    public IReadOnlyList<SandboxModeOption> SandboxModeOptions { get; } =
+    [
+        new("普通启动", SandboxMode.Disabled),
+        new("保护模式", SandboxMode.Protected),
+        new("严格隔离", SandboxMode.StrictIsolation),
+    ];
+
+    /// <summary>当前沙盒模式（默认启动模式；主页下拉可临时改单次）</summary>
+    [ObservableProperty]
+    public partial SandboxModeOption? SelectedSandboxMode { get; set; }
 
     /// <summary>启动随机小提示（彩蛋开关）</summary>
     [ObservableProperty]
@@ -377,6 +393,7 @@ public partial class SettingsViewModel : ViewModelBase
         EcoFollowInstance = s.EcoFollowInstance;
         SelectedJvmProfile = JvmProfileOptions.FirstOrDefault(o => o.Value == s.JvmProfile) ?? JvmProfileOptions[1];
         SelectedGamePriority = GamePriorityOptions.FirstOrDefault(o => o.Value == s.GamePriority) ?? GamePriorityOptions[1];
+        SelectedSandboxMode = SandboxModeOptions.FirstOrDefault(o => o.Value == s.SandboxMode) ?? SandboxModeOptions[0];
         StartupTipEnabled = s.StartupTipEnabled;
         AutoCheckUpdate = s.AutoCheckUpdate;
         SelectedDownloadSource = DownloadSourceOptions.FirstOrDefault(o => o.Value == s.DownloadSource) ?? DownloadSourceOptions[0];
@@ -436,6 +453,7 @@ public partial class SettingsViewModel : ViewModelBase
         s.DownloadSource = SelectedDownloadSource?.Value ?? DownloadSourcePreference.OfficialFirst;
         s.JvmProfile = SelectedJvmProfile?.Value ?? PerformanceProfile.Medium;
         s.GamePriority = SelectedGamePriority?.Value ?? GamePriority.Normal;
+        s.SandboxMode = SelectedSandboxMode?.Value ?? SandboxMode.Disabled;
         s.StartupTipEnabled = StartupTipEnabled;
         s.AutoCheckUpdate = AutoCheckUpdate;
         s.MaxConcurrentDownloads = MaxConcurrentDownloads;
@@ -496,6 +514,9 @@ public partial class SettingsViewModel : ViewModelBase
 
     /// <summary>进程优先级改动即时保存</summary>
     partial void OnSelectedGamePriorityChanged(GamePriorityOption? value) => Save();
+
+    /// <summary>沙盒模式改动即时保存（主页下拉与之联动的是 LauncherSettings.Current.SandboxMode）</summary>
+    partial void OnSelectedSandboxModeChanged(SandboxModeOption? value) => Save();
     partial void OnStartupTipEnabledChanged(bool value)
     {
         Save();
