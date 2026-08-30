@@ -13,9 +13,11 @@ public sealed class LogLineBrushConverter : IValueConverter
         => value is LogLineKind kind
             ? new SolidColorBrush(kind switch
             {
-                LogLineKind.Error => Color.Parse("#E05A5A"),
-                LogLineKind.Launcher => Color.Parse("#4FC3F7"),
-                _ => Color.Parse("#E8ECF4"),
+                LogLineKind.Warn => Color.Parse("#E8B84B"),   // 警告：琥珀
+                LogLineKind.Error => Color.Parse("#E05A5A"),  // 报错：红
+                LogLineKind.Fatal => Color.Parse("#C62828"),  // 致命：深红
+                LogLineKind.Launcher => Color.Parse("#4FC3F7"), // 启动器事件(§)：强调青
+                _ => Color.Parse("#E8ECF4"),                  // 普通：近白
             })
             : null;
 

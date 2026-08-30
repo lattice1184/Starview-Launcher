@@ -16,11 +16,11 @@ using Microsoft.Extensions.Logging;
 
 namespace Launcher.App.ViewModels;
 
-/// <summary>启动日志行类别：普通 / 报错（ERROR/WARN/FATAL/异常）/ 启动器事件(§)</summary>
-public enum LogLineKind { Normal, Error, Launcher }
+/// <summary>启动日志行类别：普通 / 警告 / 报错 / 致命 / 启动器事件(§)（着色与层级用）</summary>
+public enum LogLineKind { Normal, Warn, Error, Fatal, Launcher }
 
-/// <summary>启动日志行（控制台显示）：文本 + 类别（着色用）</summary>
-public sealed record LogLine(string Text, LogLineKind Kind);
+/// <summary>启动日志行（控制台显示）：文本 + 类别 + 时间戳（着色与层级用）</summary>
+public sealed record LogLine(string Text, LogLineKind Kind, string Timestamp);
 
 /// <summary>
 /// 主页：玩家信息 + 版本选择 + 启动状态机（阶段指示条）+ 游戏控制台。
@@ -31,7 +31,7 @@ public partial class HomeViewModel : ViewModelBase
     public SettingsViewModel Settings => MainViewModel.Current?.Settings!;
 
     private static readonly string[] StageNames =
-        ["解析版本", "检测 Java", "检查模组兼容性", "解压 natives", "启动 JVM", "游戏加载中", "运行中"];
+        ["解析版本", "检测 Java", "检查模组兼容性", "解压 natives", "启动 JVM", "拉起游戏窗口", "游戏加载中", "运行中"];
 
     private readonly GameLaunchService _launcher = new();
     private readonly AccountService _accounts = AccountService.Shared;
@@ -567,15 +567,16 @@ public partial class HomeViewModel : ViewModelBase
             Stages[i].IsDone = i < idx;
             Stages[i].IsCurrent = i == idx;
         }
-        // 阶段进度映射：7 阶段平滑递增（8-30 新增"检查模组兼容性"占 idx=2，进度同步后移）
+        // 阶段进度映射：8 阶段平滑递增（8-30 加"拉起游戏窗口"占 idx=5，进度同步后移）
         LaunchProgress = idx switch
         {
             0 => 15,  // 解析版本
             1 => 30,  // 检测 Java
             2 => 45,  // 检查模组兼容性
             3 => 60,  // 解压 natives
-            4 => 80,  // 启动 JVM
-            5 => 90,  // 游戏加载中
+            4 => 72,  // 启动 JVM
+            5 => 85,  // 拉起游戏窗口
+            6 => 92,  // 游戏加载中
             _ => LaunchProgress, // 运行中
         };
         LaunchStatus = stageName == "启动 JVM" ? "正在启动 JVM…" : $"{stageName}…";
@@ -877,7 +878,8 @@ public partial class HomeViewModel : ViewModelBase
             IsRunning = true;
             LaunchState = "运行中";
             LaunchProgress = 100;
-            LaunchStatus = $"游戏运行中，账号 {account.Name}。点停止结束";
+            LaunchStatus = $"游戏运行中，账号 {account.Name}。点强制关闭结束";
+            SetStage("游戏加载中"); // 8-30 窗口拉起后、正式运行前，补齐"游戏加载中"阶段（此前是死阶段）
             SetStage("运行中"); // 8-26 删「已拉起」toast——窗口出现即反馈
 
             // 等待退出
@@ -1169,8 +1171,8 @@ public partial class HomeViewModel : ViewModelBase
     private void StopGame()
     {
         _userStopped = true;
-        try { _running?.Process.Kill(); } catch { }
-        AppendLog("§ 已请求停止游戏");
+        try { _running?.Process.Kill(entireProcessTree: true); } catch { } // 整树强杀（含 JVM 子进程），无确认（用户拍板）
+        AppendLog("§ 已强制关闭游戏进程");
     }
 
     private void AppendLog(string line)
@@ -1184,12 +1186,12 @@ public partial class HomeViewModel : ViewModelBase
         // 8-26 屏幕也过滤 INFO 噪音（同落盘）：控制台只显示启动器事件 + 错误/警告/异常，不再刷屏
         if (!IsKeyLine(line)) return;
         if (GameLogs.Count >= MaxLogLines) GameLogs.RemoveAt(0);
-        GameLogs.Add(new LogLine(line, Classify(line)));
+        GameLogs.Add(new LogLine(line, Classify(line), DateTime.Now.ToString("HH:mm:ss")));
         HasLogs = true;
         AppendToLaunchLog(line);
     }
 
-    /// <summary>8-26 日志行着色类别：启动器事件(§)强调色；ERROR/WARN/FATAL/异常标红（报错区域标记）</summary>
+    /// <summary>8-30 日志行着色类别：启动器事件(§)强调色；WARN 琥珀、ERROR 红、FATAL 深红、异常堆栈红</summary>
     private static LogLineKind Classify(string line)
     {
         if (line.StartsWith('§')) return LogLineKind.Launcher;
@@ -1197,9 +1199,15 @@ public partial class HomeViewModel : ViewModelBase
             || line.Contains("Caused by", StringComparison.OrdinalIgnoreCase)
             || line.Contains("Crashed!", StringComparison.OrdinalIgnoreCase)
             || line.TrimStart().StartsWith("at ", StringComparison.Ordinal)) return LogLineKind.Error;
-        return System.Text.RegularExpressions.Regex.IsMatch(line,
-            @"\[(\w+)\/(ERROR|WARN|FATAL)\]", System.Text.RegularExpressions.RegexOptions.IgnoreCase)
-            ? LogLineKind.Error : LogLineKind.Normal;
+        var m = System.Text.RegularExpressions.Regex.Match(line,
+            @"\[(\w+)\/(ERROR|WARN|FATAL)\]", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        if (!m.Success) return LogLineKind.Normal;
+        return m.Groups[2].Value.ToUpperInvariant() switch
+        {
+            "FATAL" => LogLineKind.Fatal,
+            "WARN" => LogLineKind.Warn,
+            _ => LogLineKind.Error,
+        };
     }
 
     /// <summary>8-18 本次启动的日志文件路径（启动会话固定——启动记录可关联查看；null=未开始落盘）</summary>
@@ -1218,7 +1226,8 @@ public partial class HomeViewModel : ViewModelBase
         catch { }
     }
 
-    /// <summary>8-19 日志行筛选：启动器事件（§）全保留；游戏输出只保留级别 ERROR/WARN/FATAL 与异常堆栈行</summary>
+    /// <summary>8-30 日志行筛选：启动器事件（§）全保留；ERROR/WARN/FATAL/异常堆栈保留；
+    /// INFO 里启动关键过程行也保留（玩家看得懂，非轮询噪声），其余丢</summary>
     private static bool IsKeyLine(string line)
     {
         if (line.StartsWith('§')) return true;
@@ -1230,7 +1239,14 @@ public partial class HomeViewModel : ViewModelBase
         // 带级别标记的游戏行：ERROR/WARN/FATAL 保留，INFO/DEBUG 丢
         var m = System.Text.RegularExpressions.Regex.Match(line,
             @"\[(\w+)\/(ERROR|WARN|FATAL)\]", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-        return m.Success;
+        if (m.Success) return true;
+        // 8-30 放宽：保留启动关键 INFO（游戏加载/环境/版本初始化），丢弃状态轮询/心跳类噪声
+        return line.Contains("Loading Minecraft", StringComparison.OrdinalIgnoreCase)
+            || line.Contains("Backend library", StringComparison.OrdinalIgnoreCase)
+            || line.Contains("Setting user", StringComparison.OrdinalIgnoreCase)
+            || line.Contains("LWJGL Version", StringComparison.OrdinalIgnoreCase)
+            || line.Contains("Environment:", StringComparison.OrdinalIgnoreCase)
+            || line.Contains("Minecraft version", StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>8-19 新启动会话：启动即定日志文件并创建（不等待首次输出——

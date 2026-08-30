@@ -43,9 +43,10 @@
                             IsEnabled="{Binding CanLaunch}"
                             IsVisible="{Binding !IsRunning}"
                             ToolTip.Tip="{Binding LaunchButtonTip}"/>
-                    <Button Grid.Column="2" Content="停止" Padding="26,9" FontSize="13"
+                    <Button Grid.Column="2" Content="强制关闭" Padding="26,9" FontSize="13"
                             Command="{Binding StopGameCommand}" VerticalAlignment="Center"
-                            IsVisible="{Binding IsRunning}"/>
+                            IsVisible="{Binding IsRunning}"
+                            ToolTip.Tip="直接结束游戏进程（含子进程），不二次确认"/>
                     <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center" MinWidth="84">
                         <Border Width="8" Height="8" CornerRadius="4" Background="{Binding StateColor}"
                                 VerticalAlignment="Center"/>

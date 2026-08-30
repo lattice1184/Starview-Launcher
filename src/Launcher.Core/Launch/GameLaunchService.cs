@@ -84,7 +84,9 @@ public sealed class GameLaunchService
         ExtractNatives(profile.NativeJars, profile.NativesDirectory, onLog);
 
         onStage?.Invoke("启动 JVM");
-        return LaunchProcess.Start(profile, onLog, ct, LauncherSettings.Current.GamePriority);
+        var result = LaunchProcess.Start(profile, onLog, ct, LauncherSettings.Current.GamePriority);
+        onStage?.Invoke("拉起游戏窗口"); // 8-30 进程已拉起——HomeViewModel 的"拉起游戏窗口"阶段
+        return result;
     }
 
     /// <summary>解压 natives：只提取原生库文件（.dll/.so/.dylib）平铺到 natives 根目录（忽略 jar 内目录结构）。
