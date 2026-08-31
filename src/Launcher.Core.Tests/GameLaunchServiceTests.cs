@@ -54,11 +54,17 @@ public class GameLaunchServiceTests
         var gameDir = SetupGameDir(version, createLibrary: true);
 
         var svc = new GameLaunchService();
-        // 文件齐 → 校验通过 → 走到 Java 选择（99 必无）→ InvalidOperationException「需要 Java 99」
-        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            svc.LaunchAsync(version.Id, gameDir, "u", "uuid", "token", 2048,
-                null, javaPathOverride: null, onLog: _ => { }));
+        // 8-31 文件齐 → 校验通过 → 走到 Java 选择（99 必无）→ 自动补齐路径。
+        // 测试置 DisableForTests 让补齐直接抛清晰异常（不走真下载 100MB 进 AppData）
+        JavaProvisioningService.DisableForTests = true;
+        try
+        {
+            var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                svc.LaunchAsync(version.Id, gameDir, "u", "uuid", "token", 2048,
+                    null, javaPathOverride: null, onLog: _ => { }));
 
-        Assert.Contains("Java 99", ex.Message);
+            Assert.Contains("Java 99", ex.Message);
+        }
+        finally { JavaProvisioningService.DisableForTests = false; }
     }
 }

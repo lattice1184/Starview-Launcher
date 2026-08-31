@@ -13,8 +13,9 @@ namespace Launcher.Core.Launch;
 /// </summary>
 public static class JavaSelector
 {
-    /// <summary>已知 runtime 组件名 → 大版本（AppData\.minecraft\runtime 官方布局）</summary>
-    private static readonly (string Name, int Major)[] Runtimes =
+    /// <summary>已知 runtime 组件名 → 大版本（AppData\.minecraft\runtime 官方布局）。
+    /// 8-31 internal：JavaProvisioningService 复用选组件（缺 Java 自动补齐）</summary>
+    internal static readonly (string Name, int Major)[] Runtimes =
     [
         ("java-runtime-epsilon", 25),
         ("java-runtime-delta", 21),
@@ -24,12 +25,20 @@ public static class JavaSelector
     ];
 
     /// <summary>平台 Java 可执行文件名（Windows: java.exe；Unix: java）</summary>
-    private static string JavaExe => OperatingSystem.IsWindows() ? "java.exe" : "java";
+    internal static string JavaExe => OperatingSystem.IsWindows() ? "java.exe" : "java";
 
     /// <summary>Mojang 官方 runtime 平台子目录（windows-x64 / linux-x64 / osx-arm64 / osx-x86_64）</summary>
-    private static string OsRuntimeDir => OperatingSystem.IsMacOS()
+    internal static string OsRuntimeDir => OperatingSystem.IsMacOS()
         ? (RuntimeInformation.ProcessArchitecture == Architecture.Arm64 ? "osx-arm64" : "osx-x86_64")
         : OperatingSystem.IsWindows() ? "windows-x64" : "linux-x64";
+
+    /// <summary>8-31 Mojang 官方 runtime 根目录（硬编码家目录，不跟配置/XDG——与扫描一致）：
+    /// Windows %AppData%\.minecraft / macOS ~/Library/Application Support/minecraft / Linux ~/.minecraft</summary>
+    internal static string MinecraftRoot() => OperatingSystem.IsWindows()
+        ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), ".minecraft")
+        : OperatingSystem.IsMacOS()
+            ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Library", "Application Support", "minecraft")
+            : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".minecraft");
 
     public sealed record JavaInstall(string Path, int Major);
 
@@ -92,12 +101,7 @@ public static class JavaSelector
         // 1. .minecraft\runtime 官方布局（PCL / 官方启动器缓存）——大版本已知（平台子目录）。
         //    Windows 在 %AppData%\.minecraft；macOS 在 ~/Library/Application Support/minecraft；
         //    Linux 在 ~/.minecraft（不跟 XDG——Mojang 硬编码家目录）
-        var mcRoot = OperatingSystem.IsWindows()
-            ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), ".minecraft")
-            : OperatingSystem.IsMacOS()
-                ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Library", "Application Support", "minecraft")
-                : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".minecraft");
-        var runtimeBase = Path.Combine(mcRoot, "runtime");
+        var runtimeBase = Path.Combine(MinecraftRoot(), "runtime");
         foreach (var (name, major) in Runtimes)
         {
             Add(Path.Combine(runtimeBase, name, OsRuntimeDir, name, "bin", JavaExe), major);

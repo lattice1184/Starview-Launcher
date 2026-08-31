@@ -69,9 +69,9 @@ public sealed class GameLaunchService
             ? ov
             : LauncherSettings.Current.JavaPath is { } custom && File.Exists(custom)
                 ? custom
-                : JavaSelector.Pick(requiredMajor)
-                    ?? throw new InvalidOperationException(
-                        $"需要 Java {requiredMajor}，但本机未找到匹配版本（可在设置页手动指定 Java 路径）");
+                // 8-31 缺 Java 自动补齐：macOS（尤其 Apple Silicon 出厂不带 Java）探测失败 → 自动下载
+                // Mojang 官方运行时到 JavaSelector 扫描路径。失败由 EnsureJavaAsync 抛清晰异常。
+                : await JavaProvisioningService.EnsureJavaAsync(requiredMajor, onStage, ct);
 
         // 4. 构建档案 + natives 解压 + log4j 兜底 + 启动进程
         onStage?.Invoke("解压 natives");
