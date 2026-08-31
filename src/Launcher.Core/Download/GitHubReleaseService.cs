@@ -1,4 +1,5 @@
 using System.Net.Http.Headers;
+using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -35,7 +36,7 @@ public static class GitHubReleaseService
 
         var url = $"https://api.github.com/repos/{Owner}/{Repo}/releases/latest";
         using var req = new HttpRequestMessage(HttpMethod.Get, url);
-        req.Headers.UserAgent.ParseAdd("YanKa-Launcher/0.1");
+        req.Headers.UserAgent.ParseAdd("Starview-Launcher/0.1");
         if (GitHubApiDirect.EffectiveToken() is { } token)
             req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
 
@@ -76,15 +77,19 @@ public static class GitHubReleaseService
         return null;
     }
 
-    /// <summary>平台参数化匹配（internal 供测试覆盖三平台）</summary>
-    internal static AssetInfo? MatchFor(LatestRelease? release, string os)
+    /// <summary>平台参数化匹配（internal 供测试覆盖三平台；archOverride 供测试模拟 Mac 两种架构）</summary>
+    internal static AssetInfo? MatchFor(LatestRelease? release, string os, Architecture? archOverride = null)
     {
         if (release is null || release.Assets.Count == 0) return null;
+        var arch = archOverride ?? RuntimeInformation.OSArchitecture;
         return os switch
         {
             "windows" => release.Assets.FirstOrDefault(a => string.Equals(a.Name, "Starview-Launcher.exe", StringComparison.OrdinalIgnoreCase)),
             "linux" => FindByPrefix(release.Assets, "starview-linux-x64-"),
-            "macos" => FindByPrefix(release.Assets, "starview-osx-arm64-") ?? FindByPrefix(release.Assets, "starview-osx-x64-"),
+            // 8-31 按本机架构匹配（Intel Mac 此前固定拿 arm64 包 → 打不开）。arm64 优先于 x64；兜底都有。
+            "macos" => arch == Architecture.X64
+                ? FindByPrefix(release.Assets, "starview-osx-x64-") ?? FindByPrefix(release.Assets, "starview-osx-arm64-")
+                : FindByPrefix(release.Assets, "starview-osx-arm64-") ?? FindByPrefix(release.Assets, "starview-osx-x64-"),
             _ => null,
         };
     }

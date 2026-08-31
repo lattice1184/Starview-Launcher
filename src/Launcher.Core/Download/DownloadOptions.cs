@@ -99,8 +99,9 @@ public sealed class DownloadOptions
     /// <summary>源死亡判定：采样间隔（毫秒）</summary>
     public long SlowProbeMs { get; init; } = 5000;
 
-    /// <summary>源死亡判定：连续低速采样数（默认 5s×6 = 持续 30s 龟速才判死——窗口偏长防误杀）</summary>
-    public int SlowSamples { get; init; } = 6;
+    /// <summary>源死亡判定：连续低速采样数（默认 5s×2 = 持续 10s 龟速判死——8-31 从 30s 缩到 10s：
+    /// 前期不乏力，慢源 10s 内退场换源；SlowsSourceDetector 强制 ≥2 次采样防慢启动误杀）</summary>
+    public int SlowSamples { get; init; } = 2;
 
     public static DownloadOptions Default { get; } = new();
 

@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http;
+using System.Runtime.InteropServices;
 using Launcher.Core.Download;
 
 namespace Launcher.Core.Tests;
@@ -93,8 +94,9 @@ public class GitHubReleaseServiceTests
 
         Assert.Equal("Starview-Launcher.exe", GitHubReleaseService.MatchFor(latest, "windows")!.Name);
         Assert.Equal("starview-linux-x64-20260830.tar.gz", GitHubReleaseService.MatchFor(latest, "linux")!.Name);
-        // macos 优先 arm64
-        Assert.Equal("starview-osx-arm64-20260830.tar.gz", GitHubReleaseService.MatchFor(latest, "macos")!.Name);
+        // 8-31 macos 按架构匹配（archOverride 模拟；Intel 拿 x64、Apple Silicon 拿 arm64）
+        Assert.Equal("starview-osx-arm64-20260830.tar.gz", GitHubReleaseService.MatchFor(latest, "macos", Architecture.Arm64)!.Name);
+        Assert.Equal("starview-osx-x64-20260830.tar.gz", GitHubReleaseService.MatchFor(latest, "macos", Architecture.X64)!.Name);
     }
 
     [Fact]
@@ -107,7 +109,7 @@ public class GitHubReleaseServiceTests
                 new("starview-osx-arm64-20260830.tar.gz", "https://x.tar.gz", 4),
             ], null);
 
-        Assert.Equal("starview-osx-arm64-20260830.tar.gz", GitHubReleaseService.MatchFor(latest, "macos")!.Name);
+        Assert.Equal("starview-osx-arm64-20260830.tar.gz", GitHubReleaseService.MatchFor(latest, "macos", Architecture.Arm64)!.Name);
     }
 
     [Fact]

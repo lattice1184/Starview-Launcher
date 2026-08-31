@@ -74,16 +74,6 @@
                            ToolTip.Tip="铺满右侧内容区。自动压暗，保证你能看清。有图就用图"
                            VerticalAlignment="Center"/>
             </Grid>
-            <TextBlock Text="界面与操作" Classes="group-sub"/>
-            <StackPanel Orientation="Horizontal" Spacing="8">
-                <TextBlock Text="界面密度" Classes="setting-label" VerticalAlignment="Center"/>
-                <Button Content="紧凑" Classes="ghost" FontSize="12" Padding="12,5" Click="OnDensityClick"
-                        CommandParameter="0"/>
-                <Button Content="标准" Classes="ghost" FontSize="12" Padding="12,5" Click="OnDensityClick"
-                        CommandParameter="1"/>
-                <Button Content="舒适" Classes="ghost" FontSize="12" Padding="12,5" Click="OnDensityClick"
-                        CommandParameter="2"/>
-            </StackPanel>
             <StackPanel Orientation="Horizontal" Spacing="8">
                 <Button Content="保存并应用" Classes="primary" FontSize="12" Padding="16,6"
                         Command="{Binding SaveAppearanceCommand}"/>

@@ -35,7 +35,7 @@ public sealed class EcosystemService
         McmodSearchService? mcmod = null, string? cacheDir = null, CurseForgeService? curseforge = null)
     {
         _http = http ?? HttpClientPool.Create();
-        _http.DefaultRequestHeaders.UserAgent.ParseAdd("YanKa-Launcher/0.1");
+        _http.DefaultRequestHeaders.UserAgent.ParseAdd("Starview-Launcher/0.1");
         _downloads = downloads ?? new DownloadService();
         _gameDirectory = gameDirectory ?? GameDirectory.Detect();
         // 8-19 生态修缮：mcmod 搜索/详情页共享同一缓存目录（TTL 24h，重复搜索零网络）

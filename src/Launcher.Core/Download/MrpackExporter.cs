@@ -54,7 +54,7 @@ public static class MrpackExporter
             game = "minecraft",
             versionId = options.Name,
             name = options.Name,
-            summary = options.Description.Length > 0 ? options.Description : $"由 YanKa Launcher 导出的整合包 {options.Name}",
+            summary = options.Description.Length > 0 ? options.Description : $"由 Starview 导出的整合包 {options.Name}",
             files,
             dependencies = BuildDependencies(mcVersion, loader, versionDir),
         };

@@ -41,18 +41,51 @@
                             </StackPanel>
                         </StackPanel>
                     </Button>
-                    <!-- 8-30 沙盒下拉：与版本下拉并排，选择即存（严格隔离断网会挡联机，tooltip 已提示） -->
-                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-                        <ComboBox ItemsSource="{Binding InstalledVersions}" SelectedItem="{Binding SelectedVersion}"
-                                  PlaceholderText="选择版本" MinWidth="160" MaxWidth="240" VerticalAlignment="Center">
-                            <ComboBox.ItemTemplate>
+                    <!-- 8-31 版本横向条（PCL 式）：所有已装版本一排横排，点选高亮（选中项自动同步全局）；
+                         8-30 沙盒下拉并排，选择即存（严格隔离断网会挡联机，tooltip 已提示） -->
+                    <Grid Grid.Column="1" ColumnDefinitions="*,Auto" ColumnSpacing="10" VerticalAlignment="Center">
+                        <ListBox Grid.Column="0"
+                                 ItemsSource="{Binding InstalledVersions}" SelectedItem="{Binding SelectedVersion}"
+                                 Background="Transparent" BorderThickness="0" Padding="0"
+                                 ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                                 ScrollViewer.VerticalScrollBarVisibility="Disabled"
+                                 VerticalAlignment="Center">
+                            <ListBox.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <StackPanel Orientation="Horizontal" Spacing="6"/>
+                                </ItemsPanelTemplate>
+                            </ListBox.ItemsPanel>
+                            <ListBox.ItemTemplate>
                                 <DataTemplate x:DataType="vm:VersionInstanceVM">
-                                    <TextBlock Text="{Binding DisplayName}" TextTrimming="CharacterEllipsis"
-                                               MaxWidth="210" ToolTip.Tip="{Binding DisplayName}"/>
+                                    <TextBlock Text="{Binding DisplayName}" FontSize="13"
+                                               ToolTip.Tip="{Binding DisplayName}"/>
                                 </DataTemplate>
-                            </ComboBox.ItemTemplate>
-                        </ComboBox>
-                        <ComboBox ItemsSource="{x:Static vm:HomeViewModel.SandboxOptions}"
+                            </ListBox.ItemTemplate>
+                            <!-- 版本条 item 专属：圆角 chip，命中区大；选中 = accent 高亮（不再是小到看不清的下拉高亮） -->
+                            <ListBox.Styles>
+                                <Style Selector="ListBoxItem">
+                                    <Setter Property="Padding" Value="14,7"/>
+                                    <Setter Property="Background" Value="{DynamicResource BgRaised}"/>
+                                    <Setter Property="Foreground" Value="{DynamicResource TextSecondary}"/>
+                                    <Setter Property="CornerRadius" Value="{StaticResource RadiusLarge}"/>
+                                    <Setter Property="Margin" Value="0,1"/>
+                                    <Setter Property="Transitions">
+                                        <Transitions>
+                                            <BrushTransition Property="Background" Duration="0:0:0.15"/>
+                                            <BrushTransition Property="Foreground" Duration="0:0:0.15"/>
+                                        </Transitions>
+                                    </Setter>
+                                </Style>
+                                <Style Selector="ListBoxItem:pointerover">
+                                    <Setter Property="Background" Value="{DynamicResource BgHover}"/>
+                                </Style>
+                                <Style Selector="ListBoxItem:selected">
+                                    <Setter Property="Background" Value="{DynamicResource AccentDark}"/>
+                                    <Setter Property="Foreground" Value="{DynamicResource AccentLight}"/>
+                                </Style>
+                            </ListBox.Styles>
+                        </ListBox>
+                        <ComboBox Grid.Column="1" ItemsSource="{x:Static vm:HomeViewModel.SandboxOptions}"
                                   SelectedItem="{Binding SelectedSandboxOption}"
                                   MinWidth="104" VerticalAlignment="Center"
                                   ToolTip.Tip="沙盒启动：严格隔离 = 断网 + 只准读写游戏文件夹。Windows 端断网需管理员权限；断网会挡住游戏内联机">
@@ -62,7 +95,7 @@
                                 </DataTemplate>
                             </ComboBox.ItemTemplate>
                         </ComboBox>
-                    </StackPanel>
+                    </Grid>
                     <Button Grid.Column="2" Content="启动游戏" Classes="primary" Padding="26,9" FontSize="13"
                             Command="{Binding LaunchCommand}" VerticalAlignment="Center"
                             IsEnabled="{Binding CanLaunch}"

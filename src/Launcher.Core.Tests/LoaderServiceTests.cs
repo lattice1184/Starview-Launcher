@@ -16,9 +16,10 @@ public class LoaderServiceTests
                        "downloads":{"artifact":{"url":"https://maven.fabricmc.net/net/fabricmc/fabric-loader/0.16.13/fabric-loader-0.16.13.jar","size":5}}}]}
         """;
 
-    private static LoaderService CreateService(Dictionary<string, string> routes, string gameDir)
+    private static LoaderService CreateService(Dictionary<string, string> routes, string gameDir,
+        IEnumerable<string>? delayPaths = null)
     {
-        var http = new HttpClient(new StubHandler(routes));
+        var http = new HttpClient(new StubHandler(routes, delayPaths));
         var downloads = new DownloadService(http, gameDirectory: gameDir);
         // 临时缓存目录：profile json 缓存隔离（防测试间共享 AppData 缓存污染）
         var cache = Path.Combine(Path.GetTempPath(), $"lpc-{Guid.NewGuid():N}");
@@ -104,6 +105,42 @@ public class LoaderServiceTests
         Assert.Equal(2, versions.Count); // 26.x 不属于 21.1. 前缀
         Assert.Equal("21.1.110", versions[0].Version); // 数字比较 110 > 99
         Assert.Equal("21.1.99", versions[1].Version);
+    }
+
+    /// <summary>8-31 真竞速回归：镜像路径被延迟 400ms → 官方 0ms 先解析成功 → 竞速必须返回官方内容
+    /// （旧串行 GetJsonFirstAsync 会先死等镜像超时再试官方；竞速让「快的源」赢，不是「列表第一」）。</summary>
+    [Fact]
+    public async Task FabricMeta_Race_FastOfficialWinsWhenMirrorDelayed()
+    {
+        var routes = new Dictionary<string, string>
+        {
+            ["/fabric-meta/v2/versions/loader/1.21.1"] = """[{"loader":{"version":"0.99.0","stable":true}}]""", // 镜像慢但有效
+            ["/v2/versions/loader/1.21.1"] = """[{"loader":{"version":"0.19.3","stable":true}}]""",
+        };
+        var svc = CreateService(routes, Path.GetTempPath(), delayPaths: ["/fabric-meta/v2/versions/loader/1.21.1"]);
+
+        var versions = await svc.GetLoaderVersionsAsync(LoaderKind.Fabric, "1.21.1", CancellationToken.None);
+
+        Assert.Equal("0.19.3", versions[0].Version); // 快的官方胜（镜像延迟被弃用）
+    }
+
+    /// <summary>8-31 NeoForge 加 bmclapi /maven 镜像候选：官方路径延迟 400ms → 镜像 0ms 先解析成功 → 镜像胜。
+    /// （镜像 404/坏 XML 时官方兜底——NeoForgeMeta_PrefixFilteredAndNumericSorted 已覆盖该回退路径）</summary>
+    [Fact]
+    public async Task NeoForgeMeta_Race_MirrorWinsWhenOfficialDelayed()
+    {
+        var routes = new Dictionary<string, string>
+        {
+            ["/releases/net/neoforged/neoforge/maven-metadata.xml"] =
+                """<metadata><versioning><versions><version>21.1.99</version></versions></versioning></metadata>""",
+            ["/maven/net/neoforged/neoforge/maven-metadata.xml"] =
+                """<metadata><versioning><versions><version>21.1.110</version></versions></versioning></metadata>""",
+        };
+        var svc = CreateService(routes, Path.GetTempPath(), delayPaths: ["/releases/net/neoforged/neoforge/maven-metadata.xml"]);
+
+        var versions = await svc.GetLoaderVersionsAsync(LoaderKind.NeoForge, "1.21.1", CancellationToken.None);
+
+        Assert.Equal("21.1.110", versions[0].Version); // 快的 bmclapi 镜像胜
     }
 
     [Fact]
@@ -450,17 +487,23 @@ public class LoaderServiceTests
     private sealed class StubHandler : HttpMessageHandler
     {
         private readonly Dictionary<string, string> _routes;
+        private readonly HashSet<string>? _delayPaths;
 
-        public StubHandler(Dictionary<string, string> routes) => _routes = routes;
+        public StubHandler(Dictionary<string, string> routes, IEnumerable<string>? delayPaths = null)
+        {
+            _routes = routes;
+            if (delayPaths is not null) _delayPaths = new HashSet<string>(delayPaths, StringComparer.Ordinal);
+        }
 
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
         {
             var path = request.RequestUri!.AbsolutePath;
+            if (_delayPaths?.Contains(path) == true) await Task.Delay(400, ct); // 竞速测试：慢候选 400ms
             var body = _routes.TryGetValue(path, out var json) ? json : "12345"; // 5 字节，匹配 size=5 校验
-            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            return new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(body, System.Text.Encoding.UTF8),
-            });
+            };
         }
     }
 

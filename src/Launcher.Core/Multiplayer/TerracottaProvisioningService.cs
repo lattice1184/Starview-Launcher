@@ -71,7 +71,7 @@ public sealed class TerracottaProvisioningService
     public TerracottaProvisioningService(HttpMessageHandler? handler = null)
     {
         _http = new HttpClient(handler ?? new SocketsHttpHandler { ConnectTimeout = TimeSpan.FromSeconds(5) });
-        _http.DefaultRequestHeaders.UserAgent.ParseAdd("YanKa-Launcher/1.0");
+        _http.DefaultRequestHeaders.UserAgent.ParseAdd("Starview-Launcher/1.0");
     }
 
     /// <summary>当前架构名（x86_64 / arm64）</summary>

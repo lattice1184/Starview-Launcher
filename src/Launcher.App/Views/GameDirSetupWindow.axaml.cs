@@ -33,8 +33,16 @@ public partial class GameDirSetupWindow : Window
     /// <summary>使用默认目录：重置为自建目录（D 盘优先）</summary>
     private void OnReset(object? sender, RoutedEventArgs e) => PathBox.Text = GameDirectory.OwnDefault();
 
-    /// <summary>跳过：不写设置（GameDirectory 留空 → 全模块回退默认目录），直接进主页</summary>
-    private void OnSkip(object? sender, RoutedEventArgs e) => Close();
+    /// <summary>跳过：用默认目录（D 盘优先）并落盘——跳过也记住，下次不再弹（8-31 修「重装后时弹时不弹」）</summary>
+    private void OnSkip(object? sender, RoutedEventArgs e)
+    {
+        var s = LauncherSettings.Current;
+        s.GameDirectory = GameDirectory.OwnDefault();
+        s.Save();
+        global::Launcher.Core.AppState.UpdateInstanceRoot(s.GameDirectory);
+        global::Launcher.Core.Utils.GameDirectory.InvalidateScanCache();
+        Close();
+    }
 
     /// <summary>开始使用：保存设置并关闭</summary>
     private void OnConfirm(object? sender, RoutedEventArgs e)

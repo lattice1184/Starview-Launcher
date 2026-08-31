@@ -630,9 +630,9 @@ public partial class MainWindow : Window
     internal void ApplyAppearanceFromVm()
     {
         if (DataContext is MainViewModel main)
-            ApplyAppearance(main.Settings.Opacity, (DensityMode)main.Settings.DensityIndex);
+            ApplyAppearance(main.Settings.Opacity);
         else
-            ApplyAppearance(LauncherSettings.Current.Opacity, (DensityMode)LauncherSettings.Current.Density);
+            ApplyAppearance(LauncherSettings.Current.Opacity);
     }
 
     /// <summary>8-24 窗口内模态覆盖层：承载确认弹窗（DialogOverlay）。主窗口内渲染 → 不开第二个
@@ -673,7 +673,7 @@ public partial class MainWindow : Window
 
     /// <summary>应用外观设置：窗口观感档 + 界面密度（强调色由 App 应用）。
     /// 8-23 滑块改两档单选：透明档 Digger（材质只有 None/Digger，Digger 即毛玻璃），实色档 None+TintOpacity=1 纯不透明。</summary>
-    private void ApplyAppearance(OpacityMode mode, DensityMode density)
+    private void ApplyAppearance(OpacityMode mode)
     {
         // 观感：透明档固定 Digger 观感值（主区 0.30 / 导航 0.88 较实保可读）；实色档纯色不透明
         // 8-23 赋新 Material 实例（非改现有实例属性）：引用变化强制亚克力合成层重建，任何重放
@@ -695,18 +695,7 @@ public partial class MainWindow : Window
             FallbackColor = Avalonia.Media.Color.Parse("#FF12161F"),
         };
 
-        // 密度：整 UI 缩放（AL7 上调：紧凑 0.95 / 标准 1.0 / 舒适 1.15——旧 0.9 默认把整 UI 缩 10%，字太小主因）
-        if (ContentSurface?.RenderTransform is Avalonia.Media.ScaleTransform scaleTransform)
-        {
-            var scale = density switch
-            {
-                DensityMode.Compact => 0.95,
-                DensityMode.Comfortable => 1.15,
-                _ => 1.0,
-            };
-            scaleTransform.ScaleX = scale;
-            scaleTransform.ScaleY = scale;
-        }
+        // 8-31 界面密度（紧凑/舒适整 UI 缩放）已移除——固定 1.0。
 
         // 8-24 透明档字体糊修复：毛玻璃=per-pixel alpha 合成面，子像素 AA 有已知 bug 变厚发糊 → 强制灰度抗锯齿；
         // 实色档恢复子像素保最锐。TextOptions 是继承型附加属性，挂窗口根节点即覆盖全部后代文字。

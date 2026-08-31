@@ -15,6 +15,19 @@ public static class ChangelogCatalog
     /// <summary>版本分组（最新在前）</summary>
     public static IReadOnlyList<ChangelogGroup> Groups { get; } =
     [
+        new("v1.1.11",
+        [
+            "Mac 修复：打包完整应用包——之前给权限也打不开的问题根治，Intel/Apple Silicon 自动匹配",
+            "下载提速：库文件多连接、慢源更快换源、NeoForge 加镜像、bmclapi 每连接限速分片叠加（5000 资源阶段明显加速）",
+            "加载器加载不再卡：版本列表多源竞速 + 10 秒短超时（冷缓存也秒出）",
+            "数据目录改为 Starview（仅新装默认生效）；卸载重装弹窗只弹一次、跳过也记住",
+            "界面密度（紧凑/舒适）移除；导出整合包后窗口不再变回实色",
+        ]),
+        new("v1.1.10",
+        [
+            "更新后弹窗：升级完成自动列出本次更新内容",
+            "关于页更新记录按版本分组展示，最新修复一眼可见",
+        ]),
         new("v1.1.9",
         [
             "Linux 自动更新修复：更新后文件损坏打不开（解压问题根治）",

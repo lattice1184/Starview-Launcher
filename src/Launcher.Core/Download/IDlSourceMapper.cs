@@ -138,12 +138,15 @@ public sealed class BmclapiDlSourceMapper : IDlSourceMapper
         // 与 libraries.minecraft.net 同格式（bmclapi2/maven/...）；镜像不可达时多源竞速自动回退原源
         // 8-14 补 maven.minecraftforge.net：Forge 安装器/库国内直连实测 37-81KB/s 判死 2 轮失败
         // （整合包 1.20.1-47.4.0 实机）；BMCLAPI /maven 已验证 200 镜像 forge（302→minio 6MB）
+        // 8-31 补 maven.neoforged.net：NeoForge 安装器/库同治法（bmclapi /maven 已验证镜像 neoforge，
+        // PCL 2 同路）；版本列表 maven-metadata.xml 也走此镜像（竞速自动淘汰坏候选）
         if (url.Contains("maven.fabricmc.net") || url.Contains("libraries.minecraft.net")
-            || url.Contains("maven.minecraftforge.net"))
+            || url.Contains("maven.minecraftforge.net") || url.Contains("maven.neoforged.net"))
         {
             return url.Replace("https://maven.fabricmc.net", $"{Mirror}/maven")
                       .Replace("https://libraries.minecraft.net", $"{Mirror}/maven")
-                      .Replace("https://maven.minecraftforge.net", $"{Mirror}/maven");
+                      .Replace("https://maven.minecraftforge.net", $"{Mirror}/maven")
+                      .Replace("https://maven.neoforged.net", $"{Mirror}/maven");
         }
         return url;
     }

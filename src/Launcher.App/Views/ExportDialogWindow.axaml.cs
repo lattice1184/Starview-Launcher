@@ -1,4 +1,5 @@
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 using Launcher.App.Services;
@@ -8,35 +9,38 @@ using Launcher.Core.Utils;
 namespace Launcher.App.Views;
 
 /// <summary>
-/// 导出整合包设置对话框（PCL 式）：内容勾选 / 输出位置 / 包名描述。
+/// 8-31 转窗口内覆盖层：导出整合包设置（内容勾选 / 输出位置 / 包名描述）。
+/// 由 MainWindow.DialogHost 挂载（主窗不失活 → 亚克力不降级，根治「导出后主窗变回实色」），
 /// 确认返回 ExportSettings；取消/关闭返回 null。
 /// </summary>
-public partial class ExportDialogWindow : Window
+public partial class ExportDialogWindow : UserControl
 {
     private TaskCompletionSource<ExportSettings?>? _result;
+    private MainWindow? _host;
 
     public ExportDialogWindow()
     {
         InitializeComponent();
-        global::Launcher.App.Animations.UiAnim.AttachDialog(this, Root);
+        KeyDown += OnOverlayKeyDown;
     }
 
-    /// <summary>展示导出设置框（defaultDir 默认输出目录；defaultName 默认包名）</summary>
-    public static async Task<ExportSettings?> ShowAsync(Window? owner, string defaultName, string defaultDir)
+    /// <summary>展示导出设置框（host 挂载主窗；defaultDir 默认输出目录；defaultName 默认包名）</summary>
+    public static Task<ExportSettings?> ShowAsync(MainWindow host, string defaultName, string defaultDir)
     {
-        var win = new ExportDialogWindow();
-        win.NameBox.Text = defaultName;
-        win.PathBox.Text = defaultDir;
+        var view = new ExportDialogWindow { _host = host };
+        view.NameBox.Text = defaultName;
+        view.PathBox.Text = defaultDir;
         var tcs = new TaskCompletionSource<ExportSettings?>();
-        win._result = tcs;
-        if (owner is not null) await win.ShowDialog(owner);
-        else win.Show();
-        return await tcs.Task;
+        view._result = tcs;
+        host.ShowDialogOverlay(view);
+        return tcs.Task;
     }
 
     private async void OnBrowse(object? sender, RoutedEventArgs e)
     {
-        var folders = await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
+        var picker = TopLevel.GetTopLevel(this)?.StorageProvider;
+        if (picker is null) return;
+        var folders = await picker.OpenFolderPickerAsync(new FolderPickerOpenOptions
         {
             Title = "选择导出位置",
             AllowMultiple = false,
@@ -74,9 +78,11 @@ public partial class ExportDialogWindow : Window
         Close();
     }
 
-    protected override void OnClosed(EventArgs e)
+    private void OnOverlayKeyDown(object? sender, KeyEventArgs e)
     {
-        _result?.TrySetResult(null); // X/Alt+F4 兜底
-        base.OnClosed(e);
+        if (e.Key == Key.Escape) { OnCancel(sender, e); e.Handled = true; }
     }
+
+    /// <summary>收起覆盖层（DialogHost 由主窗持有）</summary>
+    private void Close() => _host?.HideDialogOverlay();
 }

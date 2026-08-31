@@ -516,10 +516,11 @@ public partial class VersionManageViewModel : ViewModelBase
         }
     }
 
-    /// <summary>导出设置对话框（PCL 式：勾选内容/位置/包名）；取消返回 null</summary>
+    /// <summary>导出设置对话框（窗口内覆盖层，PCL 式：勾选内容/位置/包名）；取消返回 null</summary>
     private async Task<ExportSettings?> ShowExportSettingsAsync()
     {
         var owner = DialogService.MainWindow();
+        if (owner is null) return null; // 主窗不存在（理论不会）→ 取消导出
         var defaultDir = Path.Combine(_gameDir, "downloads", "modpacks");
         return await Views.ExportDialogWindow.ShowAsync(owner, _versionId, defaultDir);
     }

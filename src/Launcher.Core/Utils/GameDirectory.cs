@@ -5,7 +5,7 @@ public enum GameDirectorySource { OwnDefault, Standard, Pcl, Custom }
 
 /// <summary>
 /// 游戏目录（.minecraft）解析，PCL2 式：
-/// 安装目标（下载/安装落点）永远是启动器自建目录 Downloads\YanKa Launcher\.minecraft（或用户自配）；
+/// 安装目标（下载/安装落点）永远是启动器自建目录 Downloads\Starview\.minecraft（或用户自配）；
 /// PCL / 官方等已有环境的目录只作为"扫描源"（版本可见可启动，但不接收新安装）。
 /// </summary>
 public static class GameDirectory
@@ -26,28 +26,28 @@ public static class GameDirectory
         if (OperatingSystem.IsWindows())
         {
             yield return Path.Combine(
-                Launcher.Core.Utils.AppPaths.Downloads, "YanKa Launcher", ".minecraft");
-            if (Directory.Exists("D:\\")) yield return Path.Combine("D:\\", "YanKa Launcher", ".minecraft");
+                Launcher.Core.Utils.AppPaths.Downloads, "Starview", ".minecraft");
+            if (Directory.Exists("D:\\")) yield return Path.Combine("D:\\", "Starview", ".minecraft");
         }
         else
         {
-            // Linux/macOS：~/Games/YanKa Launcher/.minecraft（无盘符概念）
+            // Linux/macOS：~/Games/Starview/.minecraft（无盘符概念）
             yield return Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Games", "YanKa Launcher", ".minecraft");
+                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Games", "Starview", ".minecraft");
         }
     }
 
-    /// <summary>启动器自建根（Windows 优先 D 盘 D:\YanKa Launcher\.minecraft，无 D 盘回退 Downloads 历史位；Linux 用 ~/Games）</summary>
+    /// <summary>启动器自建根（Windows 优先 D 盘 D:\Starview\.minecraft，无 D 盘回退 Downloads 历史位；Linux 用 ~/Games）</summary>
     public static string OwnDefault()
     {
         if (OperatingSystem.IsWindows())
         {
-            if (Directory.Exists("D:\\")) return Path.Combine("D:\\", "YanKa Launcher", ".minecraft");
+            if (Directory.Exists("D:\\")) return Path.Combine("D:\\", "Starview", ".minecraft");
             return Path.Combine(
-                Launcher.Core.Utils.AppPaths.Downloads, "YanKa Launcher", ".minecraft");
+                Launcher.Core.Utils.AppPaths.Downloads, "Starview", ".minecraft");
         }
         return Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Games", "YanKa Launcher", ".minecraft");
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Games", "Starview", ".minecraft");
     }
 
     /// <summary>安装目标目录（下载/安装落点）：用户自配 ?? 启动器自建。永不探测已有环境。</summary>

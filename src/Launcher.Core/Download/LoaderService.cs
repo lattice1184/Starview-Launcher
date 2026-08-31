@@ -28,6 +28,7 @@ public sealed class LoaderService
     private const string ForgePromos = "https://files.minecraftforge.net/net/minecraftforge/forge/promotions_slim.json";
     private const string ForgeInstallerBase = "https://maven.minecraftforge.net/net/minecraftforge/forge";
     private const string NeoForgeMetadata = "https://maven.neoforged.net/releases/net/neoforged/neoforge/maven-metadata.xml";
+    private const string NeoForgeMetadataMirror = "https://bmclapi2.bangbang93.com/maven/net/neoforged/neoforge/maven-metadata.xml";
     private const string NeoForgeInstallerBase = "https://maven.neoforged.net/releases/net/neoforged/neoforge";
 
     private readonly HttpClient _http;
@@ -47,7 +48,7 @@ public sealed class LoaderService
         _ecoCacheDir = ecoCacheDir;
         // AL28 显式超时：默认 100s 太慢——meta.fabricmc.net 国内访问实测 12s+，超时让失败快速可见（而非干等）
         _http = http ?? HttpClientPool.CreateSharedClient(TimeSpan.FromSeconds(20));
-        _http.DefaultRequestHeaders.UserAgent.ParseAdd("YanKa-Launcher/0.1");
+        _http.DefaultRequestHeaders.UserAgent.ParseAdd("Starview-Launcher/0.1");
         // 探针实测 08-09：不传 downloads 时自建服务必须带 gameDirectory，否则内部下载写到
         // GameDirectory.Detect()（默认安装位）而本服务 gameDirectory 指向别处 → Verify 查错目录报"缺文件"
         _downloads = downloads ?? new DownloadService(gameDirectory: gameDirectory);
@@ -100,9 +101,12 @@ public sealed class LoaderService
     }
 
     // ---------- AL28 版本列表本地缓存（TTL 24h，损坏/空列表回退网络） ----------
+    // 8-31 修测试隔离：缓存目录复用注入的 loaderProfileCacheDir（测试传临时目录防污染全局 AppData；
+    // 生产不传 = 落全局 DataRoot，行为不变）
 
-    private static string CacheFilePath(LoaderKind kind, string mcVersion)
-        => Path.Combine(Launcher.Core.Utils.AppPaths.DataRoot, "cache", $"loader-{kind}-{mcVersion}.json");
+    private string CacheFilePath(LoaderKind kind, string mcVersion)
+        => Path.Combine(_loaderProfileCacheDir ?? Launcher.Core.Utils.AppPaths.DataRoot, "cache",
+            $"loader-{kind}-{mcVersion}.json");
 
     private static bool TryLoadCache(string path, out List<LoaderMetaVersion> list)
     {
@@ -131,30 +135,24 @@ public sealed class LoaderService
     }
 
     /// <summary>Fabric：meta.fabricmc.net/v2/versions/loader/{mc}（最新在前，stable 优先展示）。
-    /// 8-22 双源竞速：bmclapi fabric-meta 镜像优先（国内 0.67s vs 官方 3.9s），官方失败回退——
-    /// 加载器下拉不再 20s 超时（此前直连官方，国内慢必超时）。</summary>
+    /// 8-22 双源竞速：bmclapi fabric-meta 镜像优先（国内 0.67s vs 官方 3.9s）——
+    /// 8-31 改真竞速（RaceTextParseAsync）：镜像慢/挂时官方并行先到先得，不再串行 20s 干等。</summary>
     private async Task<List<LoaderMetaVersion>> GetFabricVersionsAsync(string mcVersion, CancellationToken ct)
     {
         var mirror = $"{FabricMetaMirror}/{mcVersion}";
         var official = $"{FabricMeta}/{mcVersion}";
-        var list = await GetJsonFirstAsync<List<FabricMetaEntry>>(mirror, official, ct) ?? [];
+        var list = await RaceTextParseAsync([mirror, official],
+            text => JsonSerializer.Deserialize<List<FabricMetaEntry>>(text) ?? [], ct) ?? [];
         return list.Select(e => new LoaderMetaVersion(e.Loader?.Version ?? "", e.Loader?.Stable == true))
                    .Where(m => m.Version.Length > 0).ToList();
     }
 
-    /// <summary>8-22 双 URL 竞速拉 JSON：先试 primary（镜像），失败/超时回退 secondary（官方）。
-    /// 复用 GetJsonAsync 的序列化；镜像快则秒回，镜像挂了官方兜底。</summary>
-    private async Task<T?> GetJsonFirstAsync<T>(string primary, string secondary, CancellationToken ct) where T : class
-    {
-        try { return await GetJsonAsync<T>(primary, ct); }
-        catch { /* 镜像失败 → 官方 */ }
-        return await GetJsonAsync<T>(secondary, ct);
-    }
-
-    /// <summary>Quilt：meta.quiltmc.org/v3/versions/loader/{mc}（无 stable 字段，无 -beta/-alpha 视为稳定）</summary>
+    /// <summary>Quilt：meta.quiltmc.org/v3/versions/loader/{mc}（无 stable 字段，无 -beta/-alpha 视为稳定）
+    /// 8-31 单源也走 10s 短上限（冷缓存失败 10s 显错，不再 20s 干等）</summary>
     private async Task<List<LoaderMetaVersion>> GetQuiltVersionsAsync(string mcVersion, CancellationToken ct)
     {
-        var list = await GetJsonAsync<List<FabricMetaEntry>>($"{QuiltMeta}/{mcVersion}", ct) ?? [];
+        var list = await RaceTextParseAsync([$"{QuiltMeta}/{mcVersion}"],
+            text => JsonSerializer.Deserialize<List<FabricMetaEntry>>(text) ?? [], ct) ?? [];
         return list.Select(e => new LoaderMetaVersion(e.Loader?.Version ?? "",
                    e.Loader?.Version is { } v && !v.Contains('-'))).Where(m => m.Version.Length > 0).ToList();
     }
@@ -165,7 +163,9 @@ public sealed class LoaderService
     /// </summary>
     private async Task<List<LoaderMetaVersion>> GetForgeVersionsAsync(string mcVersion, CancellationToken ct)
     {
-        var promos = await GetJsonAsync<ForgePromotions>(ForgePromos, ct);
+        // 8-31 单源也走 10s 短上限（promos 无验证镜像候选，慢时快速失败显错而非 20s 干等）
+        var promos = await RaceTextParseAsync([ForgePromos],
+            text => JsonSerializer.Deserialize<ForgePromotions>(text) ?? new ForgePromotions(new Dictionary<string, string>()), ct);
         var list = new List<LoaderMetaVersion>();
         var recommended = promos?.Promos?.GetValueOrDefault($"{mcVersion}-recommended");
         var latest = promos?.Promos?.GetValueOrDefault($"{mcVersion}-latest");
@@ -185,14 +185,16 @@ public sealed class LoaderService
         var prefix = mcVersion.StartsWith("1.", StringComparison.Ordinal)
             ? (parts.Length >= 3 ? parts[1] + "." + parts[2] : parts[1] + ".0") + "."
             : mcVersion + ".";
-        var xml = await _http.GetStringAsync(NeoForgeMetadata, ct);
-        var doc = XDocument.Parse(xml);
-        return doc.Descendants("version").Select(v => v.Value)
-            .Where(v => v.StartsWith(prefix, StringComparison.Ordinal))
-            .Select(v => new LoaderMetaVersion(v, IsStableNeoForge(v)))
-            .OrderByDescending(v => v.Version, new VersionComparer())
-            .ThenByDescending(v => v.IsStable)
-            .ToList();
+        // 8-31 官方 + bmclapi /maven 镜像双候选竞速（先解析成功者胜）；镜像 404/坏 XML 自动淘汰回官方
+        var xml = await RaceTextParseAsync([NeoForgeMetadata, NeoForgeMetadataMirror],
+            text => XDocument.Parse(text).Descendants("version").Select(v => v.Value)
+                .Where(v => v.StartsWith(prefix, StringComparison.Ordinal))
+                .Select(v => new LoaderMetaVersion(v, IsStableNeoForge(v)))
+                .OrderByDescending(v => v.Version, new VersionComparer())
+                .ThenByDescending(v => v.IsStable)
+                .ToList(),
+            ct);
+        return xml ?? [];
     }
 
     private static bool IsStableNeoForge(string v)
@@ -615,10 +617,27 @@ public sealed class LoaderService
             throw new FileNotFoundException($"请先在版本页安装原版 {mcVersion}，再安装加载器");
     }
 
-    private async Task<T?> GetJsonAsync<T>(string url, CancellationToken ct)
+    /// <summary>8-31 加载器版本查询竞速 + 10s 短上限（冷缓存不再 20s+ 干等/串行双源）。
+    /// 候选同时发起，先「解析成功」者胜；失败/解析错自动等下一候选。单候选也走 10s 上限——
+    /// 慢源快速失败显错，而不是 20s 共享超时憋死（26.2 秒出 / 1.21.1 卡的根因：缓存冷热差异）。</summary>
+    private async Task<T?> RaceTextParseAsync<T>(IReadOnlyList<string> candidates, Func<string, T> parse, CancellationToken ct)
     {
-        var json = await _http.GetStringAsync(url, ct);
-        return JsonSerializer.Deserialize<T>(json);
+        Exception? last = null;
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        cts.CancelAfter(TimeSpan.FromSeconds(10));
+        var tasks = candidates.Select(u => _http.GetStringAsync(u, cts.Token)).ToList();
+        while (tasks.Count > 0)
+        {
+            var done = await Task.WhenAny(tasks);
+            tasks.Remove(done);
+            try
+            {
+                var text = await done;
+                return parse(text); // 解析成功即胜者；文本拿到了但 JSON/XML 坏 → 解析抛 → 等下一候选
+            }
+            catch (Exception ex) { last = ex; } // 网络失败/超时/解析错：该候选无效
+        }
+        throw last ?? new InvalidOperationException("无可用加载器版本源");
     }
 
     /// <summary>数字感知版本比较（21.1.110 &gt; 21.1.99；-beta 后缀靠 IsStable 排序）</summary>

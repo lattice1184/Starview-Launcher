@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using Avalonia.Media;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -30,7 +31,14 @@ public partial class VersionDownloadViewModel : ViewModelBase
         _installer = new VersionInstaller();
         Sidebar = new VersionSidebarViewModel();
         Detail = new DownloadDetailVM(_installer, OnInstalled);
-        Sidebar.SelectionChanged += item => Detail.Select(item);
+    }
+
+    /// <summary>8-31 行点击 / 行内 [下载]：填详情并直接走下载（弹加载器选择 → 入队 → 跳下载记录）。不先进详情页。</summary>
+    [RelayCommand]
+    private async Task DownloadVersion(VersionListItemVM item)
+    {
+        Detail.Select(item);
+        await Detail.Download();
     }
 
     private int _loaded;
@@ -83,9 +91,6 @@ public partial class VersionDownloadViewModel : ViewModelBase
             _svc.Entries.Where(e => e.Installed).Select(e => e.Id), StringComparer.OrdinalIgnoreCase);
         Sidebar.RefreshInstalled(installedSet);
         Detail.RefreshInstalled(installedSet);
-        // 8-26 下载完成后自动选中该版本（切侧栏选中 → 详情联动）
-        if (Sidebar.Items.FirstOrDefault(i => string.Equals(i.Id, versionId, StringComparison.OrdinalIgnoreCase)) is { } item)
-            Sidebar.SelectedItem = item;
     }
 }
 
@@ -94,10 +99,19 @@ public partial class DownloadDetailVM : ObservableObject
 {
     private readonly VersionInstaller _installer;
     private readonly Action<string> _onInstalled;
-    private int _sizeGeneration;
 
     [ObservableProperty]
     public partial string Id { get; set; } = "";
+
+    /// <summary>8-31 类型角标（列表行选中后带入详情）</summary>
+    [ObservableProperty]
+    public partial string TypeLabel { get; set; } = "";
+
+    [ObservableProperty]
+    public partial IBrush TypeBadgeBg { get; set; } = new SolidColorBrush(Color.Parse("#1E3A2E"));
+
+    [ObservableProperty]
+    public partial IBrush TypeBadgeFg { get; set; } = new SolidColorBrush(Color.Parse("#5AD07C"));
 
     [ObservableProperty]
     public partial string ReleaseDate { get; set; } = "";
@@ -139,38 +153,13 @@ public partial class DownloadDetailVM : ObservableObject
         ReleaseDate = item.ReleaseDate;
         Installed = item.Installed;
         ManifestUrl = item.ManifestUrl;
+        TypeLabel = item.TypeLabel;
+        TypeBadgeBg = item.TypeBadgeBg;
+        TypeBadgeFg = item.TypeBadgeFg;
         ErrorText = "";
         DownloadProgressPercent = 0;
-        SizeText = "预估体积：计算中…";
         HasSelection = true;
-        _ = LoadSizeAsync(item);
     }
-
-    private async Task LoadSizeAsync(VersionListItemVM item)
-    {
-        var gen = ++_sizeGeneration;
-        try
-        {
-            var version = await _installer.GetVersionJsonAsync(item.Id, item.ManifestUrl, CancellationToken.None);
-            if (gen != _sizeGeneration) return;
-            long total = version.Downloads?.Client?.Size ?? 0;
-            foreach (var lib in version.Libraries ?? [])
-            {
-                total += lib.Downloads?.Artifact?.Size ?? 0;
-                if (lib.Downloads?.Classifiers is { } c) total += c.Values.Sum(x => x.Size ?? 0);
-            }
-            total += version.AssetIndex?.TotalSize ?? 0;
-            total += version.Logging?.Client?.File?.Size ?? 0;
-            SizeText = total > 0 ? $"预估体积：{FormatMb(total)}" : "";
-        }
-        catch
-        {
-            if (gen == _sizeGeneration) SizeText = "";
-        }
-    }
-
-    private static string FormatMb(long bytes) => bytes >= 1024 * 1024
-        ? $"{bytes / 1024.0 / 1024:0.0} MB" : $"{bytes / 1024.0:0} KB";
 
     public void RefreshInstalled(HashSet<string> installedSet)
     {
@@ -178,9 +167,11 @@ public partial class DownloadDetailVM : ObservableObject
     }
 
     [RelayCommand]
-    private async Task Download()
+    public async Task Download()
     {
-        if (IsDownloading || Installed) return;
+        if (IsDownloading) return;
+        // 8-31 已装版本不拦：提示后照常走加载器选择 → 重新下载覆盖（用户明确要"不拦下载"）
+        if (Installed) NotificationService.Info($"{Id} 已存在此版本，将重新下载");
         // PCL 式：先选加载器（纯净/四家 + 版本），[开始下载] 才执行
         var owner = DialogService.MainWindow();
         if (owner is null) return;
@@ -238,7 +229,6 @@ public partial class DownloadDetailVM : ObservableObject
     private async Task DownloadCoreAsync(bool repair, Views.LoaderChoice? choice = null)
     {
         if (IsDownloading) return;
-        if (!repair && Installed) return;
         var targetId = Id;
         var targetUrl = ManifestUrl;
         IsDownloading = true;
@@ -301,11 +291,9 @@ public partial class DownloadDetailVM : ObservableObject
 /// <summary>左侧分类项（副标题解释分类含义）</summary>
 public sealed record VersionCategoryItemVM(string Title, VersionCategory Kind, int Count, string Subtitle);
 
-/// <summary>左栏：分类导航 + 搜索 + 版本列表（分页 10/页，左右箭头翻页）</summary>
+/// <summary>版本列表：分类 + 搜索 + 全量版本（8-31 去分页，滚动浏览；行点击/行内下载由外层 VM 处理）</summary>
 public partial class VersionSidebarViewModel : ObservableObject
 {
-    private const int PageSize = 10;
-
     private List<VersionManifestService.GameVersionEntry> _all = [];
     private readonly Dictionary<string, VersionListItemVM> _itemsById = new(StringComparer.OrdinalIgnoreCase);
 
@@ -318,30 +306,9 @@ public partial class VersionSidebarViewModel : ObservableObject
     [ObservableProperty]
     public partial string SearchText { get; set; } = "";
 
-    [ObservableProperty]
-    public partial VersionListItemVM? SelectedItem { get; set; }
-
-    // 分页状态
-    [ObservableProperty]
-    public partial int CurrentPage { get; set; }
-
-    [ObservableProperty]
-    public partial int TotalPages { get; set; } = 1;
-
-    [ObservableProperty]
-    public partial bool HasPrev { get; set; }
-
-    [ObservableProperty]
-    public partial bool HasNext { get; set; }
-
-    [ObservableProperty]
-    public partial string PageText { get; set; } = "1/1";
-
-    /// <summary>列表区透明度（分类/翻页切换时 0→1 淡入过渡，去硬切感）</summary>
+    /// <summary>列表区透明度（分类/搜索切换时 0→1 淡入过渡，去硬切感）</summary>
     [ObservableProperty]
     public partial double ListOpacity { get; set; } = 1;
-
-    public event Action<VersionListItemVM>? SelectionChanged;
 
     public void SetAllEntries(List<VersionManifestService.GameVersionEntry> all)
     {
@@ -349,47 +316,13 @@ public partial class VersionSidebarViewModel : ObservableObject
         _itemsById.Clear();
         foreach (var e in all)
             _itemsById[e.Id] = new VersionListItemVM(e.Id, e.Type, e.Installed,
-                e.ReleaseTime.ToString("yyyy-MM-dd"), e.ManifestUrl, e.GameDirectory);
+                e.ReleaseTime.ToString("yyyy-MM-dd"), e.ManifestUrl, e.GameDirectory,
+                VersionClassifier.IsAprilFools(e));
     }
 
-    [RelayCommand]
-    private void SelectCategory(VersionCategoryItemVM category) => SelectedCategory = category;
+    partial void OnSelectedCategoryChanged(VersionCategoryItemVM? value) => RebuildItems();
 
-    [RelayCommand]
-    private void PrevPage()
-    {
-        if (CurrentPage <= 0) return;
-        SelectedItem = null;
-        CurrentPage--;
-        RebuildItems();
-    }
-
-    [RelayCommand]
-    private void NextPage()
-    {
-        if (CurrentPage >= TotalPages - 1) return;
-        SelectedItem = null;
-        CurrentPage++;
-        RebuildItems();
-    }
-
-    partial void OnSelectedCategoryChanged(VersionCategoryItemVM? value)
-    {
-        SelectedItem = null;
-        CurrentPage = 0;
-        RebuildItems();
-    }
-
-    partial void OnSearchTextChanged(string value)
-    {
-        CurrentPage = 0;
-        RebuildItems();
-    }
-
-    partial void OnSelectedItemChanged(VersionListItemVM? value)
-    {
-        if (value is not null) SelectionChanged?.Invoke(value);
-    }
+    partial void OnSearchTextChanged(string value) => RebuildItems();
 
     private void RebuildItems()
     {
@@ -414,19 +347,9 @@ public partial class VersionSidebarViewModel : ObservableObject
             };
         }
 
-        var all = source.ToList();
-        TotalPages = Math.Max(1, (all.Count + PageSize - 1) / PageSize);
-        if (CurrentPage >= TotalPages) CurrentPage = TotalPages - 1;
-        HasPrev = CurrentPage > 0;
-        HasNext = CurrentPage < TotalPages - 1;
-        PageText = $"{CurrentPage + 1}/{TotalPages}";
-        foreach (var e in all.Skip(CurrentPage * PageSize).Take(PageSize))
+        // 8-31 无分页：全量加入（虚拟化列表滚动浏览，不翻页）
+        foreach (var e in source)
             Items.Add(_itemsById[e.Id]);
-
-        // 8-26 自动选中新版本：初始/切分类/换页时无选中或选中项不在本页 → 默认选本页第一条
-        // （数据源已按发布时间倒序，即最新版）
-        if (SelectedItem is null || !Items.Contains(SelectedItem))
-            SelectedItem = Items.FirstOrDefault();
 
         // 列表内容切换：先透明再淡入（DoubleTransition 平滑过渡）
         ListOpacity = 0;
@@ -466,11 +389,44 @@ public partial class VersionListItemVM : ObservableObject
     /// <summary>版本所在游戏目录（安装/管理落点；空 = 未安装）</summary>
     public string GameDirectory { get; }
 
+    /// <summary>8-31 愚人节标记（构造时由 GameVersionEntry 算好——愚人节版本 Type 字段仍是 release/snapshot，必须单独标）</summary>
+    private readonly bool _isAprilFools;
+
     [ObservableProperty]
     public partial bool Installed { get; set; }
 
+    /// <summary>8-31 类型中文标签（愚人节优先——愚人节版本 Type 字段仍是 release/snapshot）</summary>
+    public string TypeLabel => _isAprilFools
+        ? "愚人节"
+        : Type switch
+        {
+            "snapshot" => "快照",
+            "old_alpha" or "old_beta" => "远古",
+            _ => "正式",
+        };
+
+    /// <summary>8-31 类型角标底色（与「已装」角标同风格）</summary>
+    public IBrush TypeBadgeBg => _isAprilFools ? Badge("#3E2A3E")
+        : Type switch
+        {
+            "snapshot" => Badge("#3A331E"),
+            "old_alpha" or "old_beta" => Badge("#2A2A3E"),
+            _ => Badge("#1E3A2E"),
+        };
+
+    /// <summary>8-31 类型角标文字色</summary>
+    public IBrush TypeBadgeFg => _isAprilFools ? Badge("#D07AD0")
+        : Type switch
+        {
+            "snapshot" => Badge("#D0B45A"),
+            "old_alpha" or "old_beta" => Badge("#9A9AD0"),
+            _ => Badge("#5AD07C"),
+        };
+
+    private static IBrush Badge(string hex) => new SolidColorBrush(Color.Parse(hex));
+
     public VersionListItemVM(string id, string type, bool installed, string releaseDate, string? manifestUrl,
-        string gameDirectory = "")
+        string gameDirectory = "", bool isAprilFools = false)
     {
         Id = id;
         Type = type;
@@ -478,5 +434,6 @@ public partial class VersionListItemVM : ObservableObject
         ReleaseDate = releaseDate;
         ManifestUrl = manifestUrl;
         GameDirectory = gameDirectory;
+        _isAprilFools = isAprilFools;
     }
 }

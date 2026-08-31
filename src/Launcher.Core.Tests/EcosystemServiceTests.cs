@@ -8,6 +8,17 @@ namespace Launcher.Core.Tests;
 /// <summary>生态服务静态工具离线测试（不依赖网络）</summary>
 public class EcosystemServiceTests
 {
+    /// <summary>8-31 关镜像跑 GetVersionsAsync：测试 stub 只覆盖官方路径，真机 ModrinthMirrorEnabled 默认开
+    /// 会让服务先查 mcimirror 镜像（未 stub → 404）再回退官方 = 2 次请求破 Assert.Single。测试与真机设置解耦。</summary>
+    private static async Task<T> WithMirrorOffAsync<T>(Func<Task<T>> body)
+    {
+        var s = LauncherSettings.Current;
+        var original = s.ModrinthMirrorEnabled;
+        s.ModrinthMirrorEnabled = false;
+        try { return await body(); }
+        finally { s.ModrinthMirrorEnabled = original; }
+    }
+
     // ---------- BuildFacets ----------
 
     [Fact]
@@ -379,7 +390,7 @@ public class EcosystemServiceTests
         handler.Route("/v2/project/abc/version?loaders=%5B%22fabric%22%5D", VersionsJson);
         var svc = new EcosystemService(new HttpClient(handler), cacheDir: Path.Combine(Path.GetTempPath(), "eco-test-" + Guid.NewGuid().ToString("N")));
 
-        var list = await svc.GetVersionsAsync("abc", "26.2", "fabric");
+        var list = await WithMirrorOffAsync(() => svc.GetVersionsAsync("abc", "26.2", "fabric"));
 
         Assert.NotEmpty(list);
         Assert.Single(handler.Urls);                         // 恰 1 次全量
@@ -394,7 +405,7 @@ public class EcosystemServiceTests
         handler.Route("/v2/project/abc/version", "[]");
         var svc = new EcosystemService(new HttpClient(handler), cacheDir: Path.Combine(Path.GetTempPath(), "eco-test-" + Guid.NewGuid().ToString("N")));
 
-        var list = await svc.GetVersionsAsync("abc", "26.2");
+        var list = await WithMirrorOffAsync(() => svc.GetVersionsAsync("abc", "26.2"));
 
         Assert.Empty(list);
         Assert.Single(handler.Urls);                         // 全量也空 → 1 次返回，防循环
@@ -407,7 +418,7 @@ public class EcosystemServiceTests
         handler.Route("/v2/project/abc/version?game_versions=%5B%221.21.1%22%5D", "[]");
         var svc = new EcosystemService(new HttpClient(handler), cacheDir: Path.Combine(Path.GetTempPath(), "eco-test-" + Guid.NewGuid().ToString("N")));
 
-        var list = await svc.GetVersionsAsync("abc", "1.21.1");
+        var list = await WithMirrorOffAsync(() => svc.GetVersionsAsync("abc", "1.21.1"));
 
         Assert.Empty(list);             // 传统版本空 = 真实语义（mod 不支持 1.21.1）——不降级
         Assert.Single(handler.Urls);
@@ -420,7 +431,7 @@ public class EcosystemServiceTests
         handler.Route("/v2/project/abc/version?game_versions=%5B%221.21.1%22%5D", VersionsJson);
         var svc = new EcosystemService(new HttpClient(handler), cacheDir: Path.Combine(Path.GetTempPath(), "eco-test-" + Guid.NewGuid().ToString("N")));
 
-        var list = await svc.GetVersionsAsync("abc", "1.21.1");
+        var list = await WithMirrorOffAsync(() => svc.GetVersionsAsync("abc", "1.21.1"));
 
         Assert.NotEmpty(list);
         Assert.Single(handler.Urls);    // 传统版本正常路径不变

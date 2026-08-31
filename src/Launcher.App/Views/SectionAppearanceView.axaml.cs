@@ -16,12 +16,6 @@ public partial class SectionAppearanceView : UserControl
 
     private IStorageProvider? Picker => TopLevel.GetTopLevel(this)?.StorageProvider;
 
-    private void OnDensityClick(object? sender, RoutedEventArgs e)
-    {
-        if (sender is Button { CommandParameter: string idx } && int.TryParse(idx, out var i))
-            Vm!.DensityIndex = i;
-    }
-
     // ---------- 自定义颜色（#RRGGBB 提交） ----------
 
     private void OnCustomColorKeyDown(object? sender, KeyEventArgs e)

@@ -1,9 +1,6 @@
-<Window xmlns="https://github.com/avaloniaui"
+<UserControl xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        x:Class="Launcher.App.Views.ExportDialogWindow"
-        Width="460" SizeToContent="Height" CanResize="False"
-        WindowStartupLocation="CenterOwner"
-        Background="{DynamicResource BgSurface}">
+        x:Class="Launcher.App.Views.ExportDialogWindow">
 
     <StackPanel x:Name="Root" Margin="24,20" Spacing="14">
         <TextBlock Text="导出整合包" FontSize="17" FontWeight="Bold"/>
@@ -46,4 +43,4 @@
             <Button x:Name="ExportBtn" Content="开始导出" Classes="primary" Click="OnExport"/>
         </StackPanel>
     </StackPanel>
-</Window>
+</UserControl>

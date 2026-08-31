@@ -4,122 +4,95 @@
              x:Class="Launcher.App.Views.VersionDownloadView"
              x:DataType="vm:VersionDownloadViewModel">
 
-    <!-- 8-23 修复错位：原 DockPanel 按 Top-docked 内容宽保留空间，填充被挤右侧 → Grid 行布局保证全宽 -->
-    <Grid RowDefinitions="Auto,*">
-        <StackPanel Grid.Row="0" Spacing="2" Margin="0,0,0,10">
+    <!-- 8-31 重设计：三栏+翻页 → PCL2 式「顶部搜索+分类chips + 全宽版本行 + 点进全宽详情页」 -->
+    <Grid RowDefinitions="Auto,*" RowSpacing="10">
+        <StackPanel Grid.Row="0" Spacing="2">
             <TextBlock Text="下载游戏" FontSize="18" FontWeight="Bold"/>
             <TextBlock Text="{Binding Status}" Classes="sub" FontSize="12"/>
         </StackPanel>
 
-        <Grid Grid.Row="1" ColumnDefinitions="1.2*,1,2*,1,2*" ColumnSpacing="8">
-            <!-- 左：分类 + 搜索 -->
-            <DockPanel Grid.Column="0">
-                <TextBox DockPanel.Dock="Top" Text="{Binding Sidebar.SearchText, Mode=TwoWay}"
-                         Watermark="搜索版本…" Margin="0,0,0,8"/>
-                <ItemsControl DockPanel.Dock="Top" ItemsSource="{Binding Sidebar.Categories}" Margin="0,0,0,6">
-                    <ItemsControl.ItemTemplate>
-                        <DataTemplate x:DataType="vm:VersionCategoryItemVM">
-                            <Button Classes="nav" Padding="12,7" Margin="0,1" HorizontalAlignment="Stretch"
-                                    Command="{Binding $parent[UserControl].((vm:VersionDownloadViewModel)DataContext).Sidebar.SelectCategoryCommand}"
-                                    CommandParameter="{Binding}">
-                                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
-                                    <StackPanel Spacing="1">
-                                        <TextBlock Text="{Binding Title}" FontWeight="SemiBold"/>
-                                        <TextBlock Text="{Binding Subtitle}" Classes="dim" FontSize="11"/>
-                                    </StackPanel>
-                                    <TextBlock Grid.Column="1" Text="{Binding Count}" Classes="dim" FontSize="11"
-                                               VerticalAlignment="Center"/>
-                                </Grid>
-                            </Button>
-                        </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
-            </DockPanel>
+        <!-- 8-31 列表层（点行直接弹加载器下载，无详情页跳转） -->
+        <Grid Grid.Row="1" RowDefinitions="Auto,Auto,*" RowSpacing="10">
+            <TextBox Text="{Binding Sidebar.SearchText, Mode=TwoWay}" Watermark="搜索版本…" Margin="0,0,0,0"/>
 
-            <GridSplitter Grid.Column="1" Width="1" Background="{DynamicResource BorderColor}"/>
+            <!-- 分类 chips（横向一排，选中态高亮） -->
+            <ListBox Grid.Row="1" ItemsSource="{Binding Sidebar.Categories}"
+                     SelectedItem="{Binding Sidebar.SelectedCategory}"
+                     Background="Transparent" BorderThickness="0" Padding="0"
+                     ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                     ScrollViewer.VerticalScrollBarVisibility="Disabled"
+                     VerticalAlignment="Center">
+                <ListBox.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <StackPanel Orientation="Horizontal" Spacing="6"/>
+                    </ItemsPanelTemplate>
+                </ListBox.ItemsPanel>
+                <ListBox.ItemTemplate>
+                    <DataTemplate x:DataType="vm:VersionCategoryItemVM">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <TextBlock Text="{Binding Title}" FontSize="13"/>
+                            <TextBlock Text="{Binding Count}" Classes="dim" FontSize="11" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+                <ListBox.Styles>
+                    <Style Selector="ListBoxItem">
+                        <Setter Property="Padding" Value="14,7"/>
+                        <Setter Property="Background" Value="{DynamicResource BgRaised}"/>
+                        <Setter Property="Foreground" Value="{DynamicResource TextSecondary}"/>
+                        <Setter Property="CornerRadius" Value="{StaticResource RadiusLarge}"/>
+                        <Setter Property="Margin" Value="0,1"/>
+                        <Setter Property="Transitions">
+                            <Transitions>
+                                <BrushTransition Property="Background" Duration="0:0:0.15"/>
+                                <BrushTransition Property="Foreground" Duration="0:0:0.15"/>
+                            </Transitions>
+                        </Setter>
+                    </Style>
+                    <Style Selector="ListBoxItem:pointerover">
+                        <Setter Property="Background" Value="{DynamicResource BgHover}"/>
+                    </Style>
+                    <Style Selector="ListBoxItem:selected">
+                        <Setter Property="Background" Value="{DynamicResource AccentDark}"/>
+                        <Setter Property="Foreground" Value="{DynamicResource AccentLight}"/>
+                    </Style>
+                </ListBox.Styles>
+            </ListBox>
 
-            <!-- 中：版本列表 + 分页 -->
-            <DockPanel Grid.Column="2" Opacity="{Binding Sidebar.ListOpacity}">
-                <DockPanel.Transitions>
+            <!-- 版本列表（全量，无分页；行卡片点行进详情，行内[下载]直下） -->
+            <ListBox Grid.Row="2" ItemsSource="{Binding Sidebar.Items}"
+                     Opacity="{Binding Sidebar.ListOpacity}"
+                     Background="Transparent" BorderThickness="0" Padding="0"
+                     ScrollViewer.VerticalScrollBarVisibility="Auto">
+                <ListBox.Transitions>
                     <Transitions>
                         <DoubleTransition Property="Opacity" Duration="0:0:0.18"/>
                     </Transitions>
-                </DockPanel.Transitions>
-                <ListBox ItemsSource="{Binding Sidebar.Items}" SelectedItem="{Binding Sidebar.SelectedItem}"
-                         Background="Transparent" BorderThickness="0">
-                    <ListBox.ItemTemplate>
-                        <DataTemplate x:DataType="vm:VersionListItemVM">
-                            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
-                                <TextBlock Text="{Binding Id}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
-                                <Border Grid.Column="1" CornerRadius="3" Padding="6,1" Background="#1E3A2E"
+                </ListBox.Transitions>
+                <ListBox.ItemTemplate>
+                    <DataTemplate x:DataType="vm:VersionListItemVM">
+                        <Border Classes="row" Margin="0,1" Padding="14,10" Cursor="Hand" Tapped="OnVersionRowTapped">
+                            <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto" ColumnSpacing="12">
+                                <TextBlock Text="{Binding Id}" FontWeight="SemiBold" VerticalAlignment="Center"
+                                           TextTrimming="CharacterEllipsis"/>
+                                <Border Grid.Column="1" CornerRadius="3" Padding="6,1" Background="{Binding TypeBadgeBg}"
+                                        VerticalAlignment="Center" HorizontalAlignment="Left">
+                                    <TextBlock Text="{Binding TypeLabel}" FontSize="10" Foreground="{Binding TypeBadgeFg}"/>
+                                </Border>
+                                <TextBlock Grid.Column="2" Text="{Binding ReleaseDate}" Classes="dim" FontSize="12"
+                                           VerticalAlignment="Center"/>
+                                <Border Grid.Column="3" CornerRadius="3" Padding="6,1" Background="#1E3A2E"
                                         VerticalAlignment="Center" IsVisible="{Binding Installed}">
                                     <TextBlock Text="已装" FontSize="10" Foreground="#5AD07C"/>
                                 </Border>
+                                <Button Grid.Column="4" Content="下载" Classes="ghost" Padding="14,6" FontSize="12"
+                                        Command="{Binding $parent[UserControl].((vm:VersionDownloadViewModel)DataContext).DownloadVersionCommand}"
+                                        CommandParameter="{Binding}"/>
                             </Grid>
-                        </DataTemplate>
-                    </ListBox.ItemTemplate>
-                </ListBox>
-
-                <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Spacing="8"
-                            HorizontalAlignment="Center" Margin="0,8,0,0">
-                    <Button Content="◀" Classes="ghost" Padding="10,4" FontSize="12"
-                            Command="{Binding Sidebar.PrevPageCommand}" IsEnabled="{Binding Sidebar.HasPrev}"/>
-                    <TextBlock Text="{Binding Sidebar.PageText}" Classes="sub" FontSize="12"
-                               VerticalAlignment="Center" MinWidth="36" TextAlignment="Center"/>
-                    <Button Content="▶" Classes="ghost" Padding="10,4" FontSize="12"
-                            Command="{Binding Sidebar.NextPageCommand}" IsEnabled="{Binding Sidebar.HasNext}"/>
-                </StackPanel>
-            </DockPanel>
-
-            <GridSplitter Grid.Column="3" Width="1" Background="{DynamicResource BorderColor}"/>
-
-            <!-- 右：下载详情（简化：信息 + 下载/修复 + 进度） -->
-            <Border Grid.Column="4" Padding="4,0,0,0">
-                <Grid>
-                    <StackPanel IsVisible="{Binding !Detail.HasSelection}" Spacing="6"
-                                VerticalAlignment="Center" HorizontalAlignment="Center">
-                        <TextBlock Text="选一个版本，点它下载。" Classes="sub" FontSize="13"/>
-                    </StackPanel>
-
-                    <StackPanel Spacing="12" IsVisible="{Binding Detail.HasSelection}">
-                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
-                            <StackPanel Spacing="4">
-                                <!-- 长版本名（fabric-loader-0.19.3-26.3-snapshot-6）会超出窄右列：修剪 + ToolTip 看全 -->
-                                <StackPanel Orientation="Horizontal" Spacing="6">
-                                    <TextBlock Text="{Binding Detail.Id}" FontSize="24" FontWeight="Bold"
-                                               TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Detail.Id}"/>
-                                    <Border Classes="help-hint"
-                                               ToolTip.Tip="你在这里下原版游戏。Fabric/Forge 那些加载器去【版本】页装"><Path/></Border>
-                                </StackPanel>
-                                <TextBlock Text="{Binding Detail.ReleaseDate}" Classes="dim" FontSize="12"/>
-                                <TextBlock Text="{Binding Detail.SizeText}" Classes="sub" FontSize="12"/>
-                            </StackPanel>
-                            <Border Grid.Column="1" CornerRadius="4" Padding="10,4" Background="#1E3A2E"
-                                    VerticalAlignment="Top" IsVisible="{Binding Detail.Installed}">
-                                <TextBlock Text="已安装" FontSize="12" Foreground="#5AD07C" FontWeight="SemiBold"/>
-                            </Border>
-                        </Grid>
-
-                        <TextBlock Text="{Binding Detail.ErrorText}" Foreground="{StaticResource Danger}" FontSize="12"
-                                   TextWrapping="Wrap" IsVisible="{Binding Detail.HasError}"/>
-
-                        <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="12">
-                            <ProgressBar Grid.Column="0" Value="{Binding Detail.DownloadProgressPercent}" Maximum="100"
-                                         Height="6" VerticalAlignment="Center" IsVisible="{Binding Detail.ShowProgress}"/>
-                            <TextBlock Grid.Column="1" Text="{Binding Detail.DownloadProgressPercent, StringFormat={}{0:0}%}"
-                                       Classes="sub" FontSize="12" VerticalAlignment="Center"
-                                       IsVisible="{Binding Detail.ShowProgress}"/>
-                            <Button Grid.Column="2" Content="下载" Classes="primary" Padding="28,10" FontSize="14"
-                                    Command="{Binding Detail.DownloadCommand}"
-                                    IsVisible="{Binding Detail.ShowDownloadButton}"/>
-                            <Button Grid.Column="2" Content="修复" Classes="ghost" Padding="20,10" FontSize="13"
-                                    Command="{Binding Detail.RepairCommand}"
-                                    IsVisible="{Binding Detail.ShowRepairButton}"/>
-                        </Grid>
-
-                    </StackPanel>
-                </Grid>
-            </Border>
+                        </Border>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
         </Grid>
     </Grid>
 </UserControl>

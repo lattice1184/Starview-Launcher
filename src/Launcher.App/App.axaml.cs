@@ -47,9 +47,11 @@ public partial class App : Application
 
             // 8-22 首次启动先弹目录窗口（settings.json 未指定时）：提前到主窗口构造前、
             // Show() 非阻塞——不再等主链构造完才出现，也不阻塞版本扫描；跳过即用默认目录
+            // 8-31 保留引用：主窗口 Show() 后 Activate() 重新激活目录窗口（否则被主窗口盖住）
+            Views.GameDirSetupWindow? dirWindow = null;
             if (LauncherSettings.Current.GameDirectory is null)
             {
-                try { new Views.GameDirSetupWindow().Show(); }
+                try { dirWindow = new Views.GameDirSetupWindow(); dirWindow.Show(); }
                 catch (Exception ex) { System.Console.Error.WriteLine($"[FATAL] GameDirSetupWindow: {ex}"); }
             }
 
@@ -148,7 +150,7 @@ public partial class App : Application
                 memTimer.Start();
             }
             // 启动序列在 Opened 里触发（小窗 logo → 窗口放大）；这里同步做初始化，任一失败只记日志不阻止窗口出现
-            // 启动时确保自建游戏目录结构（D 盘优先；无 D 盘回退 Downloads\YanKa Launcher\.minecraft）
+            // 启动时确保自建游戏目录结构（D 盘优先；无 D 盘回退 Downloads\Starview\.minecraft）
             Guard("GameDirectory.EnsureDefault", GameDirectory.EnsureDefault);
 
             // CF Key 一次性迁移（AL50）：旧版 KeyProxy 密文 key.bin → 设置（DPAPI 加密落盘），
@@ -197,6 +199,8 @@ public partial class App : Application
 
             // Show（8-13 批次 34 终局：直接激活显示，无 splash 无等待）
             desktop.MainWindow.Show();
+            // 8-31 主窗口盖住首启目录窗口 → 重新激活目录窗口回前台（非模态，用户可跳过；已关闭则无操作）
+            dirWindow?.Activate();
 
             Guard("Lifecycle.OnLoading", () => Lifecycle.OnLoading());
             Guard("Lifecycle.OnWindowCreated", () => Lifecycle.OnWindowCreated());

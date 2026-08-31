@@ -1432,16 +1432,21 @@ public sealed class DownloadService
         // 升片守卫（剩余 ≥8MB）对小文件永不触发，探测阶段必须决策正确
         return speed >= FastSingleBps
             ? totalSize <= 8 * 1024 * 1024
-                ? IsProgressiveThrottleCdn(url) ? maxChunks : 1 // 8-24 渐进小文件 4→满并发（每连接限速，并发线性叠加）
+                ? IsProgressiveThrottleCdn(url) ? maxChunks // 8-24 渐进限速小文件满并发（每连接限速，并发线性叠加）
+                    : Math.Min(4, maxChunks) // 8-31 快源 1~8MB 库不再单连接：TLS 握手摊薄后 4 连接线性加速
+                                             //（<1MB 已在上面 ProbeBytes 早退满并发；此分支只到 ≥1MB）
                 : maxChunks // 8-24 快源大文件统一满并发：第三方 ISO/Mojang/未知快源——探测已证快源（>800KB/s），
                             // 16 并发是下载管理器常态（原 else min(4,max) 把第三方文件线程分片卡在 4）
             : speed >= SlowSingleBps ? Math.Min(4, maxChunks)
             : maxChunks;
     }
 
-    /// <summary>渐进限速 CDN（按连接累积传输量掉速——前几 MB 快、之后被 throttle）：GitHub CDN 之外，
-    /// Modrinth 文件 CDN 同特征（8-22 真机 Fabric API：开局爆速后掉到几十 KB/s）。此类源需要分片
-    /// 把每连接传输量摊在「快窗口」内，小文件也不例外。</summary>
+    /// <summary>按连接限速 CDN（限速落在「单条 TCP 连接」上——h2 多路复用会把多分片折进同一条 TCP，
+    /// 共享同一限速配额；强制 h1.1 让每分片独占 TCP → 并发线性叠加）：渐进限速（GitHub/Modrinth 前几 MB
+    /// 快之后掉）。此类源需要分片 + h1.1，小文件也不例外。
+    /// 注意：bmclapi（恒定 68KB/s/连接）只走 BuildDownloadRequest 的 h1.1（见 IsBmclapiHost），
+    /// 不进本判定——8-31 实测进本列表会跳探测直上满并发 + 换片大小，多源竞速下共享节流累加器被绕开
+    /// （限速失效，ThrottleTests 0.6s vs 期望 3s）。h1.1 单独给即可让每连接限速线性叠加。</summary>
     public static bool IsProgressiveThrottleCdn(string url)
     {
         try
@@ -1455,6 +1460,15 @@ public sealed class DownloadService
         catch { return false; }
     }
 
+    /// <summary>8-31 bmclapi 恒定每连接限速（68KB/s，8-24 实测注释）——h1.1 强制每分片独占 TCP 才能线性叠
+    /// （assets 小文件 <1MB 已满并发，此前 h2 全折进 1 条 TCP 共用 68KB/s → 5000 资源阶段整片磨）。
+    /// 与 IsProgressiveThrottleCdn 分离：只改请求版本，不碰片大小/探测决策（见该方法注释的节流教训）。</summary>
+    internal static bool IsBmclapiHost(string url)
+    {
+        try { return new Uri(url).Host == "bmclapi2.bangbang93.com"; }
+        catch { return false; }
+    }
+
     /// <summary>构建下载 GET 请求。渐进限速 CDN（cdn-raw/cdn-alt/mcimirror）强制 HTTP/1.1——openssl ALPN 实测
     /// 三者均协商 h2，而 h2 多路复用把多分片折叠到同一条 TCP、共享同一 per-连接限速配额（8-24「满并发起步」
     /// 不生效）；强制 h1 让每分片独占 TCP、独享每连接限速（91KB/s×并发线性叠加）。其他 host 保持默认版本。
@@ -1463,7 +1477,7 @@ public sealed class DownloadService
     internal static HttpRequestMessage BuildDownloadRequest(string url)
     {
         var request = new HttpRequestMessage(HttpMethod.Get, url);
-        if (IsProgressiveThrottleCdn(url))
+        if (IsProgressiveThrottleCdn(url) || IsBmclapiHost(url))
         {
             request.Version = HttpVersion.Version11;
             request.VersionPolicy = HttpVersionPolicy.RequestVersionExact;

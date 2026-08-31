@@ -23,7 +23,9 @@ public class CurseForgeApiBaseTests
     }
 
     private static CurseForgeService CreateService(UrlCaptureHandler handler, string? apiBase = null)
-        => new(null, new HttpClient(handler), null, null, apiBase);
+        // 8-31 注入测试 key：依赖真机 settings 的 CF key（未配置 → IsEnabled=false 搜索返回空 → 断言空）——
+        // 测试与真机配置解耦，不随 settings.json 状态波动
+        => new("test-key", new HttpClient(handler), null, null, apiBase);
 
     [Fact]
     public async Task SettingOverride_RoutesToProxy()

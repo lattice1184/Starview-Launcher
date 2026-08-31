@@ -7,7 +7,6 @@ namespace Launcher.Core.Utils;
 /// <summary>
 /// 启动器设置（AppData\Launcher\settings.json）：自配游戏路径 + 版本隔离开关。
 /// </summary>
-public enum DensityMode { Compact = 0, Normal = 1, Comfortable = 2 }
 
 /// <summary>窗口观感两档：透明（Blur 毛玻璃）/ 实色（纯不透明）——8-23 滑块改单选：连续透明度
 /// 在 Popup 合成降级时体现不出来，最终感知只有两种状态，干脆写死两档。</summary>
@@ -27,7 +26,7 @@ public sealed class LauncherSettings
     private static readonly string DefaultPath = Path.Combine(
         Launcher.Core.Utils.AppPaths.DataRoot, "settings.json");
 
-    /// <summary>自配游戏目录（如 C:\Users\yanka\Downloads\YanKa Launcher\.minecraft）；null = 自动探测</summary>
+    /// <summary>自配游戏目录（如 C:\Users\yanka\Downloads\Starview\.minecraft）；null = 自动探测</summary>
     public string? GameDirectory { get; set; }
 
     /// <summary>版本隔离（每个版本独立 saves/mods/options.txt，不串门）</summary>
@@ -140,9 +139,6 @@ public sealed class LauncherSettings
 
     /// <summary>自定义背景图片（绝对路径；null/空 = 无背景，用亚克力纯色）</summary>
     public string? BackgroundImagePath { get; set; }
-
-    /// <summary>界面密度（紧凑/标准/舒适 → 整 UI 缩放）</summary>
-    public DensityMode Density { get; set; } = DensityMode.Normal;
 
     /// <summary>窗口宽度（0 = 未设置，用默认 860）</summary>
     public double WindowWidth { get; set; }

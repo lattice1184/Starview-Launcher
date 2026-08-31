@@ -65,7 +65,7 @@ public sealed class EasyTierProvisioningService
     public EasyTierProvisioningService(HttpMessageHandler? handler = null)
     {
         _http = new HttpClient(handler ?? new SocketsHttpHandler { ConnectTimeout = TimeSpan.FromSeconds(5) });
-        _http.DefaultRequestHeaders.UserAgent.ParseAdd("YanKa-Launcher/1.0");
+        _http.DefaultRequestHeaders.UserAgent.ParseAdd("Starview-Launcher/1.0");
     }
 
     /// <summary>已装模块（easytier-core + easytier-cli 都在则可用），无则 null</summary>

@@ -56,9 +56,22 @@ public class RampUpTests
         Assert.Equal(HttpVersionPolicy.RequestVersionOrLower, req.VersionPolicy);
     }
 
+    [Fact]
+    public void BuildDownloadRequest_Bmclapi_ForcesHttp11ButNotProgressivePath()
+    {
+        // 8-31 bmclapi 恒定每连接限速（68KB/s）→ 强制 h1.1 让每分片独占 TCP 线性叠（同渐进 CDN 治法）；
+        // 但绝不进 IsProgressiveThrottleCdn——进列表会跳探测直上满并发 + 换片大小，竞速下绕开共享节流
+        // （ThrottleTests 0.6s vs 期望 3s 实测抓出）。h1.1 单独给即可让每连接限速叠加。
+        var req = DownloadService.BuildDownloadRequest("https://bmclapi2.bangbang93.com/ab/abcdef");
+        Assert.Equal(HttpVersion.Version11, req.Version);
+        Assert.Equal(HttpVersionPolicy.RequestVersionExact, req.VersionPolicy);
+        Assert.False(DownloadService.IsProgressiveThrottleCdn("https://bmclapi2.bangbang93.com/ab/abcdef"));
+    }
+
     [Theory]
-    // 快源：探测 0.1s 拉完 1MB → ~10MB/s → 单连接（限并发源：分片只会触发限流）
-    [InlineData(100, 1)]
+    // 8-31 快源 1~8MB 库不再单连接：TLS 握手摊薄后 4 连接线性加速（<1MB 另有早退满并发；8MB 以内封顶 4）
+    // 快源：探测 0.1s 拉完 1MB → ~10MB/s → 4 并发
+    [InlineData(100, 4)]
     // 中速：1.5s 拉 1MB → ~667KB/s → 4 并发
     [InlineData(1500, 4)]
     // 慢源：2s 窗口截断（0 字节）→ 满并发 8（按连接限速源需要分片）
@@ -105,7 +118,7 @@ public class RampUpTests
     [Theory]
     // 8-24 快源大文件统一满并发（原保底 4→满）：探测已证快源（>800KB/s），16/8 并发是下载管理器常态
     [InlineData(100, 100L * 1024 * 1024, 8)]  // 快源 + 100MB → 满并发 8（第三方 ISO/Mojang 等）
-    [InlineData(100, 8L * 1024 * 1024, 1)]    // 快源 + 恰 8MB → 1（≤8MB 非渐进小文件，限并发源不受影响）
+    [InlineData(100, 8L * 1024 * 1024, 4)]    // 快源 + 恰 8MB → 4（8-31：≤8MB 库给 4 连接，不再单连接）
     [InlineData(100, 8L * 1024 * 1024 + 1, 8)] // 快源 + 8MB+1 → 满并发 8
     public async Task Probe_FastSource_LargeFile_FloorsConcurrency(int delayMs, long totalSize, int expected)
     {
@@ -134,8 +147,8 @@ public class RampUpTests
     [InlineData("https://cdn-alt.modrinth.com/data/x/f.jar", 8)]
     [InlineData("https://mod.mcimirror.top/data/x/f.jar", 8)]
     [InlineData("https://github.com/user/repo/f.jar", 8)]
-    // 普通域小文件快源保持 1（限并发源不受影响——回归保护）
-    [InlineData("https://example.com/f.jar", 1)]
+    // 普通域小文件快源给 4（8-31：1~8MB 库多连接提速；<1MB 走无探测满并发早退）
+    [InlineData("https://example.com/f.jar", 4)]
     public async Task Probe_FastSource_SmallFile_ThrottleCdnFloorsConcurrency(string url, int expected)
     {
         var handler = new RangeHandler { Delay = TimeSpan.FromMilliseconds(50) }; // 1MB/50ms ≈ 20MB/s 快源

@@ -277,11 +277,7 @@ public partial class SettingsViewModel : ViewModelBase
 
     partial void OnBackgroundColorValueChanged(Avalonia.Media.Color value) => BackgroundColor = value.ToString(); // #AARRGGBB
 
-    /// <summary>界面密度（默认紧凑）</summary>
-    [ObservableProperty]
-    public partial int DensityIndex { get; set; } = 1; // AL7：默认标准（0=紧凑 1=标准 2=舒适）
-
-    /// <summary>外观变化（MainWindow/App 应用透明度/强调色/密度）</summary>
+    /// <summary>外观变化（MainWindow/App 应用透明度/强调色/背景）</summary>
     public event Action? AppearanceChanged;
 
     /// <summary>外观预览（点击选项即时预览，不写盘；保存才持久化）</summary>
@@ -367,7 +363,6 @@ public partial class SettingsViewModel : ViewModelBase
         CurseForgeApiBaseText = s.CurseForgeApiBase ?? "";
         ProxyAddressText = s.ProxyAddress ?? "";
         Opacity = s.Opacity;
-        DensityIndex = (int)s.Density;
         BackgroundImagePathText = s.BackgroundImagePath ?? "";
         // 强调色：非预设值（老用户自定义）动态插「自定义 #HEX」项；选中项触发 AccentColor 赋值预览
         AccentColor = s.AccentColor;
@@ -507,7 +502,6 @@ public partial class SettingsViewModel : ViewModelBase
         LauncherSettings.Current.Save();
     }
     partial void OnAccentColorChanged(string value) => PreviewChanged?.Invoke();
-    partial void OnDensityIndexChanged(int value) => PreviewChanged?.Invoke();
 
     /// <summary>背景图片路径（""=无；预览模式，保存才写盘）</summary>
     [ObservableProperty]
@@ -658,7 +652,6 @@ public partial class SettingsViewModel : ViewModelBase
         s.Opacity = Opacity;
         s.AccentColor = AccentColor;
         s.BackgroundColor = BackgroundColor;
-        s.Density = (DensityMode)DensityIndex;
         s.BackgroundImagePath = string.IsNullOrWhiteSpace(BackgroundImagePathText) ? null : BackgroundImagePathText;
         s.Save();
         AppearanceChanged?.Invoke();
@@ -679,7 +672,6 @@ public partial class SettingsViewModel : ViewModelBase
         AccentColor = "#6C8CFF";
         BackgroundColor = BackgroundPaletteMath.DefaultBackground;
         BackgroundColorValue = Avalonia.Media.Color.Parse(BackgroundColor); // 同步 ColorPicker
-        DensityIndex = 1; // 默认标准（AL7：不再默认紧凑缩小 10%）
         BackgroundImagePathText = "";
         PreviewChanged?.Invoke();
         NotificationService.Success("已重置为默认外观（点击「保存并应用」生效）");

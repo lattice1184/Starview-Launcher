@@ -87,7 +87,7 @@ public static class GitHubApiDirect
             var assetUrl = $"https://api.github.com/repos/{owner}/{repo}/releases/assets/{asset.Id}";
             using var req = new HttpRequestMessage(HttpMethod.Get, assetUrl);
             req.Headers.Accept.ParseAdd("application/octet-stream");
-            req.Headers.UserAgent.ParseAdd("YanKa-Launcher/0.1");
+            req.Headers.UserAgent.ParseAdd("Starview-Launcher/0.1");
             ApplyAuth(req);
             using var resp = await Http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct);
             if (!resp.IsSuccessStatusCode)
