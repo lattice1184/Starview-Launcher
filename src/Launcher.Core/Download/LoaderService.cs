@@ -58,6 +58,10 @@ public sealed class LoaderService
 
     // ---------- 版本列表 ----------
 
+    // 8-31 在途去重：弹窗预取 + 页面预热对同 (加载器, 版本) 并发请求共享一次网络拉取。
+    // 不重复打慢源（meta.fabricmc.net/quiltmc/neoforged 国内 4-11s+，多拉一次就多等一次）
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, Task<List<LoaderMetaVersion>>> _inflight = new();
+
     public async Task<List<LoaderMetaVersion>> GetLoaderVersionsAsync(LoaderKind kind, string mcVersion, CancellationToken ct)
     {
         // AL28 本地缓存 + AL37 stale-while-revalidate：meta.fabricmc.net 国内实测 6-26s（08-09 真机），
@@ -69,6 +73,15 @@ public sealed class LoaderService
             return cached;
         }
 
+        var key = $"{kind}|{mcVersion}";
+        var task = _inflight.GetOrAdd(key, _ => FetchAndCacheAsync(kind, mcVersion, cachePath, ct));
+        // 任务完成（或失败）即移除，避免滞留的 completed 任务被后续复用为「不返回新数据」的桩
+        _ = task.ContinueWith(_ => _inflight.TryRemove(key, out _), TaskScheduler.Default);
+        return await task;
+    }
+
+    private async Task<List<LoaderMetaVersion>> FetchAndCacheAsync(LoaderKind kind, string mcVersion, string cachePath, CancellationToken ct)
+    {
         var list = await FetchVersionsAsync(kind, mcVersion, ct);
         TrySaveCache(cachePath, list);
         return list;
@@ -624,7 +637,9 @@ public sealed class LoaderService
     {
         Exception? last = null;
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        cts.CancelAfter(TimeSpan.FromSeconds(10));
+        // 8-31 10s→15s：meta.quiltmc.org 国内实测 10.9s、bmclapi fabric 镜像 4s、fabricmc 官方 6s——
+        // 10s 会把「慢但活着」的 Quilt 误杀成失败（真机 8-31）。15s 仍远小于旧 20s 共享超时。
+        cts.CancelAfter(TimeSpan.FromSeconds(15));
         var tasks = candidates.Select(u => _http.GetStringAsync(u, cts.Token)).ToList();
         while (tasks.Count > 0)
         {

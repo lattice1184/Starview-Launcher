@@ -5,6 +5,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Launcher.App.Services;
 using Launcher.Core.Download;
+using Launcher.Core.Model.Loader;
 using Launcher.Core.Services;
 using Launcher.Core.Utils;
 
@@ -38,7 +39,28 @@ public partial class VersionDownloadViewModel : ViewModelBase
     private async Task DownloadVersion(VersionListItemVM item)
     {
         Detail.Select(item);
+        // 8-31 预热：点行即后台拉四种加载器版本列表写缓存——弹窗预取与它经 LoaderService 在途去重共享，
+        // 用户点加载器 chip 时不再干等慢源（实测 fabric 4s / quilt 11s / neoforged 连不上）
+        WarmLoaderCaches(item.Id);
         await Detail.Download();
+    }
+
+    /// <summary>后台预热该版本四种加载器的可用版本列表（失败静默；写磁盘缓存后二次即秒开）</summary>
+    private static void WarmLoaderCaches(string mcVersion)
+    {
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                var svc = new LoaderService();
+                await Task.WhenAll(
+                    svc.GetLoaderVersionsAsync(LoaderKind.Fabric, mcVersion, CancellationToken.None),
+                    svc.GetLoaderVersionsAsync(LoaderKind.Quilt, mcVersion, CancellationToken.None),
+                    svc.GetLoaderVersionsAsync(LoaderKind.Forge, mcVersion, CancellationToken.None),
+                    svc.GetLoaderVersionsAsync(LoaderKind.NeoForge, mcVersion, CancellationToken.None));
+            }
+            catch { /* 预热失败不影响主流程 */ }
+        });
     }
 
     private int _loaded;

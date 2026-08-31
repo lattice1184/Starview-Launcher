@@ -52,9 +52,9 @@ public class ChangelogStateTests
     public void GroupsAfter_ReturnsNewerNamedGroupsOnly()
     {
         var g = ChangelogCatalog.GroupsAfter("1.1.7");
-        Assert.Equal(2, g.Count); // v1.1.8 + v1.1.9（最新在前）
-        Assert.Equal("v1.1.9", g[0].Version);
-        Assert.Equal("v1.1.8", g[1].Version);
+        Assert.Equal(4, g.Count); // v1.1.11 + v1.1.10 + v1.1.9 + v1.1.8（最新在前）
+        Assert.Equal("v1.1.11", g[0].Version);
+        Assert.Equal("v1.1.10", g[1].Version);
         Assert.DoesNotContain(g, x => x.Version == ChangelogCatalog.HistoricalVersion); // 历史组不进弹窗
         Assert.All(g, x => Assert.NotEmpty(x.Items));
     }
@@ -62,7 +62,7 @@ public class ChangelogStateTests
     [Fact]
     public void GroupsAfter_Empty_ForNullOrLatest()
     {
-        Assert.Empty(ChangelogCatalog.GroupsAfter(null));   // 首装：无可弹
-        Assert.Empty(ChangelogCatalog.GroupsAfter("1.1.9")); // 已是最新：无更新
+        Assert.Empty(ChangelogCatalog.GroupsAfter(null));    // 首装：无可弹
+        Assert.Empty(ChangelogCatalog.GroupsAfter("1.1.11")); // 已是最新：无更新
     }
 }

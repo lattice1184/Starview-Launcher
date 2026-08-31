@@ -47,6 +47,19 @@ public partial class LoaderPickerViewModel : ViewModelBase
         Loaders.Add(new LoaderOptionVM("Forge", LoaderKind.Forge));
         Loaders.Add(new LoaderOptionVM("NeoForge", LoaderKind.NeoForge));
         SelectedLoader = Loaders[0];
+        // 8-31 预热全部加载器版本列表（与 LoaderChoiceDialog 同思路，此页此前无并行预取）：
+        // 切换 chip 秒出；Fabric 的首次拉取与 SelectedLoader 触发的 LoadVersionsAsync 经在途去重共享
+        _ = WarmAllAsync();
+    }
+
+    private async Task WarmAllAsync()
+    {
+        try
+        {
+            await Task.WhenAll(Enum.GetValues<LoaderKind>().Select(k =>
+                _service.GetLoaderVersionsAsync(k, _mcVersion, CancellationToken.None)));
+        }
+        catch { /* 预热失败不影响选择 */ }
     }
 
     partial void OnSelectedLoaderChanged(LoaderOptionVM? value)
