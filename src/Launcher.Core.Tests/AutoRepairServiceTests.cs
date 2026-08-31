@@ -67,10 +67,12 @@ public class AutoRepairServiceTests
         var gameDir = Path.Combine(Path.GetTempPath(), $"verify-native-{Guid.NewGuid():N}");
         var nativeLib = new LibraryJson(
             "org.lwjgl:lwjgl:3.3.1", null, null, null,
-            new LibraryDownloads(null, new Dictionary<string, DownloadFileInfo>
-            {
-                ["natives-windows"] = new DownloadFileInfo("https://x/natives.jar", "aa", 5),
-            }),
+            new LibraryDownloads(
+                new DownloadFileInfo("https://x/lwjgl.jar", "bb", 5), // 现实里 lwjgl:lwjgl 有 base artifact——补上贴合真实
+                new Dictionary<string, DownloadFileInfo>
+                {
+                    ["natives-windows"] = new DownloadFileInfo("https://x/natives.jar", "aa", 5),
+                }),
             null,
             new Dictionary<string, string> { ["windows"] = "natives-windows" },
             null);
@@ -93,6 +95,64 @@ public class AutoRepairServiceTests
         var filled = await AutoRepairService.VerifyFilesAsync(version, gameDir);
         Assert.True(filled.IsComplete);
         Assert.Equal(3, filled.Present);
+    }
+
+    /// <summary>8-31 修老版本「缺文件」：classifiers-only natives 库（无 artifact、无 url、有 natives）——
+    /// base jar 下载侧本就跳过（服务器无此文件），校验侧不得要求它存在；只校验 natives classifier jar</summary>
+    [Fact]
+    public async Task VerifyFiles_ClassifiersOnlyNatives_SkipsBaseJar()
+    {
+        var gameDir = Path.Combine(Path.GetTempPath(), $"verify-classonly-{Guid.NewGuid():N}");
+        var nativeLib = new LibraryJson(
+            "net.java.jinput:jinput-platform:2.0.5", null, null, null,
+            new LibraryDownloads(null, new Dictionary<string, DownloadFileInfo>
+            {
+                ["natives-windows"] = new DownloadFileInfo("https://x/jinput-native.jar", "cc", 5),
+            }),
+            null,
+            new Dictionary<string, string> { ["windows"] = "natives-windows" },
+            null);
+        var version = new VersionJson("1.12.2", "release", "net.minecraft.client.main.Main",
+            null, null, null, null, [nativeLib], null, null, null, null);
+
+        // 全空：只缺 client jar + natives jar（base jar 不在清单里，不得误报）
+        var report = await AutoRepairService.VerifyFilesAsync(version, gameDir);
+        Assert.Equal(2, report.Missing);
+        Assert.DoesNotContain(report.MissingFiles, p => p.Contains("jinput-platform-2.0.5.jar"));
+        Assert.Contains(report.MissingFiles, p => p.Contains("jinput-platform-2.0.5-natives-windows.jar"));
+
+        // 补齐 client + natives → 完整
+        Directory.CreateDirectory(Path.Combine(gameDir, "versions", "1.12.2"));
+        File.WriteAllText(Path.Combine(gameDir, "versions", "1.12.2", "1.12.2.jar"), "x");
+        Directory.CreateDirectory(Path.Combine(gameDir, "libraries", "net", "java", "jinput", "jinput-platform", "2.0.5"));
+        File.WriteAllText(Path.Combine(gameDir, "libraries", "net", "java", "jinput", "jinput-platform", "2.0.5", "jinput-platform-2.0.5-natives-windows.jar"), "x");
+
+        var filled = await AutoRepairService.VerifyFilesAsync(version, gameDir);
+        Assert.True(filled.IsComplete);
+        Assert.Equal(2, filled.Present);
+    }
+
+    /// <summary>8-31 修老版本「缺文件」：twitch 形态 natives 带 ${arch} 占位符——展开后才能匹配到 classifier jar</summary>
+    [Fact]
+    public async Task VerifyFiles_ArchPlaceholderNatives_ResolvesClassifier()
+    {
+        var gameDir = Path.Combine(Path.GetTempPath(), $"verify-arch-{Guid.NewGuid():N}");
+        var twitchLib = new LibraryJson(
+            "tv.twitch:twitch-platform:6.5", null, null, null,
+            new LibraryDownloads(null, new Dictionary<string, DownloadFileInfo>
+            {
+                ["natives-windows-64"] = new DownloadFileInfo("https://x/twitch-native.jar", "dd", 5),
+            }),
+            null,
+            new Dictionary<string, string> { ["windows"] = "natives-windows-${arch}" },
+            null);
+        var version = new VersionJson("1.8.9", "release", "net.minecraft.client.main.Main",
+            null, null, null, null, [twitchLib], null, null, null, null);
+
+        var report = await AutoRepairService.VerifyFilesAsync(version, gameDir);
+        Assert.Equal(2, report.Missing); // client + 展开后的 natives-64 jar（base 跳过）
+        Assert.DoesNotContain(report.MissingFiles, p => p.Contains("twitch-platform-6.5.jar"));
+        Assert.Contains(report.MissingFiles, p => p.Contains("twitch-platform-6.5-natives-windows-64.jar"));
     }
 
     /// <summary>AL62 哈希质检：client jar 的 sha1 元数据 → 验证通过计数；内容不符 → 不通过</summary>

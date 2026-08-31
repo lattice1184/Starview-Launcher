@@ -137,9 +137,20 @@ public sealed class AutoRepairService
             if (!resolver.IsAllowed(lib.Rules)) continue; // 非本 OS/特性不满足的库不下载 → 不校验
             var artifact = lib.Downloads?.Artifact;
             if (artifact is not null && string.IsNullOrEmpty(artifact.Url)) continue; // 继承引用，无实体文件
-            var p = Path.Combine(librariesDir, MavenPath.FullPath(lib.Name));
-            if (File.Exists(p)) present.Add((p, artifact?.Sha1));
-            else missing.Add(p);
+            // 8-31 修老版本「缺文件」：无 artifact、无顶层 url、但有 natives 的库（classifiers-only，
+            // 如 1.8.9/1.12.2 的 jinput-platform/twitch-platform）——base jar 下载侧本就跳过
+            // （Mojang 服务器无此文件），校验侧不得要求它存在；natives classifier 校验走下方已有逻辑
+            var hasNatives = lib.Natives is { } && Launcher.Core.Download.PlatformNatives.ResolveKey(lib.Natives) is not null;
+            if (artifact is null && string.IsNullOrEmpty(lib.Url) && hasNatives)
+            {
+                // 仅校验 natives classifier，不要求 base jar
+            }
+            else
+            {
+                var p = Path.Combine(librariesDir, MavenPath.FullPath(lib.Name));
+                if (File.Exists(p)) present.Add((p, artifact?.Sha1));
+                else missing.Add(p);
+            }
 
             // 8-14 natives（classifier）文件也参与校验——路径生成与下载侧一致
             // （DownloadService 下载 loop 同款 natives 逻辑，8-30 平台化 PlatformNatives）：

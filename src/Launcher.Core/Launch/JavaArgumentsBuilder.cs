@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using System.Text.Json;
 using Launcher.Core.Model.Mojang;
 using Launcher.Core.Utils;
@@ -281,13 +282,26 @@ public sealed class JavaArgumentsBuilder
     {
         // 旧版：natives 字段按 OS 映射（classifier 同条目，进 classpath）
         if (lib.Natives is { } natives && natives.TryGetValue(_rules.OsName, out var mappedKey))
+        {
+            // 8-31 展开 ${arch}（老版本 twitch-platform 的 "windows":"natives-windows-${arch}"）——
+            // 不展开 classpath 会出现字面量 ${arch} 路径，natives 解压后加载不到
+            mappedKey = ExpandArch(mappedKey);
             return (true, lib.Name + ":" + mappedKey, true);
+        }
         // 新版：独立条目名字带 :natives-xxx classifier（如 org.lwjgl:lwjgl-stb:3.3.1:natives-windows）。
         // 精确匹配 natives-{os}（防 natives-windows-arm64/x86 变体误判为当前架构的 natives）
         var parts = lib.Name.Split(':');
         if (parts.Length == 4 && parts[3].Equals($"natives-{_rules.OsName}", StringComparison.OrdinalIgnoreCase))
             return (true, lib.Name, false);
         return (false, null, false);
+    }
+
+    /// <summary>${arch} → "64"/"32"（x64/arm64 → 64，否则 32）；与 Download/PlatformNatives 一致</summary>
+    private static string ExpandArch(string key)
+    {
+        if (!key.Contains("${arch}", StringComparison.Ordinal)) return key;
+        var bits = RuntimeInformation.OSArchitecture is Architecture.X64 or Architecture.Arm64 ? "64" : "32";
+        return key.Replace("${arch}", bits, StringComparison.Ordinal);
     }
 
     /// <summary>读磁盘上的父版本 JSON（版本页已下载的原版）</summary>

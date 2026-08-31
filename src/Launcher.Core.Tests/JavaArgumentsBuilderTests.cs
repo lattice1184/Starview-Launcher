@@ -56,6 +56,17 @@ public class JavaArgumentsBuilderTests
         Assert.Contains(@"1.8.9\1.8.9.jar", p.ClassPath);
     }
 
+    /// <summary>8-31 修老版本 natives：twitch-platform 的 natives 值是 "natives-windows-${arch}"——
+    /// 必须展开（classpath 不得留字面量 ${arch}，否则 natives 解压后加载不到）</summary>
+    [Fact]
+    public void Legacy_1_8_9_TwitchNatives_ArchExpanded_NoPlaceholderInClasspath()
+    {
+        var p = Build(Load("1.8.9"));
+
+        Assert.DoesNotContain("${arch}", p.ClassPath);
+        Assert.Contains("twitch-platform-6.5-natives-windows-64.jar", p.ClassPath);
+    }
+
     [Fact]
     public void ForgeStyle_InheritsFrom_MergesParentAndEmitsModuleArgs()
     {
