@@ -27,6 +27,25 @@ public class JavaSelectorTests
     public void BestMatch_Empty_FallsBackToJava()
         => Assert.Equal("java", JavaSelector.BestMatch(Array.Empty<JavaSelector.JavaInstall>(), 21));
 
+    // ---------- ParseJavaHomeVLine：macOS java_home -V 输出解析（8-31 补 Mac JDK 探测） ----------
+
+    [Fact]
+    public void ParseJavaHomeVLine_RealLine_ExtractsHomeAndMajor()
+    {
+        var hit = JavaSelector.ParseJavaHomeVLine(
+            "    21.0.5 (arm64) \"Eclipse Temurin\" - \"21.0.5+11\" /Library/Java/JavaVirtualMachines/temurin-21.jdk/Contents/Home");
+        Assert.NotNull(hit);
+        Assert.Equal(21, hit.Value.Major);
+        Assert.Equal("/Library/Java/JavaVirtualMachines/temurin-21.jdk/Contents/Home", hit.Value.Home);
+    }
+
+    [Theory]
+    [InlineData("Matching Java Virtual Machines (3):")]
+    [InlineData("")]
+    [InlineData("  ")]
+    public void ParseJavaHomeVLine_SkipsHeaderAndEmpty(string line)
+        => Assert.Null(JavaSelector.ParseJavaHomeVLine(line));
+
     // ---------- ResolveRequiredMajor：版本所需 Java 大版本（自身 → 继承链 → 版本号推断） ----------
 
     private static VersionJson ParseVersion(string json) => JsonSerializer.Deserialize<VersionJson>(json)!;

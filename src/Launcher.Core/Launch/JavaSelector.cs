@@ -132,7 +132,10 @@ public static class JavaSelector
         foreach (var dir in (Environment.GetEnvironmentVariable("PATH") ?? "").Split(Path.PathSeparator))
             Add(Path.Combine(dir.Trim('"'), JavaExe));
 
-        // 5. 常见 JDK 目录（Windows: Program Files；macOS: /Library/Java + 用户级；Linux: /usr/lib/jvm、/opt 等）
+        // 4b. macOS 官方 JVM 发现（java_home -V 列出所有已注册 JVM）——补标准扫描漏掉的安装
+        ScanJavaHomeV(Add);
+
+        // 5. 常见 JDK 目录（Windows: Program Files；macOS: /Library/Java + 用户级 + Homebrew；Linux: /usr/lib/jvm、/opt 等）
         var userJvm = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Library", "Java", "JavaVirtualMachines");
         var baseDirs = OperatingSystem.IsWindows()
@@ -142,16 +145,57 @@ public static class JavaSelector
                 @"C:\Program Files\Zulu", @"C:\Program Files\Amazon Corretto", @"D:\Program Files\Java",
             }
             : OperatingSystem.IsMacOS()
-                ? new[] { "/Library/Java/JavaVirtualMachines", userJvm, "/opt" }
+                ? new[] { "/Library/Java/JavaVirtualMachines", userJvm, "/opt", "/opt/homebrew/opt", "/usr/local/opt" }
                 : new[] { "/usr/lib/jvm", "/usr/java", "/opt" };
         foreach (var baseDir in baseDirs)
         {
             if (!Directory.Exists(baseDir)) continue;
             foreach (var d in Directory.EnumerateDirectories(baseDir))
+            {
                 Add(Path.Combine(d, "bin", JavaExe));
+                // 8-31 修「Mac 装了 Java 却扫不到」：macOS 的 .jdk 是 bundle，java 在 Contents/Home/bin/
+                //（不在 d/bin/——旧代码对标准 Oracle/Temurin JDK 永远漏扫）。Homebrew opt 的 java 也走 d/bin。
+                if (OperatingSystem.IsMacOS())
+                    Add(Path.Combine(d, "Contents", "Home", "bin", JavaExe));
+            }
         }
 
         return found;
+    }
+
+    /// <summary>macOS 官方 JVM 发现：/usr/libexec/java_home -V 列出所有已注册 JVM（Oracle/Temurin .pkg 等）。
+    /// 输出到 stderr，形如 `21.0.5 (arm64) "Eclipse Temurin" - "21.0.5+11" /path/Contents/Home`。</summary>
+    private static void ScanJavaHomeV(Action<string?, int?, string?> add)
+    {
+        if (!OperatingSystem.IsMacOS()) return;
+        try
+        {
+            var psi = new ProcessStartInfo("/usr/libexec/java_home", "-V")
+            {
+                RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false,
+            };
+            using var p = Process.Start(psi);
+            if (p is null) return;
+            var output = p.StandardError.ReadToEnd() + p.StandardOutput.ReadToEnd();
+            p.WaitForExit(3000);
+            foreach (var line in output.Split('\n'))
+            {
+                if (ParseJavaHomeVLine(line) is { } hit)
+                    add(Path.Combine(hit.Home, "bin", JavaExe), hit.Major, null);
+            }
+        }
+        catch { /* java_home 不可用则跳过 */ }
+    }
+
+    /// <summary>解析 java_home -V 的一行（可单测）：`21.0.5 (arm64) "Eclipse Temurin" - "21.0.5+11" /path/Contents/Home`</summary>
+    internal static (string Home, int Major)? ParseJavaHomeVLine(string line)
+    {
+        var parts = line.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length < 2) return null;
+        var first = parts[0];
+        if (first.Length == 0 || first[0] < '0' || first[0] > '9') return null; // 跳过表头/空行
+        if (!int.TryParse(first.Split('.')[0], out var major)) return null;
+        return (parts[^1].Trim('"'), major);
     }
 
     /// <summary>注册表一个族（JDK/JRE 或 Adoptium）下所有版本的 JavaHome（仅 Windows 调用）</summary>
