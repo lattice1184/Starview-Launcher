@@ -9,17 +9,20 @@
 #    · 清构建残留（.release-* 暂存目录、发布\stage、根目录旧 tar.gz）
 #    · 删桌面 Starview发布 下其它版本文件夹（有新版自动删旧版）
 # ============================================================
+param(
+    [string]$Version = "",
+    [string]$OutputRoot = "C:\Users\yanka\Desktop\Starview发布"   # 8-31 用户指定默认发布目录（可 -OutputRoot 覆盖）
+)
 $ErrorActionPreference = "Stop"
 $root    = Split-Path -Parent $MyInvocation.MyCommand.Path   # scripts\
 $launcher = Split-Path -Parent $root                          # launcher\
-$version = if ($args[0]) {
-    $args[0]
+$version = if ($Version) {
+    $Version
 } else {
     (Get-Content (Join-Path $launcher "src\Launcher.App\metadata.json") -Raw | ConvertFrom-Json).version.base
 }
 $date   = Get-Date -Format "yyyyMMdd"
-$desktop = [Environment]::GetFolderPath("Desktop")
-$pub    = Join-Path $desktop "Starview发布"
+$pub    = $OutputRoot
 $dest   = Join-Path $pub "v$version"
 
 Write-Host ""

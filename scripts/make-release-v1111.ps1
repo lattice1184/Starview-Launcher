@@ -25,7 +25,7 @@ $rel = Invoke-RestMethod -Method Get -Uri "https://api.github.com/repos/$repo/re
 $upl = "https://uploads.github.com/repos/$repo/releases/$($rel.id)/assets"
 $launcher = Join-Path $root ".."
 $pub = Join-Path $launcher "发布"
-$dest = Join-Path ([Environment]::GetFolderPath("Desktop")) "Starview发布\v1.1.11"
+$dest = "C:\Users\yanka\Desktop\Starview发布\v1.1.11"
 
 $files = @()
 # win exe：发布目录两个 exe，大的=标准版，小的=轻量版
