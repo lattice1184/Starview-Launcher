@@ -1,4 +1,4 @@
-# v1.1.13 release 创建：建 release + 上传 5 个资产（win 2 exe + linux/osx 3 tar.gz）
+﻿# v1.1.13 release 创建：建 release + 上传 5 个资产（win 2 exe + linux/osx 3 tar.gz）
 # ASCII-only 脚本（中文 body 从外部 UTF-8 文件读入，规避 PS 5.1 编码坑；
 # 中文路径不用字面量，一律 glob 匹配 + 大小/文件名映射）
 #
