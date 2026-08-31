@@ -15,6 +15,13 @@ public static class ChangelogCatalog
     /// <summary>版本分组（最新在前）</summary>
     public static IReadOnlyList<ChangelogGroup> Groups { get; } =
     [
+        new("v1.1.13",
+        [
+            "Mac 一键补齐 Java：新版要 Java 25、老版本要 Java 17，检测到缺就自动下载官方运行时，不用自己装",
+            "Mac 装了 Java 却识别不到的问题修复：.jdk 应用包、java_home、Homebrew 装的都能扫到",
+            "老版本下载「文件缺失」修复：1.8.x/1.12.x 的 natives 库不再误报缺文件，下载能正常完成",
+            "加载器选择更快：多源竞速 + 15 秒上限 + 点版本行后台预热，冷缓存也秒出",
+        ]),
         new("v1.1.11",
         [
             "Mac 修复：打包完整应用包——之前给权限也打不开的问题根治，Intel/Apple Silicon 自动匹配",
