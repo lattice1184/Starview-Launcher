@@ -1,0 +1,8 @@
+Starview 启动器 · Linux 使用必看
+================================
+
+1. 解压：tar -xzf starview-linux-x64-20260830.tar.gz
+2. 进入目录，双击 Starview.desktop 启动（或终端里 ./start.sh）
+3. 首次双击 .desktop 若提示未信任：
+   右键 → 属性 → 勾选「允许作为程序执行」，再双击即可
+4. 没声音 / 界面异常：多半是缺系统字体或显卡驱动，反馈到 issues 带一下启动日志（%AppData%/Launcher/logs）

@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Starview
+Name[zh_CN]=Starview 启动器
+Comment=Minecraft Launcher
+Comment[zh_CN]=Minecraft 启动器
+Exec=sh -c 'cd "$(dirname %k)" && ./start.sh'
+Icon=starview
+Terminal=false
+Categories=Game;

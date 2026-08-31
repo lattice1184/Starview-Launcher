@@ -1,0 +1,10 @@
+Starview 启动器 · macOS 使用必看
+================================
+
+1. 解压：双击 tar.gz 自动解压（或终端 tar -xzf）
+2. 双击目录里的「启动.command」即可启动
+3. 第一次被系统拦截（提示无法验证开发者）：
+   - 右键「启动.command」→ 打开 → 点「打开」
+   - 或终端执行：xattr -d com.apple.quarantine 启动.command
+4. Intel 版（starview-osx-x64）：联机模块暂时装不上（缺原生库），其余功能正常
+5. M 系芯片（arm64）不受上述影响
