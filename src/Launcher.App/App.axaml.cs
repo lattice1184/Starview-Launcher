@@ -106,6 +106,21 @@ public partial class App : Application
                     }
                 }
             }
+            // 8-31 更新安装失败标记：上次「重启安装」的替换脚本失败会写 update-failed.txt——
+            // 下次启动读它弹提示（旧版脚本失败只落日志用户无感，朋友反馈「更新覆盖没用」就是这么来的）
+            try
+            {
+                var failMark = System.IO.Path.Combine(Launcher.Core.Utils.AppPaths.DataRoot, "update-failed.txt");
+                if (System.IO.File.Exists(failMark))
+                {
+                    var why = System.IO.File.ReadAllText(failMark).Trim();
+                    System.IO.File.Delete(failMark);
+                    Services.NotificationService.Error(string.IsNullOrWhiteSpace(why)
+                        ? "上次更新安装失败（详见 update-install.log）"
+                        : why);
+                }
+            }
+            catch { }
             // 8-30 后台静默更新：延迟 10s 检查最新 release，下载就绪后提示「重启安装」。
             // 8-31 成功落关于页常驻「重启安装」（不再只靠 10s 瞬时 Toast——实测用户找不到入口只能手动检查）；
             // 失败写关于页状态（不再静默）。

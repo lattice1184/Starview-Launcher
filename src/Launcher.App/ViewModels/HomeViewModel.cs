@@ -597,7 +597,14 @@ public partial class HomeViewModel : ViewModelBase
     private void SetStage(string stageName)
     {
         var idx = Array.IndexOf(StageNames, stageName);
-        if (idx < 0) return;
+        if (idx < 0)
+        {
+            // 8-31 修"一直在检查Java"：EnsureJavaAsync 下载 ~100MB 运行时期间的进度文案
+            // （"下载 Java 运行时 N%"等）不在 StageNames 白名单——旧实现直接 return 丢弃，
+            // 阶段条停在"检测 Java"数分钟无任何反馈。现在仍透传为状态文字（不移动阶段条/进度）。
+            LaunchStatus = stageName;
+            return;
+        }
         CurrentStageIndex = idx;
         for (var i = 0; i < Stages.Count; i++)
         {

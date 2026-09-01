@@ -51,23 +51,19 @@ public static class HttpClientPool
     private static HttpClient CreateShared() => CreateSharedClient();
 
     /// <summary>8-20 代理设置变更后重建共享连接池（设置页保存时调用）：
-    /// 下次访问 Shared/SharedHandler 惰性建新 handler（带新代理）；旧 handler 延迟 30s 释放——
-    /// 正在进行的下载任务仍持有旧连接，等它们结束后再回收，不打断进行中的任务</summary>
+    /// 下次访问 Shared/SharedHandler 惰性建新 handler（带新代理）。
+    /// 8-31 修：不再延迟 30s 销毁旧 handler——固定延时是盲猜、不等 in-flight 任务结束，
+    /// 大文件/多文件下载剩余时间 &gt;30s 即命中 ObjectDisposedException（SocketsHttpHandler）——
+    /// 朋友 Mac 实测：下载 JRE 期间改设置触发重建 → 下载崩 → 运行时残缺 → 游戏启动即崩 134。
+    /// 旧 handler 交给 GC 回收（持有它的 DownloadService 实例释放后即可回收）；
+    /// 空闲连接本身有 2min IdleTimeout 会自动关闭，不 Dispose 只是回收稍慢，远好于崩下载。</summary>
     public static void RebuildShared()
     {
-        SocketsHttpHandler? old;
         lock (Gate)
         {
-            old = _handler;
             _handler = null;
             _client = null;
         }
-        if (old is not null)
-            _ = System.Threading.Tasks.Task.Run(async () =>
-            {
-                await System.Threading.Tasks.Task.Delay(TimeSpan.FromSeconds(30));
-                try { old.Dispose(); } catch { /* 释放失败无妨 */ }
-            });
     }
 
     /// <summary>8-19 修复：创建共享 handler 的 HttpClient，disposeHandler:false——

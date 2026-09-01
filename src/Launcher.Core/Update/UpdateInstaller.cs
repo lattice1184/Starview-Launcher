@@ -104,11 +104,16 @@ public static class UpdateInstaller
             : dir;
     }
 
-    internal static string BuildApplyScript(string root, string staging, string readyPath, string logPath)
+    internal static string BuildApplyScript(
+        string root, string staging, string readyPath, string logPath, string? backupDir = null, string? markerPath = null)
     {
         // 8-31 原子替换重写：set -e 任一失败即中止；mv 整体备份 → cp 全新目录 → 验证 → 回滚。
         // 不再「先 rm 后 cp」——任何失败旧版仍完好可打开，杜绝「更新后目录空/打不开」。
+        // 8-31 补 macOS .app bundle 适配：staging/root 分「散文件 / .app bundle」两布局处理——
+        // 旧版只认散文件路径（runtimeconfig 预检 :123 必失败），bundle 包更新 100% 静默失败（朋友反馈「覆盖没用」）。
         // 全部路径单引号包裹（空格/中文安全）；脚本输出落 update-install.log 供排查。
+        backupDir ??= Path.Combine(Launcher.Core.Utils.AppPaths.DataRoot, "backup");
+        markerPath ??= Path.Combine(Launcher.Core.Utils.AppPaths.DataRoot, "update-failed.txt");
         return string.Join('\n',
         [
             "#!/bin/sh",
@@ -118,27 +123,62 @@ public static class UpdateInstaller
             "echo \"=== update install $(date) ===\"",
             "echo \"root='" + root + "' staging='" + staging + "' ready='" + readyPath + "'\"",
             "sleep 3   # 等旧进程完全退出（避免新旧双开 / 复制中途被杀）",
-            // 1) staging 完整性（双保险：防解压不全就开动 → rm 旧版后拷入空目录）
-            "[ -s '" + staging + "/Launcher.App' ] || [ -s '" + staging + "/Starview.app/Contents/MacOS/Launcher.App' ] || { echo 'FAIL: staging missing executable'; exit 1; }",
-            "[ -f '" + staging + "/Launcher.App.runtimeconfig.json' ] || { echo 'FAIL: staging missing runtimeconfig'; exit 1; }",
-            // 2) 原子替换：旧目录整体移走备份 → 拷入全新新版（同设备 mv，父目录需可写）
-            "BACKUP='" + root + ".old-$$'",
-            "mv '" + root + "' \"$BACKUP\" || { echo 'FAIL: cannot move old dir (parent read-only?)'; exit 1; }",
-            "if ! cp -R '" + staging + "' '" + root + "'; then",
-            "    rm -rf '" + root + "'; mv \"$BACKUP\" '" + root + "'; echo 'FAIL: copy failed, rolled back'; exit 1;",
+            // 失败标记（下次启动读它弹提示——不再静默失败）；成功路径清掉
+            "FAIL_MARK='" + markerPath + "'",
+            "rm -f \"$FAIL_MARK\"",
+            "trap 'if [ \"${OK:-0}\" != 1 ]; then echo \"更新安装失败，请打开 update-install.log 查看原因\" > \"$FAIL_MARK\"; fi' EXIT",
+            // 1) staging 完整性（双布局：散文件 Launcher.App 或 .app bundle 内；防解压不全就开动）
+            "if [ -s '" + staging + "/Launcher.App' ]; then",
+            "    STAGE=plain",
+            "    [ -f '" + staging + "/Launcher.App.runtimeconfig.json' ] || { echo 'FAIL: staging missing runtimeconfig'; exit 1; }",
+            "elif [ -s '" + staging + "/Starview.app/Contents/MacOS/Launcher.App' ]; then",
+            "    STAGE=bundle",
+            "    [ -f '" + staging + "/Starview.app/Contents/MacOS/Launcher.App.runtimeconfig.json' ] || { echo 'FAIL: staging missing runtimeconfig (bundle)'; exit 1; }",
+            "else",
+            "    echo 'FAIL: staging missing executable'; exit 1;",
             "fi",
-            "chmod +x '" + root + "/Launcher.App' '" + root + "/start.sh' 2>/dev/null || true",
-            // 3) 新目录验证（可执行体在才认）；失败回滚 → 旧版完好
-            "NEWAPP='" + root + "/Launcher.App'",
-            "[ -x \"$NEWAPP\" ] || NEWAPP='" + root + "/Starview.app/Contents/MacOS/Launcher.App'",
+            // 2) root 布局：.app bundle（Contents/MacOS 在）或散文件目录
+            "if [ -f '" + root + "/Contents/MacOS/Launcher.App' ]; then ROOT_MODE=bundle; else ROOT_MODE=plain; fi",
+            // 3) 备份旧版到用户可写目录（Contents 或整个目录）——避免 /Applications 父目录只读
+            "mkdir -p '" + backupDir + "'",
+            "BACKUP='" + backupDir + "/starview-old-$$'",
+            "if [ \"$ROOT_MODE\" = bundle ]; then",
+            "    mv '" + root + "/Contents' \"$BACKUP\" || { echo 'FAIL: cannot move old Contents'; exit 1; }",
+            "else",
+            "    mv '" + root + "' \"$BACKUP\" || { echo 'FAIL: cannot move old dir (parent read-only?)'; exit 1; }",
+            "fi",
+            // 4) 拷入新版（布局感知，禁止 .app/Starview.app 嵌套）
+            "if [ \"$STAGE\" = bundle ] && [ \"$ROOT_MODE\" = bundle ]; then",
+            "    mkdir -p '" + root + "/Contents'",
+            "    cp -R '" + staging + "/Starview.app/Contents/.' '" + root + "/Contents/'",
+            "    NEWAPP='" + root + "/Contents/MacOS/Launcher.App'",
+            "elif [ \"$STAGE\" = bundle ]; then",
+            "    mkdir -p '" + root + "'",
+            "    cp -R '" + staging + "/Starview.app/Contents/MacOS/.' '" + root + "/'",
+            "    NEWAPP='" + root + "/Launcher.App'",
+            "elif [ \"$ROOT_MODE\" = bundle ]; then",
+            "    mkdir -p '" + root + "/Contents/MacOS'",
+            "    cp -R '" + staging + "/.' '" + root + "/Contents/MacOS/'",
+            "    NEWAPP='" + root + "/Contents/MacOS/Launcher.App'",
+            "else",
+            "    cp -R '" + staging + "/.' '" + root + "/'",
+            "    NEWAPP='" + root + "/Launcher.App'",
+            "fi",
+            "chmod +x \"$NEWAPP\" 2>/dev/null || true",
+            // 5) 验证（可执行体在才认）+ 回滚旧版
             "if [ ! -x \"$NEWAPP\" ]; then",
-            "    rm -rf '" + root + "'; mv \"$BACKUP\" '" + root + "'; echo 'FAIL: invalid new install, rolled back'; exit 1;",
+            "    if [ \"$ROOT_MODE\" = bundle ]; then rm -rf '" + root + "/Contents'; else rm -rf '" + root + "'; fi",
+            "    if [ \"$ROOT_MODE\" = bundle ]; then mv \"$BACKUP\" '" + root + "/Contents'; else mv \"$BACKUP\" '" + root + "'; fi",
+            "    echo 'FAIL: invalid new install, rolled back'; exit 1;",
             "fi",
-            // 4) 成功：清备份 / staging / 下载包（失败路径保留 readyPath 供下次重试）
+            // 6) 成功：清备份 / staging / 下载包 + 清 quarantine + ad-hoc 签名（Apple Silicon 防 Gatekeeper 拦）
             "rm -rf \"$BACKUP\"",
             "rm -rf '" + staging + "'",
             "rm -f '" + readyPath + "'",
-            // 5) 重启（散文件 Launcher.App；.app bundle 布局走 Contents/MacOS）
+            "xattr -dr com.apple.quarantine '" + root + "' 2>/dev/null || true",
+            "codesign --force --sign - \"$NEWAPP\" 2>/dev/null || true",
+            "rm -f \"$FAIL_MARK\"",
+            "OK=1",
             "cd '" + root + "'",
             "nohup \"$NEWAPP\" >/dev/null 2>&1 &",
             "echo \"OK restarted: $NEWAPP\"",

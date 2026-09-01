@@ -27,40 +27,80 @@ public static class JavaProvisioningService
     /// <summary>测试开关：置 true 时缺 Java 直接抛错，不走真下载（避免单测把 100MB 运行时拉进真机 AppData）</summary>
     internal static bool DisableForTests;
 
+    /// <summary>8-31 并发互斥：两个版本同时首次启动（或双点）避免同时下 100MB 运行时</summary>
+    private static readonly SemaphoreSlim DownloadGate = new(1, 1);
+
     /// <summary>
     /// 确保存在满足 requiredMajor 的 Java；缺失则自动下载官方运行时，返回 java 可执行文件路径。
     /// 失败抛清晰异常（提示手动指定路径 / 装 JDK）。
     /// </summary>
     public static async Task<string> EnsureJavaAsync(int requiredMajor, Action<string>? onStage, CancellationToken ct)
     {
-        // 0. 先再探测：已补齐/新装/设置过路径 → 零下载直接返回
+        // 0. 先探测：已补齐/新装/设置过路径 → 零下载直接返回。
+        // 8-31 修：本服务自装的运行时必须有 .complete 标记才信——中断下载（如早前 ObjectDisposedException
+        // 打崩 JRE 下载）会留下 bin/java 但缺 lib/，JavaSelector.Pick 只查文件存在就返回 → 游戏用残缺
+        // JRE 启动即崩 134，且永不触发补齐（朋友 Mac 实测循环）。无标记则落入下载 → sha1 跳过已完成的文件续装。
         var existing = JavaSelector.Pick(requiredMajor);
-        if (existing is not null && existing != "java" && File.Exists(existing)) return existing;
+        if (existing is not null && IsTrustedJava(existing)) return existing;
         if (DisableForTests)
             throw new InvalidOperationException(
                 $"需要 Java {requiredMajor}，但本机未找到匹配版本（自动补齐在测试环境禁用）");
 
-        // 1. 选组件（epsilon=25 / delta=21 / beta=17 / alpha=16）
-        var component = PickComponent(requiredMajor);
-        var archKey = OsManifestKey();
+        await DownloadGate.WaitAsync(ct);
+        try
+        {
+            // 双检：拿到锁后可能已被并发请求补齐
+            var again = JavaSelector.Pick(requiredMajor);
+            if (again is not null && IsTrustedJava(again)) return again;
+            if (DisableForTests)
+                throw new InvalidOperationException(
+                    $"需要 Java {requiredMajor}，但本机未找到匹配版本（自动补齐在测试环境禁用）");
 
-        onStage?.Invoke(
-            $"未检测到 Java {requiredMajor}，正在自动下载官方运行时（{archKey} / {component.Name}，约 100MB，仅首次）");
+            // 1. 选组件（epsilon=25 / delta=21 / beta=17 / alpha=16）
+            var component = PickComponent(requiredMajor);
+            var archKey = OsManifestKey();
 
-        // 2. 产品清单 → 该 OS 该组件的文件清单
-        var files = await FetchFileListAsync(archKey, component.Name, ct);
+            onStage?.Invoke(
+                $"未检测到 Java {requiredMajor}，正在自动下载官方运行时（{archKey} / {component.Name}，约 100MB，仅首次）");
 
-        // 3. 落到 mcRoot/runtime/{组件}/（扁平化 jre.bundle/Contents/Home 前缀 → bin/java 被 JavaSelector 扫到）
-        var destRoot = Path.Combine(JavaSelector.MinecraftRoot(), "runtime", component.Name);
-        Directory.CreateDirectory(destRoot);
-        await DownloadFilesAsync(files, destRoot, onStage, ct);
+            // 2. 产品清单 → 该 OS 该组件的文件清单
+            var files = await FetchFileListAsync(archKey, component.Name, ct);
 
-        // 4. 校验并返回
-        var javaPath = Path.Combine(destRoot, "bin", JavaSelector.JavaExe);
-        if (!File.Exists(javaPath))
-            throw new InvalidOperationException($"自动下载 Java 完成但未找到可执行文件：{javaPath}");
-        onStage?.Invoke("Java 运行时就绪");
-        return javaPath;
+            // 3. 落到 mcRoot/runtime/{组件}/（扁平化 jre.bundle/Contents/Home 前缀 → bin/java 被 JavaSelector 扫到）
+            var destRoot = Path.Combine(JavaSelector.MinecraftRoot(), "runtime", component.Name);
+            Directory.CreateDirectory(destRoot);
+            await DownloadFilesAsync(files, destRoot, onStage, ct);
+
+            // 3.5 完成标记：下次启动信任该运行时（残缺时无标记 → 续装补齐，不再直接返回残缺 java）
+            File.WriteAllText(Path.Combine(destRoot, ".complete"), DateTime.UtcNow.ToString("o"));
+
+            // 4. 校验并返回
+            var javaPath = Path.Combine(destRoot, "bin", JavaSelector.JavaExe);
+            if (!File.Exists(javaPath))
+                throw new InvalidOperationException($"自动下载 Java 完成但未找到可执行文件：{javaPath}");
+            onStage?.Invoke("Java 运行时就绪");
+            return javaPath;
+        }
+        finally
+        {
+            DownloadGate.Release();
+        }
+    }
+
+    /// <summary>java 是否可信可用：非本服务自装的（用户/系统 Java）→ 信任；自装的必须带 .complete 标记
+    /// （中断下载的残缺运行时不可信，否则游戏用残缺 JRE 崩 134）</summary>
+    internal static bool IsTrustedJava(string javaPath)
+        => IsTrustedJava(javaPath, Path.Combine(JavaSelector.MinecraftRoot(), "runtime"));
+
+    /// <summary>可注入 runtimeRoot 的重载（单测不污染真实 AppData）</summary>
+    internal static bool IsTrustedJava(string javaPath, string runtimeRoot)
+    {
+        if (javaPath == "java" || !File.Exists(javaPath)) return false;
+        if (!javaPath.StartsWith(runtimeRoot + Path.DirectorySeparatorChar, StringComparison.Ordinal))
+            return true; // 非自装 → 信任
+        // 自装：.../runtime/{组件}/bin/java → 组件目录
+        var componentDir = Path.GetDirectoryName(Path.GetDirectoryName(javaPath));
+        return componentDir is not null && File.Exists(Path.Combine(componentDir, ".complete"));
     }
 
     /// <summary>选组件：major ≥ required 最近者；都不满足取最高（epsilon）</summary>

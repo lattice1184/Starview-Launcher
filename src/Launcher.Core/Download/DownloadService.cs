@@ -638,6 +638,13 @@ public sealed class DownloadService
                 pending.Remove(doomed);
                 abandonedKeys.Add(RaceKey(doomed.Src)); // 其 .race 文件可能被挂死任务锁着
                 doomed.Cts.Cancel(); // 能取消就取消（省连接/句柄），不能也无所谓——任务后台自生自灭
+                // 8-31 观测被摘除的任务：挂死源可能无视取消继续飞，若 fault（如共享 handler 被回收）则
+                // 成为「未观测到的异步任务异常」——挂 ContinueWith 吞掉并记日志（只日志，不再冒泡）
+                _ = doomed.Task.ContinueWith(t =>
+                {
+                    if (t.IsFaulted && t.Exception is { } ex)
+                        LogWrapper.Warn($"[下载] 已摘除源 {ShortUrl(doomed.Src)} 后台任务异常：{ex.GetBaseException().Message}");
+                }, CancellationToken.None, TaskContinuationOptions.OnlyOnFaulted, TaskScheduler.Default);
                 var stalledMs = Environment.TickCount64 - noProgressSince[doomed.Index];
                 LogWrapper.Warn($"[下载] watchdog 摘除 {ShortUrl(doomed.Src)} 零增量{stalledMs / 1000}s——进下一轮（已弃用该源）");
             }
@@ -690,10 +697,12 @@ public sealed class DownloadService
             return (false, null);
         }
         catch (Exception ex) when (ex is HttpRequestException or InvalidDataException
-            or IOException or UnauthorizedAccessException)
+            or IOException or UnauthorizedAccessException or ObjectDisposedException)
         {
             // 8-22 全栈排查：IOException（文件锁/共享冲突）此前逃出整轮竞速循环——
             // 挂死源残留 .race*.parts 文件锁着时，下一轮同 key 复用开文件直接崩。归入源失败换源兜底
+            // 8-31 补 ObjectDisposedException：共享 handler 被重建/回收时 SendAsync 抛它——
+            // 归入源失败（换源/重试）而不是炸掉整个文件下载
             return (false, ex);
         }
     }

@@ -285,4 +285,15 @@ public class TerracottaProvisioningServiceTests : IDisposable
         for (var i = 0; i < text.Length; i++) header[start + i] = (byte)text[i];
         header[start + text.Length] = 0;
     }
+
+    /// <summary>9-1 修联机 Mac 拒装：macOS 哈希实测回填——pending 会触发「缺少已知 SHA256，拒绝安装」。
+    /// 锁死不回退（有人清回 pending 则 Mac 联机再次拒装）。</summary>
+    [Fact]
+    public void KnownDigests_MacNotPending_SoInstallable()
+    {
+        Assert.NotEqual("pending", TerracottaProvisioningService.KnownDigests["0.4.2/arm64/macos"]);
+        Assert.NotEqual("pending", TerracottaProvisioningService.KnownDigests["0.4.2/x86_64/macos"]);
+        Assert.NotEqual("pending", Launcher.Core.Multiplayer.EasyTierProvisioningService.KnownDigests["2.6.4/aarch64/macos"]);
+        Assert.NotEqual("pending", Launcher.Core.Multiplayer.EasyTierProvisioningService.KnownDigests["2.6.4/x86_64/macos"]);
+    }
 }

@@ -31,6 +31,9 @@ public sealed record JvmProfileOption(string Name, PerformanceProfile Value);
 /// <summary>进程优先级选项（游戏 JVM 进程；独立设置不随性能档位）</summary>
 public sealed record GamePriorityOption(string Name, GamePriority Value);
 
+/// <summary>8-31 手动下载 Java 的版本选项（复用 JavaSelector.Runtimes 映射）</summary>
+public sealed record JavaDownloadOption(string Label, int Major);
+
 /// <summary>沙盒模式选项（设置页/主页下拉共用文案）</summary>
 public sealed record SandboxModeOption(string Name, SandboxMode Value);
 
@@ -78,6 +81,67 @@ public partial class SettingsViewModel : ViewModelBase
     /// <summary>Java 路径（空 = 自动选配）</summary>
     [ObservableProperty]
     public partial string JavaPathText { get; set; } = "";
+
+    // ---------- 8-31 手动下载 Java 运行时 ----------
+
+    public IReadOnlyList<JavaDownloadOption> JavaDownloadOptions { get; } =
+    [
+        new("Java 25（26.x 新版本用）", 25),
+        new("Java 21（1.20.5~1.21 用）", 21),
+        new("Java 17（1.18~1.20.4 用）", 17),
+        new("Java 8（老版本用）", 8),
+    ];
+
+    [ObservableProperty]
+    public partial JavaDownloadOption? SelectedJavaDownload { get; set; }
+
+    /// <summary>正在下载 Java（按钮禁用 + 进度行显示）</summary>
+    [ObservableProperty]
+    public partial bool IsDownloadingJava { get; set; }
+
+    /// <summary>下载状态文字（"下载 Java 运行时 45%" 等）</summary>
+    [ObservableProperty]
+    public partial string JavaDownloadStatus { get; set; } = "";
+
+    /// <summary>下载进度 0-100</summary>
+    [ObservableProperty]
+    public partial double JavaDownloadProgress { get; set; }
+
+    /// <summary>8-31 手动下载 Java：选版本 → 复用自动补齐链路（EnsureJavaAsync），进度可见</summary>
+    [RelayCommand]
+    private async Task DownloadJavaAsync()
+    {
+        if (IsDownloadingJava) return;
+        var target = SelectedJavaDownload ?? JavaDownloadOptions[0];
+        IsDownloadingJava = true;
+        JavaDownloadProgress = 0;
+        JavaDownloadStatus = $"准备下载 {target.Label}…";
+        try
+        {
+            var java = await Launcher.Core.Launch.JavaProvisioningService.EnsureJavaAsync(
+                target.Major,
+                s => Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+                {
+                    JavaDownloadStatus = s;
+                    // "下载 Java 运行时 45%" → 进度条
+                    var m = System.Text.RegularExpressions.Regex.Match(s, @"(\d+)\s*%");
+                    if (m.Success && double.TryParse(m.Groups[1].Value, out var p)) JavaDownloadProgress = p;
+                }),
+                CancellationToken.None);
+            JavaDownloadProgress = 100;
+            JavaDownloadStatus = $"已就绪：{java}";
+            NotificationService.Success($"{target.Label} 下载完成，之后可直接用");
+        }
+        catch (Exception ex)
+        {
+            JavaDownloadStatus = $"下载失败：{ex.Message}";
+            NotificationService.Error($"下载 Java 失败：{ex.Message}");
+        }
+        finally
+        {
+            IsDownloadingJava = false;
+        }
+    }
 
     [ObservableProperty]
     public partial string ExtraJvmArgsText { get; set; } = "";
@@ -192,6 +256,10 @@ public partial class SettingsViewModel : ViewModelBase
     /// <summary>构造加载阶段：属性赋值会触发 OnXxxChanged → Save，此时未加载字段还是默认值——
     /// 若不拦截，会把空值写回文件覆盖已保存的设置（如 CurseForgeApiKey）。</summary>
     private bool _loading = true;
+
+    /// <summary>8-31 上次应用进共享连接池的代理地址——Save 时比对，仅代理真正变化才重建池
+    /// （旧实现每次 Save 无条件 RebuildShared → 盲 30s 销毁旧 handler，下载中改限速/并发即崩）</summary>
+    private string _appliedProxy = "";
 
     /// <summary>CF 服务（key 直连：设置 DPAPI 密文落盘；构造含 GameDirectory.Detect() 文件扫描——缓存实例避免每次重扫）</summary>
     private readonly CurseForgeService _curseForge = new();
@@ -362,6 +430,8 @@ public partial class SettingsViewModel : ViewModelBase
         CurseForgeCdnPrefixText = s.CurseForgeCdnPrefix ?? "";
         CurseForgeApiBaseText = s.CurseForgeApiBase ?? "";
         ProxyAddressText = s.ProxyAddress ?? "";
+        _appliedProxy = s.ProxyAddress ?? "";
+        SelectedJavaDownload = JavaDownloadOptions[0]; // 默认 Java 25（新版本最缺）
         Opacity = s.Opacity;
         BackgroundImagePathText = s.BackgroundImagePath ?? "";
         // 强调色：非预设值（老用户自定义）动态插「自定义 #HEX」项；选中项触发 AccentColor 赋值预览
@@ -434,8 +504,14 @@ public partial class SettingsViewModel : ViewModelBase
         // 8-13 微软 client_id：设置页已移除（登录有远程下发/缓存/内置三层兜底，无需用户填；
         // LauncherSettings.MicrosoftClientId 字段保留——高级用户可手动编辑 settings.json 覆盖）
         s.Save();
-        // 8-20 代理变更后重建共享连接池：新下载任务立即走新代理（进行中任务不受影响）
-        Launcher.Core.Download.HttpClientPool.RebuildShared();
+        // 8-31 修：仅代理真正变化才重建连接池（旧实现每次 Save 无条件 RebuildShared→盲 30s 销毁旧
+        // handler，下载中改限速/并发/分片/下载源即 ObjectDisposedException，JRE/库下载失败→游戏 134）
+        var newProxy = s.ProxyAddress ?? "";
+        if (!string.Equals(newProxy, _appliedProxy, StringComparison.OrdinalIgnoreCase))
+        {
+            _appliedProxy = newProxy;
+            Launcher.Core.Download.HttpClientPool.RebuildShared();
+        }
     }
 
     partial void OnVersionIsolationChanged(bool value) => Save();

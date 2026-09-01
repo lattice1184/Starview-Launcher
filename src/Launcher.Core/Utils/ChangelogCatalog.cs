@@ -15,6 +15,15 @@ public static class ChangelogCatalog
     /// <summary>版本分组（最新在前）</summary>
     public static IReadOnlyList<ChangelogGroup> Groups { get; } =
     [
+        new("v1.1.14",
+        [
+            "下载稳定性修复：改设置不再打断正在进行的下载（此前下载中动一下设置，连接池重建导致文件下载失败、游戏启动即退）",
+            "Mac 自动下载 Java 显示进度，不再停在「检测 Java」像卡死；残缺的 Java 运行时会自动补齐，不再启动即崩",
+            "设置页新增「下载 Java」：可选 Java 25/21/17/8 手动补齐，带进度",
+            "Mac 更新覆盖修复：更新脚本适配 .app 应用包（此前「重启安装」覆盖不了、静默失败），失败会提示原因",
+            "联机功能 Mac 修复：EasyTier / Terracotta 的 macOS 安装包哈希补齐，能下载安装了",
+            "错误报告带上游戏日志（latest.log / crash-reports / JVM 崩溃文件），崩溃更好排查",
+        ]),
         new("v1.1.13",
         [
             "Mac 一键补齐 Java：新版要 Java 25、老版本要 Java 17，检测到缺就自动下载官方运行时，不用自己装",

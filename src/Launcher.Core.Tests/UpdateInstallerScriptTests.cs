@@ -28,10 +28,29 @@ public class UpdateInstallerScriptTests
     public void AtomicReplace_MvBackupBeforeCopy()
     {
         var s = Script();
-        // 不再「先 rm 后 cp」——mv 整体备份再拷全新目录
+        // 不再「先 rm 后 cp」——mv 整体备份再拷全新目录（散文件分支）
         Assert.Contains($"mv '{Root}' \"$BACKUP\"", s);
-        Assert.Contains($"cp -R '{Staging}' '{Root}'", s);
+        Assert.Contains($"cp -R '{Staging}/.' '{Root}/'", s);
         Assert.DoesNotContain("rm -f Launcher.App", s); // 关键：不再先删旧可执行
+    }
+
+    /// <summary>8-31 macOS .app bundle 适配：staging 是 bundle → bundle 分支拷 Contents、runtimeconfig 双布局预检。
+    /// 旧版只认散文件路径（runtimeconfig 预检必失败）→ 朋友 Mac 更新「覆盖没用」根因。</summary>
+    [Fact]
+    public void BundleLayout_CopiesIntoAppContents_NotNested()
+    {
+        var s = Script();
+        // bundle staging → bundle root：拷 Contents（不产生 .app/Starview.app 嵌套）
+        Assert.Contains($"cp -R '{Staging}/Starview.app/Contents/.' '{Root}/Contents/'", s);
+        // bundle 的 runtimeconfig 预检在 bundle 路径（旧版只查散文件路径 → 必失败）
+        Assert.Contains($"[ -f '{Staging}/Starview.app/Contents/MacOS/Launcher.App.runtimeconfig.json' ]", s);
+        // 备份移到用户可写目录（避免 /Applications 父目录只读）
+        Assert.Contains("mkdir -p", s);
+        Assert.Contains("BACKUP=", s);
+        Assert.Contains($"xattr -dr com.apple.quarantine '{Root}'", s); // Apple Silicon 防 Gatekeeper 拦
+        Assert.Contains("codesign --force --sign -", s);
+        // 失败标记：下次启动可弹提示（不再静默失败）
+        Assert.Contains("update-failed.txt", s);
     }
 
     [Fact]

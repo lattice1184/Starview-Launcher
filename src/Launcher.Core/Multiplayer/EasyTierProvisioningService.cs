@@ -21,9 +21,9 @@ public sealed class EasyTierProvisioningService
     public static readonly IReadOnlyDictionary<string, string> KnownDigests = new Dictionary<string, string>
     {
         ["2.6.4/x86_64/windows"] = "27af91e270e554709b048bd32327fefd2dfce5062ae1e8701af7550c6f525f84",
-        ["2.6.4/x86_64/linux"] = "pending",
-        ["2.6.4/aarch64/macos"] = "pending",
-        ["2.6.4/x86_64/macos"] = "pending",
+        ["2.6.4/x86_64/linux"] = "pending", // 8-31 Linux 尚未实测回填（非本次 Mac 修复范围）
+        ["2.6.4/aarch64/macos"] = "4be1882d1aa36d31c1d6ba0596f2cf8a097e371f8da124212324b2e0f8df7e4b", // 9-1 直连实测
+        ["2.6.4/x86_64/macos"] = "89fc28a6e6995259d76ce3f11775220e8a21c760e94df91a6a9db30a69b6982e", // 9-1 直连实测
     };
 
     /// <summary>平台键：windows / macos / linux（macOS 包命名需上游实测；若确无 macOS 构建则 Mac 隐藏联机入口）</summary>

@@ -41,4 +41,26 @@ public class HttpClientPoolTests
         Assert.Contains("Mozilla", ua);
         Assert.Contains("Starview", ua);
     }
+
+    [Fact]
+    public void RebuildShared_RecreatesInstances_WithoutDisposingOld()
+    {
+        // 8-31 崩 134 根因回归：旧实现 RebuildShared 对旧 handler 盲 30s 定时 Dispose——
+        // 仍持有旧 client 的下载任务（DownloadService 构造时捕获 Shared）→ ObjectDisposedException。
+        // 新实现只置空静态引用交给 GC，不主动销毁：重建本身不抛、新实例可用。
+        var oldClient = HttpClientPool.Shared;
+        var oldHandler = HttpClientPool.SharedHandler;
+        Assert.NotNull(oldClient);
+        Assert.NotNull(oldHandler);
+
+        HttpClientPool.RebuildShared();
+
+        // 重建后拿到全新实例（连接池带新配置）
+        var newClient = HttpClientPool.Shared;
+        var newHandler = HttpClientPool.SharedHandler;
+        Assert.NotSame(oldClient, newClient);
+        Assert.NotSame(oldHandler, newHandler);
+        // 新实例可用（不抛 ObjectDisposedException）
+        Assert.NotNull(newClient.DefaultRequestHeaders.UserAgent.ToString());
+    }
 }

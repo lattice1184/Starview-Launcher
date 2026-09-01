@@ -146,6 +146,32 @@ public partial class CrashReportWindow : Window
                     AppPaths.DataRoot, "settings.json");
                 if (File.Exists(settingsPath))
                     zip.CreateEntryFromFile(settingsPath, "settings.json");
+                // 4. 游戏日志（latest.log / crash-reports / JVM hs_err）——游戏启动即崩（如退出码 134）
+                // 时启动器日志只有进程退出码，真正崩因在游戏侧；8-31 朋友 Mac 134 排查就缺这些
+                try
+                {
+                    var gameDir = GameDirectory.InstallDir();
+                    var gameLogs = Path.Combine(gameDir, "logs");
+                    if (Directory.Exists(gameLogs))
+                    {
+                        foreach (var name in new[] { "latest.log", "debug.log" })
+                        {
+                            var f = Path.Combine(gameLogs, name);
+                            if (File.Exists(f)) zip.CreateEntryFromFile(f, $"logs/game/{name}");
+                        }
+                    }
+                    var crashDir = Path.Combine(gameDir, "crash-reports");
+                    if (Directory.Exists(crashDir))
+                    {
+                        foreach (var f in Directory.EnumerateFiles(crashDir, "crash-*")
+                                     .OrderByDescending(x => new FileInfo(x).LastWriteTimeUtc).Take(2))
+                            zip.CreateEntryFromFile(f, $"logs/game/{Path.GetFileName(f)}");
+                    }
+                    foreach (var f in Directory.EnumerateFiles(gameDir, "hs_err_pid*.log")
+                                 .OrderByDescending(x => new FileInfo(x).LastWriteTimeUtc).Take(1))
+                        zip.CreateEntryFromFile(f, $"logs/game/{Path.GetFileName(f)}");
+                }
+                catch { /* 游戏日志缺失/读失败不阻塞报告导出 */ }
             });
             ErrorText.Text += Environment.NewLine + $"报告已导出：{zipPath}";
         }

@@ -39,6 +39,28 @@
                 </StackPanel>
             </Grid>
 
+            <!-- 8-31 手动下载 Java：选版本 → 复用自动补齐链路，进度可见 -->
+            <Grid Classes="setting-row" ColumnDefinitions="Auto,*,Auto">
+                <TextBlock Text="下载 Java" Classes="setting-label" VerticalAlignment="Center"/>
+                <ComboBox Grid.Column="1" ItemsSource="{Binding JavaDownloadOptions}"
+                          SelectedItem="{Binding SelectedJavaDownload}" HorizontalAlignment="Left"
+                          IsEnabled="{Binding !IsDownloadingJava}">
+                    <ComboBox.ItemTemplate>
+                        <DataTemplate x:DataType="vm:JavaDownloadOption">
+                            <TextBlock Text="{Binding Label}"/>
+                        </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                </ComboBox>
+                <Button Grid.Column="2" Content="下载…" Classes="ghost"
+                        Command="{Binding DownloadJavaCommand}" IsEnabled="{Binding !IsDownloadingJava}"/>
+            </Grid>
+            <Grid Classes="setting-row" ColumnDefinitions="*,Auto" IsVisible="{Binding IsDownloadingJava}">
+                <ProgressBar Grid.Column="0" Minimum="0" Maximum="100" Value="{Binding JavaDownloadProgress}"
+                             Height="6" VerticalAlignment="Center" Margin="0,0,12,0"/>
+                <TextBlock Grid.Column="1" Text="{Binding JavaDownloadStatus}" Classes="dim" FontSize="11"
+                           VerticalAlignment="Center"/>
+            </Grid>
+
             <Grid Classes="setting-row" ColumnDefinitions="Auto,*,Auto">
                 <TextBlock Text="进程优先级" Classes="setting-label" VerticalAlignment="Center"/>
                 <ComboBox Grid.Column="1" ItemsSource="{Binding GamePriorityOptions}"

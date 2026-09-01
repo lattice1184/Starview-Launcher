@@ -1,9 +1,9 @@
 #!/bin/bash
 # 打包：linux-x64 / osx-arm64 / osx-x64 三个 tar.gz（复刻 20260830 结构）
-# 用法：bash build-linux-osx-v118.sh [版本号] [日期]（默认 1.1.13 / 今天）
+# 用法：bash build-linux-osx-v118.sh [版本号] [日期]（默认 1.1.14 / 今天）
 set -e
 cd /c/Users/yanka/Desktop/launcher
-VERSION="${1:-1.1.13}"
+VERSION="${1:-1.1.14}"
 DATE="${2:-$(date +%Y%m%d)}"
 ROOT="$(pwd)"
 STAGE="$ROOT/.release-$DATE"

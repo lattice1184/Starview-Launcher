@@ -23,8 +23,8 @@ public sealed class TerracottaProvisioningService
         ["0.4.2/arm64/windows"] = "acfab0a87a02dedc6dab7c05303186c8907f56f815548b693fb3324358da7d14",
         ["0.4.2/x86_64/linux"] = "675c4fd6c74d49ed8165151ba2be5b6582e0af20fb6d912074543c2484b1e10a",
         // macOS：pending = 安全拒装（digest 待 Mac/代理实测下载回填）
-        ["0.4.2/arm64/macos"] = "pending",
-        ["0.4.2/x86_64/macos"] = "pending",
+        ["0.4.2/arm64/macos"] = "13de7f9ce8733971b23493fabbe7e16d480f1e0d16a6265b4861f5a01bbecb60", // 9-1 直连实测
+        ["0.4.2/x86_64/macos"] = "16306157d89423ce79fa901cdb75a6386ec1a9b1bd43a5d47c2c47cf01a16b86", // 9-1 直连实测
     };
 
     /// <summary>平台键：windows / macos / linux（macOS 值须与上游 /meta 的 target_os 一致，可能 darwin——待实测；

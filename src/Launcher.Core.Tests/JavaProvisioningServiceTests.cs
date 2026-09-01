@@ -92,4 +92,33 @@ public class JavaProvisioningServiceTests
         Assert.Null(jar.Sha1); // 无 sha1 字段 → null（下载不校验）
         Assert.False(jar.Executable);
     }
+
+    /// <summary>8-31 崩 134 回归：中断下载会留下 bin/java 但缺 lib → 残缺运行时不可信（无 .complete 标记），
+    /// 触发续装补齐而非直接返回残缺 java（旧实现 Pick 只查文件存在 → 游戏用残缺 JRE 启动即崩且永不补齐）</summary>
+    [Fact]
+    public void IsTrustedJava_ProvisionedRequiresCompleteMarker()
+    {
+        var runtimeRoot = Path.Combine(Path.GetTempPath(), $"runtime-{Guid.NewGuid():N}");
+        var compDir = Path.Combine(runtimeRoot, "java-runtime-epsilon");
+        var javaPath = Path.Combine(compDir, "bin", "java");
+        Directory.CreateDirectory(Path.GetDirectoryName(javaPath)!);
+        File.WriteAllText(javaPath, "x");
+
+        // 无 .complete 标记：自装但残缺 → 不可信
+        Assert.False(JavaProvisioningService.IsTrustedJava(javaPath, runtimeRoot));
+
+        // 有标记：完整 → 可信
+        File.WriteAllText(Path.Combine(compDir, ".complete"), "ok");
+        Assert.True(JavaProvisioningService.IsTrustedJava(javaPath, runtimeRoot));
+
+        // 非自装（用户/系统 Java）→ 信任
+        var sysDir = Path.Combine(Path.GetTempPath(), $"userjava-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(sysDir);
+        var sysJava = Path.Combine(sysDir, "java");
+        File.WriteAllText(sysJava, "x");
+        Assert.True(JavaProvisioningService.IsTrustedJava(sysJava, runtimeRoot));
+
+        Directory.Delete(runtimeRoot, true);
+        Directory.Delete(sysDir, true);
+    }
 }
