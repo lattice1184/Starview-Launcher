@@ -97,14 +97,25 @@ public sealed class ModrinthRawDlSourceMapper : IDlSourceMapper
 /// </summary>
 public sealed class CurseforgeCdnDlSourceMapper : IDlSourceMapper
 {
-    private const string Official = "https://edge.forgecdn.net/";
+    // 9-2 修：只认 edge 会让配了 CurseForgeCdnPrefix 镜像的用户对现在大多数 CF 文件静默走单候选直连——
+    // CF API 现返回 mediafilez.forgecdn.net（用户实测实例）、历史 media.forgecdn.net、更早 edge.forgecdn.net
+    private static readonly string[] OfficialHosts =
+    [
+        "https://edge.forgecdn.net/",
+        "https://mediafilez.forgecdn.net/",
+        "https://media.forgecdn.net/",
+    ];
 
     public string Map(string url)
     {
-        if (!url.StartsWith(Official)) return url;
         var prefix = LauncherSettings.Current.CurseForgeCdnPrefix?.Trim();
         if (string.IsNullOrEmpty(prefix)) return url;
-        return prefix.TrimEnd('/') + "/" + url[Official.Length..];
+        foreach (var host in OfficialHosts)
+        {
+            if (url.StartsWith(host, StringComparison.Ordinal))
+                return prefix.TrimEnd('/') + "/" + url[host.Length..];
+        }
+        return url;
     }
 }
 

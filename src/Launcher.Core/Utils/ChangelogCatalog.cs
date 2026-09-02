@@ -15,6 +15,11 @@ public static class ChangelogCatalog
     /// <summary>版本分组（最新在前）</summary>
     public static IReadOnlyList<ChangelogGroup> Groups { get; } =
     [
+        new("v1.1.15",
+        [
+            "CurseForge 下载：镜像前缀现在对 mediafilez / media 主机也生效（此前只认旧的 edge 域名，配了 CF 镜像也白配）",
+            "下载稳定性：单个下载源的文件不再被慢速误杀——判死本意是换源、单源没得换，慢也硬啃到底不报错",
+        ]),
         new("v1.1.14",
         [
             "下载稳定性修复：改设置不再打断正在进行的下载（此前下载中动一下设置，连接池重建导致文件下载失败、游戏启动即退）",

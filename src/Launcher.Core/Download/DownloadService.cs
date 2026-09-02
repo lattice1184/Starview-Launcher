@@ -1189,9 +1189,12 @@ public sealed class DownloadService
                         // 换路 = 新连接重新累积（前几 MB 快），收益远大于 Resolve+探测开销
                         // 8-22 补：剩余不足一片（<chunkSize）不判死——只剩最后一片在下，判死 = 弃 99.6% 清零重下
                         // （真机 8-12 PowerToys 271MB 最后 1MB 判死换路净亏）；等最后一片下完（至多几十秒）
-                        if (speedIdx >= 3 && avg < SlowThresholdForLimit()
-                            && (currentConcurrency >= maxChunks || totalSize - bytes < MinUpgradeRemainBytes)
-                            && totalSize - bytes >= chunkSize)
+                        // 9-2 修：此分支此前漏查 allowSlowDeath——单候选（无镜像）并发到顶仍慢会被误杀，
+                        // 判死本意是换源、单源没得换 → 白白报错。提取为可测谓词并加 allowSlowDeath 前置。
+                        if (ShouldForceSlowAbort(
+                                allowSlowDeath, speedIdx, avg, SlowThresholdForLimit(),
+                                currentConcurrency >= maxChunks || totalSize - bytes < MinUpgradeRemainBytes,
+                                totalSize - bytes, chunkSize))
                         {
                             Volatile.Write(ref slowAborted, 1);
                             slowCts.Cancel();
@@ -1335,6 +1338,14 @@ public sealed class DownloadService
     internal static long ChunkSizeFor(long totalSize, bool progressiveThrottleCdn = false)
         => Math.Clamp(totalSize / TargetChunkCount,
             progressiveThrottleCdn ? FixedChunkSizeProgressive : FixedChunkSize, MaxChunkSize);
+
+    /// <summary>9-2 提取（纯逻辑可测）：分片"并发到顶仍慢"立即判死是否触发。
+    /// allowSlowDeath=false（单候选无镜像可换）→ 永不判死——判死本意是换源，单源该硬啃到底；
+    /// 与同函数持续低速判死(:1168)、DownloadSingleAsync(:1035)、单候选调用点(:344) 的约定对齐——
+    /// 此分支此前漏查 allowSlowDeath，单候选慢大文件并发升到顶后被误杀报错而非下完。</summary>
+    internal static bool ShouldForceSlowAbort(bool allowSlowDeath, int speedIdx, double avg, long slowThreshold,
+        bool atMaxConcurrencyOrTail, long remaining, long chunkSize)
+        => allowSlowDeath && speedIdx >= 3 && avg < slowThreshold && atMaxConcurrencyOrTail && remaining >= chunkSize;
 
     /// <summary>ramp-up 探测段大小（1MB——快源 0.4s 内拉完提前决策，慢源 2s 窗口截断采样）</summary>
     private const long ProbeBytes = 1024 * 1024;

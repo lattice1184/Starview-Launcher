@@ -190,4 +190,32 @@ public class SlowSourceTests
                 Content = new ByteArrayContent(new byte[5 * 1024 * 1024]),
             });
     }
+
+    /// <summary>9-2 修：分片"并发到顶仍慢→立即判死"分支漏查 allowSlowDeath——单候选（无镜像）会被误杀
+    /// 白白报错而非硬啃到底。谓词纯逻辑断言：allowSlowDeath=false 永不判死；=true 且条件满足才判死。</summary>
+    [Fact]
+    public void ShouldForceSlowAbort_RespectsAllowSlowDeath()
+    {
+        // 条件全满足：speedIdx>=3、均速<阈值、并发到顶、剩余≥一片
+        const bool atMax = true;
+        const long threshold = 1024 * 1024;
+        const long remaining = 20 * 1024 * 1024;
+        const long chunkSize = 1024 * 1024;
+
+        // 单候选（allowSlowDeath=false）→ 永不判死（判死本意是换源，单源没得换）
+        Assert.False(Launcher.Core.Download.DownloadService.ShouldForceSlowAbort(
+            allowSlowDeath: false, speedIdx: 5, avg: 500_000, slowThreshold: threshold, atMax, remaining, chunkSize));
+        // 多源（allowSlowDeath=true）→ 条件满足即判死
+        Assert.True(Launcher.Core.Download.DownloadService.ShouldForceSlowAbort(
+            allowSlowDeath: true, speedIdx: 5, avg: 500_000, slowThreshold: threshold, atMax, remaining, chunkSize));
+        // 快（均速≥阈值）→ 不判死
+        Assert.False(Launcher.Core.Download.DownloadService.ShouldForceSlowAbort(
+            allowSlowDeath: true, speedIdx: 5, avg: 2_000_000, slowThreshold: threshold, atMax, remaining, chunkSize));
+        // 采样不足 3 次 → 不判死
+        Assert.False(Launcher.Core.Download.DownloadService.ShouldForceSlowAbort(
+            allowSlowDeath: true, speedIdx: 2, avg: 500_000, slowThreshold: threshold, atMax, remaining, chunkSize));
+        // 剩余不足一片 → 不判死（弃尾清零净亏，等最后一片下完）
+        Assert.False(Launcher.Core.Download.DownloadService.ShouldForceSlowAbort(
+            allowSlowDeath: true, speedIdx: 5, avg: 500_000, slowThreshold: threshold, atMax, remaining: chunkSize - 1, chunkSize));
+    }
 }
